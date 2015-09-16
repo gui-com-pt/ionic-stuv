@@ -1,0 +1,46 @@
+<ion-view view-title="Registar Percurso">
+    <ion-content class="padding">
+      <p>Ajuda-me a acrescentar todas as viagens de autocarro da nossa cidade!</p>
+      <!--<p>Sempre que fizeres uma viagem regista-a. Os registos são usados mensalmente para actualizar a app com horários mais completos.</p>-->
+      <div class="list register-stop__form">
+        <label class="item item-input item-select item-positive">
+          <i class="icon ion-android-bus placeholder-icon"></i>
+          <span class="input-label">Que linha apanhas-te?</span>
+          <select>
+          <option>1</option>
+          <option>2</option>
+          <option>3</option>
+          </select>
+        </label>
+        <label class="item item-input item-stacked-label item-positive">
+        <i class="icon ion-calendar placeholder-icon"></i>
+          <span class="input-label">Quando foi a viagem?</span>
+          <input type="date" placeholder="A que horas apanhas-te o autocarro?">
+        </label>
+        <label class="item item-input item-stacked-label item-stable">
+          <i class="icon ion-clock placeholder-icon"></i>
+          <span class="input-label">A que horas partiste?</span>
+          <input type="date" placeholder="A que horas apanhas-te o autocarro?">
+        </label>
+        <label class="item item-input item-select item-stable">
+          <i class="icon ion-ios-location placeholder-icon"></i>
+          <span class="input-label">A Estação</span>
+          <select>
+          <option ng-repeat="station in stations" ng-bind="station.name"></option>
+          </select>
+        </label>
+        <label class="item item-input item-stacked-label item-positive">
+          <i class="icon ion-clock placeholder-icon"></i>
+          <span class="input-label">A que horas chegas-te?</span>
+          <input type="date" placeholder="A que horas apanhas-te o autocarro?">
+        </label>
+        <label class="item item-input item-select item-positive">
+          <i class="icon ion-ios-location placeholder-icon"></i>
+          <div class="input-label">A Estação?</div>
+          <select>
+          <option ng-repeat="station in stations" ng-bind="station.name"></option>
+          </select>
+        </label>
+          <button class="button button-positive button-full">Registar</button></div>
+    </ion-content>
+</ion-view>

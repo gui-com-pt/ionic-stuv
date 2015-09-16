@@ -1,0 +1,24 @@
+<ion-view view-title="{{lines[0].name}}">
+    <ion-content class="padding">
+        <div class="list">
+            <div ng-repeat-start="route in lines[line].schedules[viewSchedule].routes">
+                <a class="item item-icon-right item-positive" href="#" ng-click="openModalRoute($index)">
+                    <span class="item__time">{{route.departure}} - {{route.arrive}}</span>
+                    <i ng-class="isAvailable(route.departure) ? 'ion-android-checkmark-circle' : 'ion-android-more-vertical'" class="icon"></i>
+                </a>
+            </div>
+            <div ng-repeat-end></div>
+        </div>
+    </ion-content>
+</ion-view>
+<div class="tabs">
+  <a class="tab-item" ng-click="viewSchedule = 0">
+    Dias Úteis
+  </a>
+  <a class="tab-item" ng-click="viewSchedule = 1">
+    Sábado
+  </a>
+  <a class="tab-item" ng-click="viewSchedule = 2">
+    Domingo e Feriados
+  </a>
+</div>

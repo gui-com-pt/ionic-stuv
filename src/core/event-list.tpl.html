@@ -1,0 +1,17 @@
+<ion-view view-title="Feira São Mateus 2015">
+    <ion-content>
+        <div class="list">
+        <div ng-repeat-start="event in events">
+        	<a class="item item-positive">
+        	08 Agosto - Sábado
+        	</a>
+            <a class="item item-thumbnail-left" href="" ui-sref="event-view({id: event.id})" >
+                <img ng-src="{{event.thumbnailSrc}}" />
+                <h2>{{event.doorTime}} | {{event.title}}</h2>
+                <div ng-bind-html="event.excerpt"></div>
+            </a>
+            </div>
+            <div ng-repeat-end=""></div>
+        </div>
+    </ion-content>
+</ion-view>

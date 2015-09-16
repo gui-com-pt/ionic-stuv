@@ -1,0 +1,17 @@
+<ion-view view-title="Viseu">
+    <ion-content>
+        <div class="list">
+        <div ng-repeat-start="place in places">
+        	<a class="item item-positive">
+        	08 Agosto - Sábado
+        	</a>
+            <a class="item item-thumbnail-left" href="" ui-sref="event-view({id: place.id})" >
+                <img ng-src="{{event.place}}" />
+                <h2>{{event.doorTime}} | {{event.title}}</h2>
+                <div ng-bind-html="event.description"></div>
+            </a>
+            </div>
+            <div ng-repeat-end=""></div>
+        </div>
+    </ion-content>
+</ion-view>
