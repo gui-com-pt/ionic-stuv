@@ -2,6 +2,9 @@
 # http://git-scm.com/docs/gitignore
 .idea/
 www/lib/
+!www/lib/leaflet/
+!www/lib/ngCordova/
+!www/lib/ionic/
 node_modules/
 platforms/
 plugins/
