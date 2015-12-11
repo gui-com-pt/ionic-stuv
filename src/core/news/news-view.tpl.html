@@ -6,13 +6,18 @@
         <button class="button button-clear" ui-sref="article-update({id: article.id})">Editar</button>
     </ion-nav-buttons>
     <ion-content>
-        <div style="background-image:url(https://codigo.ovh/cdn/main_22srTAcHetCNrqadskVB.png)" class="cover__wrapper">
+        <div ng-style="{'background-image':'url({{article.image}}')" class="cover__wrapper">
             <h3 class="item__name" ng-bind="article.name"></h3>
         </div>
         <div ng-bind-html="article.articleBody"></div>
-        <a class="creative__reffer" ng-ref="{{article.refferUrl">
-            <img ng-src="{{article.refferImage}}" />
-            <h4 ng-bind="article.refferName"></h4>
+        <a class="creative-reffer" target="_blank" ng-ref="{{article.refferUrl">
+            <div class="creative-reffer__img">
+                <img ng-src="{{article.refferImage}}" />
+            </div>
+            <div class="creative-reffer__info">
+                Escrito por<br>
+                <span class="creative-reffer__info-owner" ng-bind="article.refferName"></span>
+            </div>
         </a>
         <div pi-facebook-comment page-href="{{article.url}}" numposts="5" colorscheme="light"></div>
     </ion-content>

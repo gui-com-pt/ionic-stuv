@@ -76,3 +76,19 @@ h3.item__name {
 
 }
 
+.creative-reffer {
+	@extend .row;
+}
+
+.creative-reffer__info {
+	@extend .col-50;
+}
+
+.creative-reffer__info-owner {
+	font-size: 1.2em;
+	font-weight: bold;
+}
+
+.creative-reffer__img {
+	@extend .col-50;	
+}
