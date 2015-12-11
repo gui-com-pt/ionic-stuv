@@ -10,6 +10,10 @@
             <h3 class="item__name" ng-bind="article.name"></h3>
         </div>
         <div ng-bind-html="article.articleBody"></div>
+        <a class="creative__reffer" ng-ref="{{article.refferUrl">
+            <img ng-src="{{article.refferImage}}" />
+            <h4 ng-bind="article.refferName"></h4>
+        </a>
         <div pi-facebook-comment page-href="{{article.url}}" numposts="5" colorscheme="light"></div>
     </ion-content>
 </ion-view>
