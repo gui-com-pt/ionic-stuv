@@ -25,7 +25,7 @@
 			])
 		.config(['piProvider', 'piHttpProvider', 'facebookMetaServiceProvider', '$stateProvider', '$cordovaFacebookProvider', function(piProvider, piHttpProvider, facebookMetaServiceProvider, $stateProvider, $cordovaFacebookProvider){
 
-			piHttpProvider.setBaseUrl('https://codigo.ovh/api');
+			piHttpProvider.setBaseUrl('https://viseu.ovh/api');
 	        facebookMetaServiceProvider.setAuthor('https://www.facebook.com/living.with.jesus');
 	        facebookMetaServiceProvider.setPublisher('https://www.facebook.com/viseu.ovh');
 	        facebookMetaServiceProvider.setSiteName('Viseu');

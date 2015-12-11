@@ -25,7 +25,7 @@
 			])
 		.config(['piProvider', 'piHttpProvider', 'facebookMetaServiceProvider', '$stateProvider', '$cordovaFacebookProvider', function(piProvider, piHttpProvider, facebookMetaServiceProvider, $stateProvider, $cordovaFacebookProvider){
 
-			piHttpProvider.setBaseUrl('https://codigo.ovh/api');
+			piHttpProvider.setBaseUrl('https://viseu.ovh/api');
 	        facebookMetaServiceProvider.setAuthor('https://www.facebook.com/living.with.jesus');
 	        facebookMetaServiceProvider.setPublisher('https://www.facebook.com/viseu.ovh');
 	        facebookMetaServiceProvider.setSiteName('Viseu');
@@ -91,11 +91,36 @@
 })();
 (function(){
 	angular
+		.module('stuv.common', ['pi']);
+})();
+(function(){
+	angular
 		.module('stuv.core', ['ngCordova', 'ui.router', 'pi']);
 })();
 (function(){
 	angular
-		.module('stuv.common', ['pi']);
+		.module('stuv.core.bus', ['ngCordova', 'stuv.core']);
+	angular
+		.module('stuv.core.bus')
+		.config(['$stateProvider', function($stateProvider){
+
+			$stateProvider
+				.state('bus-home', {
+                    url: '/autocarros',
+                    controller: 'stuv.core.bus.busHomeCtrl',
+                    templateUrl: 'core/bus/bus-home.tpl.html'
+                })
+                .state('register-stop', {
+					url: '/',
+					controller: 'stuv.core.bus.registerStopCtrl',
+					templateUrl: 'core/bus/register-stop.tpl.html'
+				})
+				.state('bus-schedules', {
+					url: '/bus-schedules/:id',
+					controller: 'stuv.core.bus.busSchedulesCtrl',
+					templateUrl: 'core/bus/bus-schedules.tpl.html'
+				});
+		}]);
 })();
 (function(){
 	angular
@@ -159,27 +184,61 @@
 })();
 (function(){
 	angular
-		.module('stuv.core.bus', ['ngCordova', 'stuv.core']);
-	angular
-		.module('stuv.core.bus')
-		.config(['$stateProvider', function($stateProvider){
+		.module('stuv.common')
+		.directive('piFacebookComment', function () {
+		    function createHTML(href, numposts, colorscheme) {
+		        return '<div class="fb-comments" ' +
+		                       'data-href="' + href + '" ' +
+		                       'data-numposts="' + numposts + '" ' +
+		                       'data-colorsheme="' + colorscheme + '">' +
+		               '</div>';
+		    }
 
-			$stateProvider
-				.state('bus-home', {
-                    url: '/autocarros',
-                    controller: 'stuv.core.bus.busHomeCtrl',
-                    templateUrl: 'core/bus/bus-home.tpl.html'
-                })
-                .state('register-stop', {
-					url: '/',
-					controller: 'stuv.core.bus.registerStopCtrl',
-					templateUrl: 'core/bus/register-stop.tpl.html'
-				})
-				.state('bus-schedules', {
-					url: '/bus-schedules/:id',
-					controller: 'stuv.core.bus.busSchedulesCtrl',
-					templateUrl: 'core/bus/bus-schedules.tpl.html'
-				});
+		    return {
+		        restrict: 'A',
+		        scope: {},
+		        link: function postLink(scope, elem, attrs) {
+		            attrs.$observe('pageHref', function (newValue) {
+		                var href        = newValue;
+		                var numposts    = attrs.numposts    || 5;
+		                var colorscheme = attrs.colorscheme || 'light';
+
+		                elem.html(createHTML(href, numposts, colorscheme));
+		                FB.XFBML.parse(elem[0]);
+		            });
+		        }
+		    };
+		});
+})();
+(function(){
+	angular
+		.module('stuv.common')
+		.provider('stuv.common.responseUtilsSvc', [function(){
+
+			return {
+				$get: function(){
+					return {
+						orderByNewest: function(items, keyDate) {
+							if(!_.isArray(items) || !_.isString(keyDate)) {
+								return null;
+							}
+
+							var events = _.groupBy(items, function (event) {
+		                      return moment.utc(event[keyDate], 'X').startOf('day').format('DD-MM-YYYY');
+		                    });
+
+		                    events = _.map(events, function(group, day){
+		                        return {
+		                            day: day,
+		                            results: group
+		                        }
+		                    });
+
+							return events;
+						}
+					}
+				}
+			}
 		}]);
 })();
 (function(){
@@ -356,319 +415,6 @@
 			}, 3000);
 
 		}]);
-})();
-(function(){
-	angular
-		.module('stuv.common')
-		.directive('piFacebookComment', function () {
-		    function createHTML(href, numposts, colorscheme) {
-		        return '<div class="fb-comments" ' +
-		                       'data-href="' + href + '" ' +
-		                       'data-numposts="' + numposts + '" ' +
-		                       'data-colorsheme="' + colorscheme + '">' +
-		               '</div>';
-		    }
-
-		    return {
-		        restrict: 'A',
-		        scope: {},
-		        link: function postLink(scope, elem, attrs) {
-		            attrs.$observe('pageHref', function (newValue) {
-		                var href        = newValue;
-		                var numposts    = attrs.numposts    || 5;
-		                var colorscheme = attrs.colorscheme || 'light';
-
-		                elem.html(createHTML(href, numposts, colorscheme));
-		                FB.XFBML.parse(elem[0]);
-		            });
-		        }
-		    };
-		});
-})();
-(function(){
-	angular
-		.module('stuv.common')
-		.provider('stuv.common.responseUtilsSvc', [function(){
-
-			return {
-				$get: function(){
-					return {
-						orderByNewest: function(items, keyDate) {
-							if(!_.isArray(items) || !_.isString(keyDate)) {
-								return null;
-							}
-
-							var events = _.groupBy(items, function (event) {
-		                      return moment.utc(event[keyDate], 'X').startOf('day').format('DD-MM-YYYY');
-		                    });
-
-		                    events = _.map(events, function(group, day){
-		                        return {
-		                            day: day,
-		                            results: group
-		                        }
-		                    });
-
-							return events;
-						}
-					}
-				}
-			}
-		}]);
-})();
-(function(){
-	angular
-		.module('stuv.core')
-		.controller('stuv.core.event.eventCreateCtrl', ['pi.core.app.eventSvc', '$scope', '$cordovaImagePicker', function(eventSvc, $scope, $cordovaImagePicker){
-			var self = this;
-			
-			$scope.showFileDialog = function(){
-				$cordovaImagePicker.getPictures({})
-				    .then(function (results) {
-				      for (var i = 0; i < results.length; i++) {
-				        console.log('Image URI: ' + results[i]);
-				      }
-				    }, function(error) {
-				      // error getting photos
-				    });
-			}
-			
-			$scope.event = {};
-
-			this.prepareRequest = function(){
-				var dto = angular.copy($scope.event);
-				dto.city = 'Viseu';
-				return dto;
-			}
-
-			var submitErrorFn = function(response) {
-
-			}
-
-			$scope.submitForm = function(){
-				try {
-					var model = self.prepareRequest();
-					eventSvc.post(model)
-						.then(function(res){
-
-						}, submitErrorFn);	
-				}
-				catch(e){
-					submitErrorFn();
-				}
-				
-			}
-		}]);
-})();
-(function(){
-    angular
-        .module('stuv.core')
-        .controller('stuv.core.event.eventListCtrl', ['stuv.common.responseUtilsSvc', 'pi.core.app.eventSvc', '$scope', function(responseUtilsSvc, eventSvc, $scope){
-        	$scope.eventsPerDay = [];
-
-            eventSvc.find()
-                .then(function(res){
-                	
-                    var events = responseUtilsSvc.orderByNewest(res.data.events, 'doorTime');
-
-                	angular.forEach(events, function(dto){
-                		$scope.eventsPerDay.push(dto);
-                	});
-                });
-        }]);
-})();
-(function(){
-	angular
-		.module('stuv.core')
-		.controller('stuv.core.event.eventUpdateCtrl', ['pi.core.app.eventSvc', '$scope', '$stateParams', function(eventSvc, $scope, $stateParams){
-			var self = this,
-				id = $stateParams.id;
-
-			eventSvc.get($stateParams.id)
-                .then(function(res){
-                    $scope.event = res.data.event;
-                });
-
-
-			this.prepareRequest = function(){
-				var dto = angular.copy($scope.event);
-				dto.city = 'Viseu';
-				return dto;
-			}
-
-			$scope.submitForm = function(){
-				var model = self.prepareRequest();
-				
-				eventSvc.put(id, model)
-					.then(function(res){
-						
-					}, function(res){
-
-					});
-			}
-		}]);
-})();
-(function(){
-    angular
-        .module('stuv.core')
-        .controller('stuv.core.event.eventViewCtrl', ['pi.core.app.eventSvc', '$scope', '$stateParams', '$cordovaSocialSharing', function(eventSvc, $scope, $stateParams, $cordovaSocialSharing){
-           var self = this;
-            $scope.id = $stateParams.id;
-
-            eventSvc.get($stateParams.id)
-                .then(function(res){
-                    $scope.event = res.data.event;
-                });
-
-            $scope.shareEmail = function(){
-                $cordovaSocialSharing
-                    .shareViaEmail($scope.event.headline, $scope.event.headline, $scope.event.image, $scope.event.url) // Share via native share sheet
-                    .then(function(result) {
-                      // Success!
-                    }, function(err) {
-                      // An error occured. Show a message to the user
-                    });
-            }
-
-            $scope.shareTwitter = function(){
-                $cordovaSocialTwitter
-                    .shareViaFacebook($scope.event.headline, $scope.event.headline, $scope.event.image, $scope.event.url) // Share via native share sheet
-                    .then(function(result) {
-                      // Success!
-                    }, function(err) {
-                      // An error occured. Show a message to the user
-                    });
-            }
-
-            $scope.shareFacebook = function(){
-                $cordovaSocialSharing
-                    .shareViaFacebook($scope.event.headline, $scope.event.headline, $scope.event.image, $scope.event.url) // Share via native share sheet
-                    .then(function(result) {
-                      // Success!
-                    }, function(err) {
-                      // An error occured. Show a message to the user
-                    });
-            }
-        }]);
-})();
-(function(){
-	angular
-		.module('stuv.core')
-		.controller('stuv.core.news.newsCreateCtrl', ['pi.core.app.articleSvc', '$scope', '$cordovaFileOpener2', function(newsSvc, $scope, $cordovaFileOpener2){
-			var self = this;
-			
-			$scope.showFileDialog = function(){
-				$cordovaFileOpener2.open(
-			    '/sdcard/Download/gmail.apk',
-			    'application/vnd.android.package-archive'
-			  ).then(function() {
-			      // Success!
-			  }, function(err) {
-			      // An error occurred. Show a message to the user
-			  });	
-			}
-			
-			$scope.news = {};
-
-			this.prepareRequest = function(){
-				var dto = angular.copy($scope.news);
-				dto.city = 'Viseu';
-				return dto;
-			}
-
-			var submitErrorFn = function(response) {
-
-			}
-
-			$scope.submitForm = function(){
-				try {
-					var model = self.prepareRequest();
-					newsSvc.post(model)
-						.then(function(res){
-
-						}, submitErrorFn);	
-				}
-				catch(e){
-					submitErrorFn();
-				}
-				
-			}
-		}]);
-})();
-(function(){
-    angular
-        .module('stuv.core')
-        .controller('stuv.core.news.newsListCtrl', ['stuv.common.responseUtilsSvc', 'pi.core.article.articleSvc', '$scope', function(responseUtilsSvc, articleSvc, $scope){
-        	$scope.articlesPerDay = [];
-
-            var find = function(model) {
-                    return articleSvc.find(model)
-                        .then(function(res){
-                            
-                            var data = responseUtilsSvc.orderByNewest(res.data.articles, 'datePublished');
-                            
-                            angular.forEach(data, function(dto){
-                                $scope.articlesPerDay.push(dto);
-                            });
-                        });
-                },
-                reset = function(){
-                    $scope.articlesPerDay = [];
-                }
-
-            $scope.filterByCategory = function(id){
-                reset();
-                find({categoryId: id});
-            }
-
-            find();
-            
-        }]);
-})();
-(function(){
-	angular
-		.module('stuv.core')
-		.controller('stuv.core.news.newsUpdateCtrl', ['pi.core.app.eventSvc', '$scope', '$stateParams', function(eventSvc, $scope, $stateParams){
-			var self = this,
-				id = $stateParams.id;
-
-			eventSvc.get($stateParams.id)
-                .then(function(res){
-                    $scope.event = res.data.event;
-                });
-
-
-			this.prepareRequest = function(){
-				var dto = angular.copy($scope.event);
-				dto.city = 'Viseu';
-				return dto;
-			}
-
-			$scope.submitForm = function(){
-				var model = self.prepareRequest();
-				
-				eventSvc.put(id, model)
-					.then(function(res){
-						
-					}, function(res){
-
-					});
-			}
-		}]);
-})();
-(function(){
-    angular
-        .module('stuv.core')
-        .controller('stuv.core.news.newsViewCtrl', ['pi.core.article.articleSvc', '$scope', '$stateParams', function(articleSvc, $scope, $stateParams){
-           var self = this;
-            $scope.id = $stateParams.id;
-
-            articleSvc.get($stateParams.id)
-                .then(function(res){
-                    $scope.article = res.data.article;
-                });
-
-        }]);
 })();
 (function(){
 	angular
@@ -2165,4 +1911,258 @@
                 }
             }
         }])
+})();
+(function(){
+	angular
+		.module('stuv.core')
+		.controller('stuv.core.event.eventCreateCtrl', ['pi.core.app.eventSvc', '$scope', '$cordovaImagePicker', function(eventSvc, $scope, $cordovaImagePicker){
+			var self = this;
+			
+			$scope.showFileDialog = function(){
+				$cordovaImagePicker.getPictures({})
+				    .then(function (results) {
+				      for (var i = 0; i < results.length; i++) {
+				        console.log('Image URI: ' + results[i]);
+				      }
+				    }, function(error) {
+				      // error getting photos
+				    });
+			}
+			
+			$scope.event = {};
+
+			this.prepareRequest = function(){
+				var dto = angular.copy($scope.event);
+				dto.city = 'Viseu';
+				return dto;
+			}
+
+			var submitErrorFn = function(response) {
+
+			}
+
+			$scope.submitForm = function(){
+				try {
+					var model = self.prepareRequest();
+					eventSvc.post(model)
+						.then(function(res){
+
+						}, submitErrorFn);	
+				}
+				catch(e){
+					submitErrorFn();
+				}
+				
+			}
+		}]);
+})();
+(function(){
+    angular
+        .module('stuv.core')
+        .controller('stuv.core.event.eventListCtrl', ['stuv.common.responseUtilsSvc', 'pi.core.app.eventSvc', '$scope', function(responseUtilsSvc, eventSvc, $scope){
+        	$scope.eventsPerDay = [];
+
+            eventSvc.find()
+                .then(function(res){
+                	
+                    var events = responseUtilsSvc.orderByNewest(res.data.events, 'doorTime');
+
+                	angular.forEach(events, function(dto){
+                		$scope.eventsPerDay.push(dto);
+                	});
+                });
+        }]);
+})();
+(function(){
+	angular
+		.module('stuv.core')
+		.controller('stuv.core.event.eventUpdateCtrl', ['pi.core.app.eventSvc', '$scope', '$stateParams', function(eventSvc, $scope, $stateParams){
+			var self = this,
+				id = $stateParams.id;
+
+			eventSvc.get($stateParams.id)
+                .then(function(res){
+                    $scope.event = res.data.event;
+                });
+
+
+			this.prepareRequest = function(){
+				var dto = angular.copy($scope.event);
+				dto.city = 'Viseu';
+				return dto;
+			}
+
+			$scope.submitForm = function(){
+				var model = self.prepareRequest();
+				
+				eventSvc.put(id, model)
+					.then(function(res){
+						
+					}, function(res){
+
+					});
+			}
+		}]);
+})();
+(function(){
+    angular
+        .module('stuv.core')
+        .controller('stuv.core.event.eventViewCtrl', ['pi.core.app.eventSvc', '$scope', '$stateParams', '$cordovaSocialSharing', function(eventSvc, $scope, $stateParams, $cordovaSocialSharing){
+           var self = this;
+            $scope.id = $stateParams.id;
+
+            eventSvc.get($stateParams.id)
+                .then(function(res){
+                    $scope.event = res.data.event;
+                });
+
+            $scope.shareEmail = function(){
+                $cordovaSocialSharing
+                    .shareViaEmail($scope.event.headline, $scope.event.headline, $scope.event.image, $scope.event.url) // Share via native share sheet
+                    .then(function(result) {
+                      // Success!
+                    }, function(err) {
+                      // An error occured. Show a message to the user
+                    });
+            }
+
+            $scope.shareTwitter = function(){
+                $cordovaSocialTwitter
+                    .shareViaFacebook($scope.event.headline, $scope.event.headline, $scope.event.image, $scope.event.url) // Share via native share sheet
+                    .then(function(result) {
+                      // Success!
+                    }, function(err) {
+                      // An error occured. Show a message to the user
+                    });
+            }
+
+            $scope.shareFacebook = function(){
+                $cordovaSocialSharing
+                    .shareViaFacebook($scope.event.headline, $scope.event.headline, $scope.event.image, $scope.event.url) // Share via native share sheet
+                    .then(function(result) {
+                      // Success!
+                    }, function(err) {
+                      // An error occured. Show a message to the user
+                    });
+            }
+        }]);
+})();
+(function(){
+	angular
+		.module('stuv.core')
+		.controller('stuv.core.news.newsCreateCtrl', ['pi.core.app.articleSvc', '$scope', '$cordovaFileOpener2', function(newsSvc, $scope, $cordovaFileOpener2){
+			var self = this;
+			
+			$scope.showFileDialog = function(){
+				$cordovaFileOpener2.open(
+			    '/sdcard/Download/gmail.apk',
+			    'application/vnd.android.package-archive'
+			  ).then(function() {
+			      // Success!
+			  }, function(err) {
+			      // An error occurred. Show a message to the user
+			  });	
+			}
+			
+			$scope.news = {};
+
+			this.prepareRequest = function(){
+				var dto = angular.copy($scope.news);
+				dto.city = 'Viseu';
+				return dto;
+			}
+
+			var submitErrorFn = function(response) {
+
+			}
+
+			$scope.submitForm = function(){
+				try {
+					var model = self.prepareRequest();
+					newsSvc.post(model)
+						.then(function(res){
+
+						}, submitErrorFn);	
+				}
+				catch(e){
+					submitErrorFn();
+				}
+				
+			}
+		}]);
+})();
+(function(){
+    angular
+        .module('stuv.core')
+        .controller('stuv.core.news.newsListCtrl', ['stuv.common.responseUtilsSvc', 'pi.core.article.articleSvc', '$scope', function(responseUtilsSvc, articleSvc, $scope){
+        	$scope.articlesPerDay = [];
+
+            var find = function(model) {
+                    return articleSvc.find(model)
+                        .then(function(res){
+                            
+                            var data = responseUtilsSvc.orderByNewest(res.data.articles, 'datePublished');
+                            
+                            angular.forEach(data, function(dto){
+                                $scope.articlesPerDay.push(dto);
+                            });
+                        });
+                },
+                reset = function(){
+                    $scope.articlesPerDay = [];
+                }
+
+            $scope.filterByCategory = function(id){
+                reset();
+                find({categoryId: id});
+            }
+
+            find();
+            
+        }]);
+})();
+(function(){
+	angular
+		.module('stuv.core')
+		.controller('stuv.core.news.newsUpdateCtrl', ['pi.core.app.eventSvc', '$scope', '$stateParams', function(eventSvc, $scope, $stateParams){
+			var self = this,
+				id = $stateParams.id;
+
+			eventSvc.get($stateParams.id)
+                .then(function(res){
+                    $scope.event = res.data.event;
+                });
+
+
+			this.prepareRequest = function(){
+				var dto = angular.copy($scope.event);
+				dto.city = 'Viseu';
+				return dto;
+			}
+
+			$scope.submitForm = function(){
+				var model = self.prepareRequest();
+				
+				eventSvc.put(id, model)
+					.then(function(res){
+						
+					}, function(res){
+
+					});
+			}
+		}]);
+})();
+(function(){
+    angular
+        .module('stuv.core')
+        .controller('stuv.core.news.newsViewCtrl', ['pi.core.article.articleSvc', '$scope', '$stateParams', function(articleSvc, $scope, $stateParams){
+           var self = this;
+            $scope.id = $stateParams.id;
+
+            articleSvc.get($stateParams.id)
+                .then(function(res){
+                    $scope.article = res.data.article;
+                });
+
+        }]);
 })();
