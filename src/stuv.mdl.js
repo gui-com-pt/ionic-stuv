@@ -9,16 +9,34 @@
 	angular
 		.module('stuv', [
 			'stuv.core',
+			'stuv.core.event',
+			'stuv.core.news',
+			'stuv.core.bus',
+			'angularMoment',
+			'stuv.common',
 			'templates',
 			'ionic',
 			'ngCordova',
             'leaflet-directive',
-
+            'ngFileUpload',
             'pi',
             'pi.core',
             'pi.core.app'
 			])
-		.config(['$stateProvider', function($stateProvider){
+		.config(['piProvider', 'piHttpProvider', 'facebookMetaServiceProvider', '$stateProvider', '$cordovaFacebookProvider', function(piProvider, piHttpProvider, facebookMetaServiceProvider, $stateProvider, $cordovaFacebookProvider){
+
+			piHttpProvider.setBaseUrl('https://codigo.ovh/api');
+	        facebookMetaServiceProvider.setAuthor('https://www.facebook.com/living.with.jesus');
+	        facebookMetaServiceProvider.setPublisher('https://www.facebook.com/viseu.ovh');
+	        facebookMetaServiceProvider.setSiteName('Viseu');
+	        facebookMetaServiceProvider.setType('article');
+	        facebookMetaServiceProvider.setLocale('pt_PT');
+	        facebookMetaServiceProvider.setImage('https://image.freepik.com/free-vector/web-programmer_23-2147502079.jpg');
+
+	        var appID = 123456789;
+	        var version = "v2.0"; // or leave blank and default is v2.0
+	        //$cordovaFacebookProvider.browserInit(appID, version);
+	        piProvider.setAppId('viseu');
 
 			$stateProvider
 				.state('home', {
@@ -33,27 +51,6 @@
 					controllerAs: 'ctrl',
 					templateUrl: 'core/webcam.tpl.html'
 				})
-				.state('register-stop', {
-					url: '/',
-					controller: 'stuv.core.registerStopCtrl',
-					templateUrl: 'core/register-stop.tpl.html'
-				})
-				.state('bus-schedules', {
-					url: '/bus-schedules/:id',
-					controller: 'stuv.core.busSchedulesCtrl',
-					templateUrl: 'core/bus-schedules.tpl.html'
-				})
-                .state('event-list', {
-                    url: '/event-list',
-                    controller: 'stuv.core.eventListCtrl',
-                    controllerAs: 'ctrl',
-                    templateUrl: 'core/event-list.tpl.html'
-                })
-                .state('event-view', {
-                    url: '/event-view/:id',
-                    controller: 'stuv.core.eventViewCtrl',
-                    templateUrl: 'core/event-view.tpl.html'
-                })
 				.state('support', {
 					url: '/support',
 					controller: 'stuv.core.supportCtrl',
@@ -65,7 +62,17 @@
                     templateUrl: 'core/places-list.tpl.html'
                 });
 		}])
-		.run(['$ionicPlatform', '$cordovaGeolocation', '$state', 'stuv.core.setupSvc', function($ionicPlatform, $cordovaGeolocation, $state, setupSvc){
+		.run(['$ionicPlatform', '$cordovaGeolocation', '$state', 'stuv.core.setupSvc', 'pi.core.app.eventSvc', 'pi.core.article.articleCategorySvc', '$rootScope', function($ionicPlatform, $cordovaGeolocation, $state, setupSvc, eventCategorySvc, articleCategorySvc, $rootScope){
+
+			articleCategorySvc.find({take: 100})
+		        .then(function(res){
+		          $rootScope.articleCategories = res.data.categories;
+		        });
+		        
+		    eventCategorySvc.find({take: 100})
+		        .then(function(res){
+		          $rootScope.eventCategories = res.data.categories;
+		        });
 
 			$ionicPlatform.ready(function() {
 			    // Hide the accessory bar by default (remove this to show the accessory bar above the keyboard

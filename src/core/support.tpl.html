@@ -1,1 +1,38 @@
-support not available!
+<ion-view view-title="Ajuda e Suporte">
+	<ion-content>
+		<div class="padding">
+			<p>Para qualquer esclarecimento sobre o projecto <b>viseu.ovh</b> nao exite em contactar.<br>
+		E um projecto recente que necessita de apoio da comunidade, ajuda reportando erros e sugestoes.</p>
+			<p>No prazo de 48 horas sera respondido o seu contacto.</p>
+			 <div class="row">
+            <div class="col"><i class="ion ion-ios-telephone"></i> +351 960 032 154</div>
+            <div class="col"><i class="ion ion-android-calendar"></i> suporte@viseu.ovh</div>
+        </div>
+		</div>
+		<div class="list">
+          <label class="item item-input item-select">
+            <div class="input-label">
+              Categoria do Ticket
+            </div>
+            <select ng-model="ticket.type">
+              <option>Esclarecimento</option>
+              <option selected>Geral</option>
+              <option>Reportar Erro</option>
+              <option>Sugestao</option>
+              <option>Reclamaçao</option>
+            </select>
+          </label>
+          <label class="item item-input item-stacked-label">
+            <span class="input-label">Hora do acontecimento</span>
+            <input ng-model="ticket.when" type="date">
+          </label>
+          <label class="item item-input item-stacked-label">
+            <span class="input-label">Escreve o teu ticket</span>
+            <textarea ng-model="ticket.body"></textarea>
+          </label>
+          <label class="item item-input">
+          <button ng-click="submitForm()" class="button button-stable">Enviar Ticket</button>
+          </label>
+        </div>
+	</ion-content>
+</ion-view>

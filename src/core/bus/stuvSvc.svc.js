@@ -1,6 +1,6 @@
 (function(){
     angular
-        .module('stuv.core')
+        .module('stuv.core.bus')
         .factory('stuv.core.stuvSvc', ['$cordovaGeolocation', '$q', '$rootScope', '$ionicModal', function($cordovaGeolocation, $q, $rootScope, $ionicModal){
 
             var getFormatedCords = function() {
@@ -15,7 +15,7 @@
 
             var $scope = $rootScope.$new();
 
-            $ionicModal.fromTemplateUrl('core/schedule-modal.tpl.html', {
+            $ionicModal.fromTemplateUrl('core/bus/schedule-modal.tpl.html', {
                 scope: $scope,
                 animation: 'slide-in-up'
             }).then(function(modal) {

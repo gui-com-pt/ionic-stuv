@@ -1,0 +1,23 @@
+<ion-view>
+    <ion-nav-title>
+        Evento
+    </ion-nav-title>
+    <ion-nav-buttons side="secondary">
+        <button class="button button-clear" ui-sref="event-update({id: event.id})">Editar</button>
+    </ion-nav-buttons>
+    <ion-content>
+        <div style="background-image:url(https://codigo.ovh/cdn/main_22srTAcHetCNrqadskVB.png)" class="cover__wrapper">
+            <h3 class="item__name" ng-bind="article.name"></h3>
+        </div>
+        <div class="row">
+            <div class="col"><i class="icon ion-android-calendar"></i> <span ng-bind="event.doorTime"></span></div>
+            <div class="col"><i class="icon ion-android-calendar"></i> <span ng-bind="event.endDate"></span></div>
+            <a ng-click="shareFacebook()" class="col"><i class="icon ion-social-facebook"></i></a>
+            <a ng-click="shareTwitter()" class="col"><i class="icon ion-social-twitter"></i></a>
+            <a ng-click="shareEmail()" class="col"><i class="icon ion-social-email"></i></a>
+             
+        </div>
+        <div ng-bind-html="event.content"></div>
+        <div pi-facebook-comment page-href="{{event.url}}" numposts="5" colorscheme="light"></div>
+    </ion-content>
+</ion-view>

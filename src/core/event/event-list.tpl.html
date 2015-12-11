@@ -1,0 +1,20 @@
+<ion-view view-title="Eventos">
+    <ion-nav-buttons side="secondary">
+        <a ui-sref="event-create"><i class="ion-ios-search-strong"></i></a>
+    </ion-nav-buttons>
+    <ion-content>
+        <div class="list">
+        <div ng-repeat="current in eventsPerDay">
+        	<a class="item item-positive">
+        	{{current.day}}
+        	</a>
+            <a ng-repeat="event in current.results" class="item item-thumbnail-left" href="" ui-sref="event-view({id: event.id})" >
+                <img ng-src="{{event.thumbnailSrc}}" />
+                <h2><span am-time-ago="event.doorTime | amFromUnix"></span> | {{event.title}}</h2>
+                <div ng-bind-html="event.excerpt"></div>
+            </a>
+            </div>
+            <div ng-repeat-end=""></div>
+        </div>
+    </ion-content>
+</ion-view>

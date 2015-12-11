@@ -1,0 +1,25 @@
+<ion-view view-title="Feira São Mateus 2015">
+    <ion-nav-buttons side="secondary">
+        <button class="button button-clear" ui-sref="news-create">Criar Evento</button>
+    </ion-nav-buttons>
+    <ion-content>
+        <div class="list-query">
+            <div ng-repeat="category in $root.articleCategories" class="list-query__item">
+                <button class="list-query__btn" ng-bind="category.displayName" ng-click="filterByCategory(category.id)"></button>
+            </div>
+        </div>
+        <div class="list">
+        <div ng-repeat-start="current in articlesPerDay">
+        	<a class="item item-positive">
+        	{{current.day}} <span am-time-ago="current.day"></span>
+        	</a>
+            <a ng-repeat="article in current.results" class="item item-thumbnail-left" href="" ui-sref="news-view({id: article.id})" >
+                <img ng-src="{{article.image}}" />
+                <h2 ng-bind="article.name"></h2>
+                <p ng-bind-html="article.headline"></p>
+            </a>
+            </div>
+            <div ng-repeat-end=""></div>
+        </div>
+    </ion-content>
+</ion-view>

@@ -6,7 +6,6 @@ var sass = require('gulp-sass');
 var minifyCss = require('gulp-minify-css');
 var rename = require('gulp-rename');
 var sh = require('shelljs');
-var uglify = require('gulp-uglifyjs');
 var templateCache = require('gulp-angular-templatecache');
 var watch = require('gulp-watch');
 
@@ -14,22 +13,15 @@ var paths = {
   sass: ['./scss/**/*.scss'],
   appModules: [
   './src/*.mdl.js',
-  './src/common/*.mdl.js',
-  './src/common/**/*.mdl.js',
-  './src/common/**/**/*.mdl.js',
-  './src/common/**/**/**/*.mdl.js',
-  './src/core/*.mdl.js',
-  './src/core/**/*.mdl.js',
-  './src/core/**/**/*.mdl.js',
-  './src/core/**/**/**/*.mdl.js',
+  './src/**/*.mdl.js',
+  './src/**/**/*.mdl.js',
+  './src/**/**/**/*.mdl.js',
+  './src/**/**/**/**/*.mdl.js',
   './src/*.js',
   './src/**/*.js',
-  './src/common/*.js',
-  './src/common/**/*.js',
-  './src/common/**/**/*.js',
-  './src/core/*.js',
-  './src/core/**/*.js',
-  './src/core/**/**/*.js'
+  './src/**/**/*.js',
+  './src/**/**/**/*.js',
+  './src/**/**/**/**/*.js'
 ],
 templates: ['./src/*.html', './src/**/*.html', './src/**/**/*.html', './src/**/**/**/*.html', './src/**/**/**/**/*.html'],
 angularDep: ['./www/lib/angular-i18n/angular-locale_pt.js'],
@@ -37,6 +29,7 @@ coreDep: [
   './www/lib/geolib/dist/geolib.js ',
   './www/lib/underscore/underscore.js',
   './www/lib/moment/moment.js',
+  './www/lib/angular-moment/angular-moment.js',
   './www/lib/moment/locale/pt.js',
   './www/lib/moment-timezone/moment-timezone.js',
   './www/lib/ngCordova/dist/ng-cordova.js',
@@ -44,8 +37,11 @@ coreDep: [
   './www/lib/angular-leaflet-directive/dist/angular-leaflet-directive.js',
   './www/lib/pi-angular/dist/pi-angular.js',
   './www/lib/angular-resource/angular-resource.js',
-    './www/lib/angular-facebook/lib/angular-facebook.js',
-    './www/lib/angular-facebook/lib/angular-facebook-phonegap.js'
+  './www/lib/angular-facebook/lib/angular-facebook.js',
+  './www/lib/angular-facebook/lib/angular-facebook-phonegap.js',
+  './www/lib/angular-simple-logger/dist/angular-simple-logger.js',
+  './www/lib/ng-file-upload-shim/ng-file-upload-shim.js',
+  './www/lib/ng-file-upload/ng-file-upload.js'
 ]
 };
 

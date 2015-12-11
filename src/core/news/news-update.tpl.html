@@ -1,0 +1,45 @@
+<ion-view>
+    <ion-nav-title>
+        Criar Evento
+    </ion-nav-title>
+    <ion-content>
+        <div class="list">
+          <label class="item item-input item-select">
+            <div class="input-label">
+              Tipo de Evento
+            </div>
+            <select ng-model="event.tags">
+              <option>Concerto</option>
+              <option selected>Fittness</option>
+            </select>
+          </label>
+          <label class="item item-input item-stacked-label">
+            <span class="input-label">Hora de Entrada</span>
+            <input ng-model="event.doorTime" type="date">
+          </label>
+          <label class="item item-input item-stacked-label">
+            <span class="input-label">Hora de Fim</span>
+            <input ng-model="event.endDate" type="date">
+          </label>
+          <label class="item item-input item-stacked-label">
+            <span class="input-label">Duraçao do Evento</span>
+            <input ng-model="event.duration" type="text">
+          </label>
+          <label class="item item-input item-stacked-label">
+            <span class="input-label">Nome do Evento</span>
+            <input ng-model="event.title" type="text">
+          </label>
+          <label class="item item-input item-stacked-label">
+            <span class="input-label">Descricao curta</span>
+            <input ng-model="event.excerpt" type="text">
+          </label>
+          <label class="item item-input item-stacked-label">
+            <span class="input-label">O conteudo da noticia</span>
+            <textarea ng-model="event.content"></textarea>
+          </label>
+          <label class="item item-input">
+          <button ng-click="submitForm()" class="button button-stable">Criar Evento</button>
+          </label>
+        </div>
+    </ion-content>
+</ion-view>

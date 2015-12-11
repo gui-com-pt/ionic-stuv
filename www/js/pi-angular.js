@@ -39,6 +39,12 @@
 		.module('pi.core', ['pi']);
 
 	angular
+		.module('pi.gallery', []);
+	
+	angular
+		.module('pi.adsense', ['pi']);
+
+	angular
 		.module('pi.core.user', ['pi.core']);
 
 	angular
@@ -83,6 +89,16 @@ angular
 	angular
 		.module('pi.form', []);
 })();
+(function(){
+  angular
+    .module('pi.form-contact', ['pi.mandril']);
+})();
+
+(function(){
+  angular
+		.module('pi.mandril', []);
+})();
+
 (function(){
 	angular.
 		module('pi.ui-extensions', ['ui.router']);
@@ -579,6 +595,7 @@ angular
         .value('piSettings', settings)
 		.provider('piApp', providerFn);
 })();
+
 (function(){
   angular
     .module('pi.admin')
@@ -800,6 +817,36 @@ angular
 		.module('pi.chat')
 		.directive
 })();
+(function(){
+	angular
+		.module('pi.gallery')
+		.directive('piGallery', [function(){
+	    	return {
+	    		templateUrl: 'core/pi-gallery.tpl.html',
+	    		scope: {
+	    			images: '='
+	    		},
+	    		replace: true,
+	    		controller: ['$scope', '$rootScope', function($scope, $rootScope){
+	    			$scope.path = "src";
+					$scope.tileWidth = 150;
+					$scope.tileHeight = 150;
+
+					$scope.displayImage = function (img) {
+						$scope.selected = $scope.images.indexOf(img);
+						$scope.selectedImg = img;
+						$scope.showModal = true;
+					};
+
+					$scope.close = function(){
+						$scope.showModal = false;
+					}
+	    		}]
+	    	}
+	    }]);
+
+	    
+})();
 (function() {
     angular
         .module('pi')
@@ -893,7 +940,7 @@ angular
 				{
 					deferred.reject(res);
 				};
-			$http.post('/api/account/recover')
+			$http.post('/account/recover')
 				.then(successFn, errorFn, {email: email});
 
 			return deferred.promise;
@@ -917,7 +964,7 @@ angular
 					deferred.reject(res);
 				};
 
-			$http.post('/api/accouunt/recover/send', model)
+			$http.post('/accouunt/recover/send', model)
 				.then(successFn, errorFn);
 
 			return deferred.promise;
@@ -1012,10 +1059,11 @@ angular
 })();
 (function(){
 	'use strict';
-	var piCommentResource = function($resource) {
+	var piCommentResource = function($resource, piHttp) {
 		return {
 			create: function(namespace, id) {
-				return $resource('/comment/' + namespace + '/' + id,
+
+				return $resource(piHttp.getBaseUrl() + '/comment/' + namespace + '/' + id,
 		            {},
 		            {
 		            'query': {
@@ -1029,7 +1077,7 @@ angular
 			}
 		}
 	};
-	piCommentResource.$inject = ['$resource'];
+	piCommentResource.$inject = ['$resource', 'piHttp'];
 
 	var piCommentWindow = function(piCommentResource) {
 		
@@ -1571,7 +1619,6 @@ angular
       .directive('piContentEdit', piContentEdit);
 })();
 
-
 /**
  * @ng-doc directive
  * @name scrollToId
@@ -1659,7 +1706,7 @@ var INTEGER_REGEXP = /^\-?\d*$/;
                 if (files && files.length) {
                     for (var i = 0; i < files.length; i++) {
                         var file = files[i];
-                        var url = '/filesystem';
+                        var url = piHttp.getBaseUrl() + '/filesystem';
 
                         Upload.upload({
                             url: url,
@@ -2058,6 +2105,122 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 })();
 
 (function(){
+  angular
+    .module('pi.form-contact')
+    .provider('piFormConfiguration', [function(){
+      var config = {
+        toName: 'Localhost',
+        toEmail: 'local@localhost',
+        fromName: 'Localhost',
+        fromEmail: 'local@localhost',
+        subject: 'Form Contact'
+      };
+      return {
+        $get: [function(){
+          this.getToName = function(){
+            return config['toName'];
+          };
+
+          this.getToEmail = function(){
+            return config['toEmail'];
+          };
+
+          this.getFromName = function(){
+            return config['fromName'];
+          };
+
+          this.getFromEmail = function(){
+            return config['fromEmail'];
+          };
+
+          this.getSubject = function(){
+            return config['subject'];
+          };
+
+          return this;
+        }],
+        setToName: function(value){
+          config['toName'] = value;
+        },
+        setToEmail: function(value){
+          config['toEmail'] = value
+        },
+        setFromName: function(value){
+          config['fromName'] = value;
+        },
+        setFromEmail: function(value){
+          config['fromEmail'] = value
+        },
+        setSubject: function(value){
+          config['subject'] = value
+        }
+      }
+    }])
+    .directive('piFormContact', ['piMandril', 'piFormConfiguration', function(piMandril, piFormConfiguration){
+
+        return {
+            link: function(scope, elem, attrs) {
+                scope.isActive = false;
+
+                var buildFormBody = function(elems) {
+                  var msg = '';
+                  angular.forEach(elems, function(value, key){
+                    msg = msg + '<p><b>' + value.name + '</b>: ' + value.value + '</p>';
+                  });
+
+                  return msg;
+                }
+
+                var cleanElements = function(elems){
+                  angular.forEach(elems, function(value, key){
+                    elems[key].value = '';
+                  });
+                }
+
+                scope.submit = function(){
+                    var elems = elem.find('[pi-form-control]');
+                    var res = [];
+                    var msg = buildFormBody(elems);
+
+                    var toName = _.isUndefined(elem.attr('pi-form-to-name')) ? piFormConfiguration.getToEmail() : elem.attr('pi-form-to-name'),
+                        toEmail = _.isUndefined(elem.attr('pi-form-to-email')) ? piFormConfiguration.getToEmail() : elem.attr('pi-form-to-email'),
+                        subject = _.isUndefined(elem.attr('pi-form-subject')) ? piFormConfiguration.getSubject() : elem.attr('pi-form-subject');
+
+                    var fromName = elem.find('[pi-form-from-name]').length > 0 ? elem.find('[pi-form-from-name]')[0].value : piFormConfiguration.getFromName(),
+                        fromEmail = elem.find('[pi-form-from-email]').length > 0 ? elem.find('[pi-form-from-email]')[0].value : piFormConfiguration.getFromEmail();
+
+                    isActive = true;
+                    piMandril.send(fromEmail, fromName, toEmail, toName, subject, msg)
+                      .then(function(res){
+                    	   scope.formSented = true;
+                         scope.isActive = false;
+                         cleanElements(elems);
+                    	}, function(err){
+                        scope.isActive = false;
+                      });
+                }
+            },
+            controller: ['$scope', function($scope){
+              this.submit = function(){
+                $scope.submit();
+              }
+            }]
+        }
+    }])
+    .directive('piFormSubmit', [function(){
+      return {
+        require: '^piFormContact',
+        link: function(scope, elem, attrs, piFormContactCtrl) {
+          elem.bind('click', function(){
+              piFormContactCtrl.submit();
+          })
+        }
+      }
+    }]);
+
+})();
+
+(function(){
 	var fn = function(apiException){
 
 		var svc = function(response) {
@@ -2254,6 +2417,51 @@ var INTEGER_REGEXP = /^\-?\d*$/;
             }
         }]);
 })();
+(function(){
+  (function(){
+    angular
+      .module('pi.mandril')
+      .provider('piMandril', [function(){
+      	var _token = '';
+      	return {
+      		$get: ['$q', function($q){
+
+  				this.send =  function(from, fromName, to, toName, subject, body) {
+  				      var mandrill_client = new mandrill.Mandrill(_token);
+
+  					var promise = $q.defer(),
+  						message = {
+  		                  "html": body,
+  		                  "text": body,
+  		                  "subject": subject,
+  		                  "from_email": from,
+  		                  "from_name": 'Formulário',
+  		                  "to": [{
+  		                          "email": to,
+  		                          "name": "Website",
+  		                          "type": "to"
+  		                      }]
+  		              	};
+  		              mandrill_client.messages.send({"message": message, "async": false}, function(result) {
+  		                  promise.resolve(result);
+  		              }, function(e) {
+  		                  promise.reject(e);
+  		              });
+
+  		             return promise.promise;
+      			}
+
+      			return this;
+      		}],
+      		setToken: function(value){
+      			_token = value;
+      		}
+
+      	}
+      }]);
+  })();
+})();
+
 (function(){
   var piModalStack = function(piStack)
   {
@@ -2956,6 +3164,177 @@ var INTEGER_REGEXP = /^\-?\d*$/;
     	.module('pi')
     	.factory('dataPagingBase', pagingFn)
 })();
+(function(){
+	angular
+		.module('pi')
+		.provider('facebookMetaService', [function(){
+
+			var _meta = {},
+				_author = 'https://www.facebook.com/living.with.jesus',
+				_publisher = 'https://www.facebook.com/codigo.ovh',
+				_locale = 'pt_PT',
+				_type = 'article',
+				_siteName = 'Codigo',
+				_image = '',
+				_description = 'Os artigos que escrevo são daquilo que aprendo e faço, desde linguagens de programação e segurança informática a notícias e tutoriais.',
+				_image = '';
+
+			var setDefault = function() {
+				_meta = {
+					'og:site_name': _siteName,
+					'og:type': _type,
+					'og:locale': _locale,
+					'og:image': _image,
+					'article:author': _author,
+					'article:publisher': _publisher,
+					'og:description': _description,
+					'description': _description
+				};
+			}
+
+			setDefault();
+
+			return {
+				$get: function() {
+					return {
+						clean: function(){
+							setDefault();
+						},
+						set: function(title, description, image) {
+							_meta['og:locale'] = 'pt_PT';
+							_meta['og:title'] = title;
+							_meta['og:description'] = description;
+							_meta['description'] = description;
+							_meta['og:image'] = image;
+						},
+						meta: function(){
+							return _meta;
+						}
+					}
+				},
+				setDescription: function(type) {
+					_description = type;
+				},
+				setImage: function(image) {
+					_image = image;
+				},
+				setAuthor: function(author){
+					_author = author;
+				},
+				setPublisher: function(publisher) {
+					_publisher = publisher;
+				},
+				setLocale: function(locale) {
+					_locale = locale;
+				},
+				setType: function(type) {
+					_type = type;
+				},
+				setSiteName: function(siteName) {
+					_siteName = siteName;
+				}
+			}
+
+			
+		}])
+		.directive('facebookMeta', [function(){
+			return {
+				replace: true,
+				template: '<meta ng-repeat="(key, value) in $root.metas" property="{{key}}" content="{{value}}">',
+				controller: ['$rootScope', '$scope', 'facebookMetaService', function($rootScope, $scope, facebookMetaService) {
+					facebookMetaService.set('Codigo', 'Site de Programação', 'http://codigo.ovh/logo.png');
+					$rootScope.metas = facebookMetaService.meta();
+				}]
+			}
+		}])
+})();
+(function(){
+    var fn = function($resource, fittingModel, piHttp) {
+        return $resource(piHttp.getBaseUrl() + '/feed/' + fittingModel.userId,
+            {},
+            {
+                'query': {
+                    method: 'GET',
+                    transformResponse: function(res) {
+                        return angular.fromJson(res).feeds || [];
+                    },
+                    isArray: true
+                }
+            });
+    };
+
+    fn.$inject = ['$resource', 'fittingModel', 'piHttp'];
+
+    angular
+        .module('pi')
+        .factory('FeedResource', fn);
+})();
+
+(function(){
+
+	angular
+		.module('pi.adsense')
+		.run(['$rootScope', '$window', function($rootScope, $window){
+
+			$rootScope.$on('$locationChangeStart', function () {
+              Object.keys($window).filter(function(k) { return k.indexOf('google') >= 0 }).forEach(
+                function(key) {
+                  delete($window[key]);
+                }
+              );
+            });
+
+		}])
+		.provider('googleAdSenseService', [function(){
+	      
+	      var self = this;
+	      self.format = 'auto';
+
+	      return {
+	        $get: function() {
+
+	          this.getClient = function(){
+	            return self.client;
+	          };
+
+	          this.getSlot = function(){
+	            return self.slot;
+	          };
+
+	          this.getFormat = function(){
+	            return self.format;
+	          };
+
+	          return this;
+	        },
+	        setClient: function(value){
+	          self.client = value;
+	        },
+	        setSlot: function(value){
+	          self.slot = value;
+	        },
+	        setFormat: function(value){
+	          self.format = value;
+	        }
+	      };
+
+	    }])
+	    .directive('googleAdSense', ['googleAdSenseService', function (googleAdSenseService) {
+	        
+	        return {
+	            restrict: 'A',
+	            replace: true,       
+	            template: '<ins class="adsbygoogle" style="display:block" data-ad-client="{{client}}" data-ad-slot="{{slot}}" data-ad-format="{{format}}"></ins>',
+	            controller: ['$scope', 'googleAdSenseService', function($scope, googleAdSenseService){
+	              $scope.client = googleAdSenseService.getClient();
+	              $scope.slot = googleAdSenseService.getSlot();
+	              $scope.format = googleAdSenseService.getFormat();
+	              (adsbygoogle = window.adsbygoogle || []).push({});
+	            }]
+	        };
+
+	    }]);
+})();
 /**
 (function(){
 
@@ -3010,60 +3389,60 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 	 	.module('pi')
 		.provider('piHttp', [
 			function () {
-				var self = this;
-				this.baseUrl = '';
-				this.token = null;
-
 				var formatUrl = function(url) {
 					return self.baseUrl + url;
-				}
-
-				var getFn = function($http) {
-
-					var s = this;
-
-					// Augments the request configuration object
-					// with OAuth specific stuff (e.g. some header)
-					function getAugmentedConfig(cfg) {
-						var config  = cfg || {};
-						config.headers = config.headers || {};
-						//config.headers.someHeaderName = 'some-header-value';
-						return config;
-					}
-
-					// The service object to be returned (`$http` wrapper)
-
-
-					// Create wrappers for methods WITHOUT data
-					['delete', 'get', 'head', 'jsonp'].forEach(function (method) {
-						s[method] = function (url, config) {
-						    var config = getAugmentedConfig(config);
-						    return $http[method](formatUrl(url), config);
-						};
-					});
-
-					// Create wrappers for methods WITH data
-					['post', 'put'].forEach(function (method) {
-						s[method] = function (url, data, config) {
-						    var config = getAugmentedConfig(config);
-						    return $http[method](formatUrl(url), data, config);
-						};
-					});
-
-					// Return the service object
-					return this;
 				};
-				getFn.$inject = ['$http'];
+				var self = this;
 
-				this.$get = getFn;
+				return  {
+					$get: function($http) {
 
-				this.setBaseUrl = function(url) {
-					self.baseUrl = url;
-				}
+						var s = this;
 
-				this.setAuth = function(token) {
-					self.token = token;
-				}
+						// Augments the request configuration object
+						// with OAuth specific stuff (e.g. some header)
+						function getAugmentedConfig(cfg) {
+							var config  = cfg || {};
+							config.headers = config.headers || {};
+							//config.headers.someHeaderName = 'some-header-value';
+							return config;
+						}
+
+						// The service object to be returned (`$http` wrapper)
+
+
+						// Create wrappers for methods WITHOUT data
+						['delete', 'get', 'head', 'jsonp'].forEach(function (method) {
+							s[method] = function (url, config) {
+							    var config = getAugmentedConfig(config);
+							    return $http[method](formatUrl(url), config);
+							};
+						});
+
+						// Create wrappers for methods WITH data
+						['post', 'put'].forEach(function (method) {
+							s[method] = function (url, data, config) {
+							    var config = getAugmentedConfig(config);
+							    return $http[method](formatUrl(url), data, config);
+							};
+						});
+
+						this.getBaseUrl = function() {
+							return self.baseUrl;
+						}
+
+						// Return the service object
+						return this;
+					},
+					baseUrl: '',
+					token: null,
+					setBaseUrl: function(url) {
+						self.baseUrl = url;
+					},
+					setAuth: function(token) {
+						self.token = token;
+					}
+				};
 			}
 		]);
 })();
@@ -3468,19 +3847,19 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 		.factory('pi.core.app.appSvc', ['piHttp', function(piHttp){
 
 			this.post = function(model){
-				return piHttp.post('/api/application', model);
+				return piHttp.post('/application', model);
 			}
 
 			this.get = function(id, model) {
-				return piHttp.get('/api/application/' + id, model);
+				return piHttp.get('/application/' + id, model);
 			}
 
 			this.find = function(model) {
-				return piHttp.get('/api/application', model);
+				return piHttp.get('/application', model);
 			}
 
 			this.put = function(id, model){
-				return piHttp.post('/api/application/' + id, model);
+				return piHttp.post('/application/' + id, model);
 			}
 
 			return this;
@@ -3579,19 +3958,64 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 		.factory('pi.core.chat.inboxSvc', ['piHttp', '$rootScope', function(piHttp, $rootScope){
 
 			this.post = function(model){
-				return piHttp.post('/api/inbox', model);
+				return piHttp.post('/inbox', model);
 			}
 
 			this.get = function(id) {
 				var model = {};
 				model.fromId = id;
 				model.toId = $rootScope.userId;
-				return piHttp.post('/api/inbox-view', model);
+				return piHttp.post('/inbox-view', model);
 			}
 
 			return this;
 		}]);
 })();
+(function(){
+	
+	angular
+		.module('pi.core.app')
+		.factory('pi.core.app.eventAttendSvc', ['piHttp', function(piHttp){
+			
+			this.post = function(model) {
+				return piHttp.post('/event-attend', model);
+			}
+
+			this.get = function(id, model) {
+				return piHttp.get('/event-attend/' + id);
+			}
+
+			this.find = function(model) {
+				return piHttp.get('/event-attend', model);
+			}
+
+			return this;
+		}]);
+})();
+(function(){
+	angular
+		.module('pi.core.app')
+		.factory('pi.core.app.eventSubSvc', ['piHttp', function(piHttp){
+			
+			this.post = function(model) {
+				return piHttp.post('/event-subscription', model);
+			}
+
+			this.get = function(id, model) {
+				return piHttp.get('/event-subscription/' + id);
+			}
+
+			this.find = function(model) {
+				return piHttp.get('/event-subscription', model);
+			}
+
+			this.remove = function(id) {
+				return piHttp.post('/event-subscription-remove/' + id);
+			};
+
+			return this;
+		}]);
+	})();
 (function(){
 	'use strict';
 
@@ -3600,65 +4024,27 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 		.factory('pi.core.app.eventSvc', ['piHttp', function(piHttp){
 
 			this.post = function(model){
-				return piHttp.post('/api/event', model);
+				return piHttp.post('/event', model);
 			}
 
 			this.get = function(id, model) {
-				return piHttp.get('/api/event/' + id, model);
+				return piHttp.get('/event/' + id, model);
 			}
 
 			this.find = function(model) {
-				return piHttp.get('/api/event', model);
+				return piHttp.get('/event', model);
 			};
 
 			this.remove = function(id) {
-				return piHttp.post('/api/event-remove/' + id);
+				return piHttp.post('/event-remove/' + id);
+			};
+
+			this.put = function(id, model) {
+				return piHttp.post('/event/' + id, model);
 			};
 
 			return this;
 		}]);
-
-		angular
-			.module('pi.core.app')
-			.factory('pi.core.app.eventSubSvc', ['piHttp', function(piHttp){
-				
-				this.post = function(model) {
-					return piHttp.post('/api/event-subscription', model);
-				}
-
-				this.get = function(id, model) {
-					return piHttp.get('/api/event-subscription/' + id);
-				}
-
-				this.find = function(model) {
-					return piHttp.get('/api/event-subscription', model);
-				}
-
-				this.remove = function(id) {
-					return piHttp.post('/api/event-subscription-remove/' + id);
-				};
-
-				return this;
-			}]);
-
-		angular
-			.module('pi.core.app')
-			.factory('pi.core.app.eventAttendSvc', ['piHttp', function(piHttp){
-				
-				this.post = function(model) {
-					return piHttp.post('/api/event-attend', model);
-				}
-
-				this.get = function(id, model) {
-					return piHttp.get('/api/event-attend/' + id);
-				}
-
-				this.find = function(model) {
-					return piHttp.get('/api/event-attend', model);
-				}
-
-				return this;
-			}]);
 })();
 (function(){
     angular
@@ -3737,15 +4123,15 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 		.factory('pi.core.payment.paymentSvc', ['piHttp', function(piHttp){
 
 			this.post = function(model){
-				return piHttp.post('/api/payment/report', model);
+				return piHttp.post('/payment/report', model);
 			}
 
 			this.get = function(id, model) {
-				return piHttp.get('/api/payment/report/' + id, model);
+				return piHttp.get('/payment/report/' + id, model);
 			}
 
 			this.find = function(model) {
-				return piHttp.get('/api/payment/report', model);
+				return piHttp.get('/payment/report', model);
 			};
 
 			return this;

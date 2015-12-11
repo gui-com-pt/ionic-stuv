@@ -1,7 +1,7 @@
 (function(){
 	angular	
-		.module('stuv.core')
-		.controller('stuv.core.busSchedulesCtrl', ['stuv.core.stuvSvc', '$scope', '$ionicModal', '$stateParams', function(stuvSvc, $scope, $ionicModal, $stateParams){
+		.module('stuv.core.bus')
+		.controller('stuv.core.bus.busSchedulesCtrl', ['stuv.core.stuvSvc', '$scope', '$ionicModal', '$stateParams', function(stuvSvc, $scope, $ionicModal, $stateParams){
 			
 			$scope.line = $stateParams.id;
 

@@ -1,17 +1,9 @@
 <ion-view view-title="STUV">
     <ion-nav-buttons side="secondary">
-        <button class="button button-clear" ui-sref="register-stop">Registar Paragem</button>
+        
     </ion-nav-buttons>
     <ion-content>
-        <leaflet defaults="defaults" center="center" height="200" width="640px"></leaflet>
-        <div class="list">
-            <a ui-sref="bus-schedules({id: nearest.id})" class="item item-positive">
-                Estação + Próxima <p ng-bind="nearest.name"></p>
-            </a>
-            <a ui-sref="bus-schedules({id: $index})" ng-repeat="station in lines" class="item item-stable">
-                <span ng-bind="station.name"></span>
-                <span class="badge badge-dark" ng-bind="station.departure"></span>
-            </a>
-        </div>
+        
+        
     </ion-content>
 </ion-view>

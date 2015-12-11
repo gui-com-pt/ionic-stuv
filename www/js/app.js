@@ -9,16 +9,34 @@
 	angular
 		.module('stuv', [
 			'stuv.core',
+			'stuv.core.event',
+			'stuv.core.news',
+			'stuv.core.bus',
+			'angularMoment',
+			'stuv.common',
 			'templates',
 			'ionic',
 			'ngCordova',
             'leaflet-directive',
-
+            'ngFileUpload',
             'pi',
             'pi.core',
             'pi.core.app'
 			])
-		.config(['$stateProvider', function($stateProvider){
+		.config(['piProvider', 'piHttpProvider', 'facebookMetaServiceProvider', '$stateProvider', '$cordovaFacebookProvider', function(piProvider, piHttpProvider, facebookMetaServiceProvider, $stateProvider, $cordovaFacebookProvider){
+
+			piHttpProvider.setBaseUrl('https://codigo.ovh/api');
+	        facebookMetaServiceProvider.setAuthor('https://www.facebook.com/living.with.jesus');
+	        facebookMetaServiceProvider.setPublisher('https://www.facebook.com/viseu.ovh');
+	        facebookMetaServiceProvider.setSiteName('Viseu');
+	        facebookMetaServiceProvider.setType('article');
+	        facebookMetaServiceProvider.setLocale('pt_PT');
+	        facebookMetaServiceProvider.setImage('https://image.freepik.com/free-vector/web-programmer_23-2147502079.jpg');
+
+	        var appID = 123456789;
+	        var version = "v2.0"; // or leave blank and default is v2.0
+	        //$cordovaFacebookProvider.browserInit(appID, version);
+	        piProvider.setAppId('viseu');
 
 			$stateProvider
 				.state('home', {
@@ -33,27 +51,6 @@
 					controllerAs: 'ctrl',
 					templateUrl: 'core/webcam.tpl.html'
 				})
-				.state('register-stop', {
-					url: '/',
-					controller: 'stuv.core.registerStopCtrl',
-					templateUrl: 'core/register-stop.tpl.html'
-				})
-				.state('bus-schedules', {
-					url: '/bus-schedules/:id',
-					controller: 'stuv.core.busSchedulesCtrl',
-					templateUrl: 'core/bus-schedules.tpl.html'
-				})
-                .state('event-list', {
-                    url: '/event-list',
-                    controller: 'stuv.core.eventListCtrl',
-                    controllerAs: 'ctrl',
-                    templateUrl: 'core/event-list.tpl.html'
-                })
-                .state('event-view', {
-                    url: '/event-view/:id',
-                    controller: 'stuv.core.eventViewCtrl',
-                    templateUrl: 'core/event-view.tpl.html'
-                })
 				.state('support', {
 					url: '/support',
 					controller: 'stuv.core.supportCtrl',
@@ -65,7 +62,17 @@
                     templateUrl: 'core/places-list.tpl.html'
                 });
 		}])
-		.run(['$ionicPlatform', '$cordovaGeolocation', '$state', 'stuv.core.setupSvc', function($ionicPlatform, $cordovaGeolocation, $state, setupSvc){
+		.run(['$ionicPlatform', '$cordovaGeolocation', '$state', 'stuv.core.setupSvc', 'pi.core.app.eventSvc', 'pi.core.article.articleCategorySvc', '$rootScope', function($ionicPlatform, $cordovaGeolocation, $state, setupSvc, eventCategorySvc, articleCategorySvc, $rootScope){
+
+			articleCategorySvc.find({take: 100})
+		        .then(function(res){
+		          $rootScope.articleCategories = res.data.categories;
+		        });
+		        
+		    eventCategorySvc.find({take: 100})
+		        .then(function(res){
+		          $rootScope.eventCategories = res.data.categories;
+		        });
 
 			$ionicPlatform.ready(function() {
 			    // Hide the accessory bar by default (remove this to show the accessory bar above the keyboard
@@ -84,218 +91,96 @@
 })();
 (function(){
 	angular
-		.module('stuv.core', ['ngCordova']);
+		.module('stuv.core', ['ngCordova', 'ui.router', 'pi']);
 })();
 (function(){
-	angular	
-		.module('stuv.core')
-		.controller('stuv.core.busSchedulesCtrl', ['stuv.core.stuvSvc', '$scope', '$ionicModal', '$stateParams', function(stuvSvc, $scope, $ionicModal, $stateParams){
-			
-			$scope.line = $stateParams.id;
-
-			var getFormatedCords = function() {
-				var coords = [];
-
-				angular.forEach($scope.stations, function(value, key){
-					coords.push(value.location);
-				});
-
-				return coords;
-			};
-
-            $scope.openModalRoute = function(trip)
-            {
-                stuvSvc.openModalRoute($scope.line, $scope.viewSchedule, trip);
-            }
-
-			$scope.getNearest = function(from){
-				var coords = getFormatedCords();
-				var n = geolib.findNearest(from, coords, 1);
-				$scope.nearest = $scope.stations[parseInt(n.key)];
-			}
-
-			$scope.getDistance = function(from) {
-				return geolib.getDistance($scope.stations[0].location, from) / 1000;
-			};
-			
-			var holidays = [new Date("01/06/2015"), new Date("01/26/2015")];
-
-			function isWeekday(date) {
-				var day = date.getDay();
-				return day !=0 && day !=6;
-			}
-
-			var currentDate = new Date();
-			var now = new moment();
-
-			$scope.isAvailable = function(time) {
-				//var date = currentDate.getFullYear() + "-" + currentDate.getMonth() + "-" + currentDate.getDay() + ;
-				var before = new moment(now.format('YYYY-MM-DD') + " " + time, "YYYY-MM-DD HH:mm");
-				
-				return $scope.viewSchedule === $scope.schedule && now.isBefore(before);
-			}
-
-			if(_.contains(holidays, currentDate) || currentDate.getDay() === 0) {
-				$scope.schedule = 2;
-				$scope.viewSchedule = 2;
-			} else if(currentDate.getDay() === 6) {
-				$scope.schedule = 1;
-				$scope.viewSchedule = 1;
-			} else {
-				$scope.schedule = 0;
-				$scope.viewSchedule = 0;
-			}
-
-			$scope.stations = [
-				{ name: 'Rossio', location: {latitude: 40.681565, longitude: -7.927381}},
-				{ name: 'Abraveses', location: {latitude: 40.696208, longitude: -7.932960}}
-			];
-			$scope.lines = stuvSvc.lines;
-		}])
+	angular
+		.module('stuv.common', ['pi']);
 })();
 (function(){
-    angular
-        .module('stuv.core')
-        .controller('stuv.core.eventViewCtrl', ['pi.core.app.eventSvc', '$scope', '$stateParams', function(eventSvc, $scope, $stateParams){
-           var self = this;
-            $scope.id = $stateParams.id;
+	angular
+		.module('stuv.core.event', ['ngCordova', 'stuv.core']);
+	angular
+		.module('stuv.core.event')
+		.config(['$stateProvider', function($stateProvider){
 
-            eventSvc.get($stateParams.id)
-                .then(function(res){
-                    $scope.event = res.data.event;
+			$stateProvider
+				.state('event-create', {
+					url: '/criar-evento',
+					templateUrl: 'core/event/event-create.tpl.html',
+					controller: 'stuv.core.event.eventCreateCtrl'
+				})
+				.state('event-list', {
+                    url: '/event-list',
+                    controller: 'stuv.core.event.eventListCtrl',
+                    templateUrl: 'core/event/event-list.tpl.html'
                 })
-
-        }])
-        .controller('stuv.core.eventListCtrl', ['pi.core.app.eventSvc', '$scope', function(eventSvc, $scope){
-
-            eventSvc.find()
-                .then(function(res){
-                    $scope.events = res.data.events;
+                .state('event-view', {
+                    url: '/evento/:id',
+                    controller: 'stuv.core.event.eventViewCtrl',
+                    templateUrl: 'core/event/event-view.tpl.html'
+                })
+                .state('event-update', {
+                    url: '/evento-editar/:id',
+                    controller: 'stuv.core.event.eventUpdateCtrl',
+                    templateUrl: 'core/event/event-update.tpl.html'
                 });
-        /*$scope.events = [
-        {
-        	id: 1,
-        	title: 'Palco Banco BIC',
-        	excerpt: 'Grande abertura',
-        	thumbnailSrc: 'http://www.feirasaomateus.pt/agenda/xs/hgw5xt45jr40c08so0.jpg',
-        	doorTime: '18:30',
-        	doorDate: '07/08/2015'
-        },
-        {
-        	id: 2,
-        	title: 'Palco Banco BIC',
-        	excerpt: 'DJ\'S RFM Dance Floor - Kura',
-        	thumbnailSrc: 'http://www.feirasaomateus.pt/agenda/xs/8pjkydgxzs84owcw8k.jpg',
-        	doorTime: '22:00',
-        	doorDate: '08/08/2015'
-        },
-    	{
-        	id: 3,
-        	title: 'Palco Banco BIC',
-        	excerpt: 'Banda Do Mar',
-        	thumbnailSrc: 'http://www.feirasaomateus.pt/agenda/xs/akkjaplcxz4000cww.jpg',
-        	doorTime: '22:00',
-        	doorDate: '09/08/2015'
-        },
-    	{
-        	id: 4,
-        	title: 'Palco Banco BIC',
-        	excerpt: 'Ranco Folclórico "As Bacacinhas de Santiago"',
-        	thumbnailSrc: 'http://www.feirasaomateus.pt/agenda/xs/6qnutvr18x0k4ww0g8.jpg',
-        	doorTime: '21:00',
-        	doorDate: '10/08/2015'
-        },
-    	{
-        	id: 5,
-        	title: 'Palco Banco BIC',
-        	excerpt: 'Grupo de Cantares Flamiam',
-        	thumbnailSrc: 'http://www.feirasaomateus.pt/agenda/xs/6qnutvr18x0k4ww0g8.jpg',
-        	doorTime: '21:00',
-        	doorDate: '10/08/2015'
-        },
-    	{
-        	id: 6,
-        	title: 'Palco Banco BIC',
-        	excerpt: 'Diogo André',
-        	thumbnailSrc: 'http://www.feirasaomateus.pt/agenda/xs/6qnutvr18x0k4ww0g8.jpg',
-        	doorTime: '21:00',
-        	doorDate: '11/08/2015'
-        },
-    	{
-        	id: 7,
-        	title: 'Palco Banco BIC',
-        	excerpt: 'Miss Emigrante',
-        	thumbnailSrc: 'http://www.feirasaomateus.pt/agenda/xs/xioy0vky0usokgowk8.jpg',
-        	doorTime: '22:00',
-        	doorDate: '11/08/2015'
-        },
-    	{
-        	id: 8,
-        	title: 'Palco Banco BIC',
-        	excerpt: 'Agir',
-        	thumbnailSrc: 'http://www.feirasaomateus.pt/agenda/xs/104wvmple3i8ww84c8.jpg',
-        	doorTime: '22:00',
-        	doorDate: '12/08/2015'
-        },
-    	{
-        	id: 9,
-        	title: 'Palco Banco BIC',
-        	excerpt: 'António Zambujo',
-        	thumbnailSrc: 'http://www.feirasaomateus.pt/agenda/xs/1gdfqnyc4y00ggg40w.jpg',
-        	doorTime: '22:00',
-        	doorDate: '13/08/2015'
-        },
-    	{
-        	id: 10,
-        	title: 'Palco Banco BIC',
-        	excerpt: 'Pedro Abrunhosa',
-        	thumbnailSrc: 'http://www.feirasaomateus.pt/agenda/xs/18yevt58dq2sggoc4k.jpg',
-        	doorTime: '22:00',
-        	doorDate: '14/08/2015'
-        },
-    	{
-        	id: 11,
-        	title: 'Palco Banco BIC',
-        	excerpt: 'Tony Carrreira',
-        	thumbnailSrc: 'http://www.feirasaomateus.pt/agenda/xs/2wc4878ddo2s0808s.jpg',
-        	doorTime: '22:00',
-        	doorDate: '15/08/2015'
-        },
-    	{
-        	id: 12,
-        	title: 'Palco Banco BIC',
-        	excerpt: 'Festival Internacional de Folclore',
-        	thumbnailSrc: 'http://www.feirasaomateus.pt/agenda/xs/21140lof0y00gwwgc8.jpg',
-        	doorTime: '22:00',
-        	doorDate: '16/08/2015'
-        },
-    	{
-        	id: 12,
-        	title: 'Palco Banco BIC',
-        	excerpt: 'Grupo de Cavaquinhos de Passos de Silgueiros',
-        	thumbnailSrc: 'http://www.feirasaomateus.pt/agenda/xs/21140lof0y00gwwgc8.jpg',
-        	doorTime: '22:00',
-        	doorDate: '17/08/2015'
-        },
-        {
-        	id: 13,
-        	title: 'Palco Banco BIC',
-        	excerpt: 'The Greyhound James Band',
-        	thumbnailSrc: 'http://www.feirasaomateus.pt/agenda/xs/wm825umhteogkosoc0.jpg',
-        	doorTime: '22:00',
-        	doorDate: '18/08/2015'
-        },
-        {
-        	id: 14,
-        	title: 'Palco Banco BIC',
-        	excerpt: 'Noite de Fado - Mara Pedro',
-        	thumbnailSrc: 'http://www.feirasaomateus.pt/agenda/xs/cx2vcf301dwgooo4w.jpg',
-        	doorTime: '22:00',
-        	doorDate: '19/08/2015'
-        }
+		}]);
+})();
+(function(){
+	angular
+		.module('stuv.core.news', ['ngCordova', 'stuv.core']);
+	angular
+		.module('stuv.core.news')
+		.config(['$stateProvider', function($stateProvider){
 
-        ]*/
-        }]);
+			$stateProvider
+				.state('news-create', {
+					url: '/criar-noticia',
+					templateUrl: 'core/news/news-create.tpl.html',
+					controller: 'stuv.core.news.newsCreateCtrl'
+				})
+				.state('news-list', {
+                    url: '/news-list',
+                    controller: 'stuv.core.news.newsListCtrl',
+                    templateUrl: 'core/news/news-list.tpl.html'
+                })
+                .state('news-view', {
+                    url: '/newso/:id',
+                    controller: 'stuv.core.news.newsViewCtrl',
+                    templateUrl: 'core/news/news-view.tpl.html'
+                })
+                .state('news-update', {
+                    url: '/newso-editar/:id',
+                    controller: 'stuv.core.news.newsUpdateCtrl',
+                    templateUrl: 'core/news/news-update.tpl.html'
+                });
+		}]);
+})();
+(function(){
+	angular
+		.module('stuv.core.bus', ['ngCordova', 'stuv.core']);
+	angular
+		.module('stuv.core.bus')
+		.config(['$stateProvider', function($stateProvider){
+
+			$stateProvider
+				.state('bus-home', {
+                    url: '/autocarros',
+                    controller: 'stuv.core.bus.busHomeCtrl',
+                    templateUrl: 'core/bus/bus-home.tpl.html'
+                })
+                .state('register-stop', {
+					url: '/',
+					controller: 'stuv.core.bus.registerStopCtrl',
+					templateUrl: 'core/bus/register-stop.tpl.html'
+				})
+				.state('bus-schedules', {
+					url: '/bus-schedules/:id',
+					controller: 'stuv.core.bus.busSchedulesCtrl',
+					templateUrl: 'core/bus/bus-schedules.tpl.html'
+				});
+		}]);
 })();
 (function(){
 	angular
@@ -360,13 +245,6 @@
                     $scope.places = res.data.places;
                 })
         }])
-})();
-(function(){
-	angular
-		.module('stuv.core')
-		.controller('stuv.core.registerStopCtrl', ['stuv.core.stuvSvc', '$scope', function(stuvSvc, $scope){
-			$scope.stations = stuvSvc.stations;
-		}]);
 })();
 (function(){
     angular
@@ -454,8 +332,474 @@
 		}]);
 })();
 (function(){
+	angular
+		.module('stuv.core')
+		.controller('stuv.core.supportCtrl', [function(){
+
+		}]);
+})();
+(function(){
+	angular
+		.module('stuv.core')
+		.controller('stuv.core.webcamCtrl', ['$scope', 'stuv.core.stuvSvc', 'leafletData', 'stuv.core.setupSvc', '$timeout', function($scope, stuvSvc, leafletData, setupSvc, $timeout){
+			var self = this;
+			this.webcamSrc = 'http://abss.dyndns.info/viseu.jpg' + '?' + new Date().getTime();;
+			
+			var reloadImg = function(){
+				self.webcamSrc = 'http://abss.dyndns.info/viseu.jpg' + '?' + new Date().getTime();;
+			}
+			reloadImg();
+
+			$timeout(function(){
+				reloadImg();
+				$scope.$apply();
+			}, 3000);
+
+		}]);
+})();
+(function(){
+	angular
+		.module('stuv.common')
+		.directive('piFacebookComment', function () {
+		    function createHTML(href, numposts, colorscheme) {
+		        return '<div class="fb-comments" ' +
+		                       'data-href="' + href + '" ' +
+		                       'data-numposts="' + numposts + '" ' +
+		                       'data-colorsheme="' + colorscheme + '">' +
+		               '</div>';
+		    }
+
+		    return {
+		        restrict: 'A',
+		        scope: {},
+		        link: function postLink(scope, elem, attrs) {
+		            attrs.$observe('pageHref', function (newValue) {
+		                var href        = newValue;
+		                var numposts    = attrs.numposts    || 5;
+		                var colorscheme = attrs.colorscheme || 'light';
+
+		                elem.html(createHTML(href, numposts, colorscheme));
+		                FB.XFBML.parse(elem[0]);
+		            });
+		        }
+		    };
+		});
+})();
+(function(){
+	angular
+		.module('stuv.common')
+		.provider('stuv.common.responseUtilsSvc', [function(){
+
+			return {
+				$get: function(){
+					return {
+						orderByNewest: function(items, keyDate) {
+							if(!_.isArray(items) || !_.isString(keyDate)) {
+								return null;
+							}
+
+							var events = _.groupBy(items, function (event) {
+		                      return moment.utc(event[keyDate], 'X').startOf('day').format('DD-MM-YYYY');
+		                    });
+
+		                    events = _.map(events, function(group, day){
+		                        return {
+		                            day: day,
+		                            results: group
+		                        }
+		                    });
+
+							return events;
+						}
+					}
+				}
+			}
+		}]);
+})();
+(function(){
+	angular
+		.module('stuv.core')
+		.controller('stuv.core.event.eventCreateCtrl', ['pi.core.app.eventSvc', '$scope', '$cordovaImagePicker', function(eventSvc, $scope, $cordovaImagePicker){
+			var self = this;
+			
+			$scope.showFileDialog = function(){
+				$cordovaImagePicker.getPictures({})
+				    .then(function (results) {
+				      for (var i = 0; i < results.length; i++) {
+				        console.log('Image URI: ' + results[i]);
+				      }
+				    }, function(error) {
+				      // error getting photos
+				    });
+			}
+			
+			$scope.event = {};
+
+			this.prepareRequest = function(){
+				var dto = angular.copy($scope.event);
+				dto.city = 'Viseu';
+				return dto;
+			}
+
+			var submitErrorFn = function(response) {
+
+			}
+
+			$scope.submitForm = function(){
+				try {
+					var model = self.prepareRequest();
+					eventSvc.post(model)
+						.then(function(res){
+
+						}, submitErrorFn);	
+				}
+				catch(e){
+					submitErrorFn();
+				}
+				
+			}
+		}]);
+})();
+(function(){
     angular
         .module('stuv.core')
+        .controller('stuv.core.event.eventListCtrl', ['stuv.common.responseUtilsSvc', 'pi.core.app.eventSvc', '$scope', function(responseUtilsSvc, eventSvc, $scope){
+        	$scope.eventsPerDay = [];
+
+            eventSvc.find()
+                .then(function(res){
+                	
+                    var events = responseUtilsSvc.orderByNewest(res.data.events, 'doorTime');
+
+                	angular.forEach(events, function(dto){
+                		$scope.eventsPerDay.push(dto);
+                	});
+                });
+        }]);
+})();
+(function(){
+	angular
+		.module('stuv.core')
+		.controller('stuv.core.event.eventUpdateCtrl', ['pi.core.app.eventSvc', '$scope', '$stateParams', function(eventSvc, $scope, $stateParams){
+			var self = this,
+				id = $stateParams.id;
+
+			eventSvc.get($stateParams.id)
+                .then(function(res){
+                    $scope.event = res.data.event;
+                });
+
+
+			this.prepareRequest = function(){
+				var dto = angular.copy($scope.event);
+				dto.city = 'Viseu';
+				return dto;
+			}
+
+			$scope.submitForm = function(){
+				var model = self.prepareRequest();
+				
+				eventSvc.put(id, model)
+					.then(function(res){
+						
+					}, function(res){
+
+					});
+			}
+		}]);
+})();
+(function(){
+    angular
+        .module('stuv.core')
+        .controller('stuv.core.event.eventViewCtrl', ['pi.core.app.eventSvc', '$scope', '$stateParams', '$cordovaSocialSharing', function(eventSvc, $scope, $stateParams, $cordovaSocialSharing){
+           var self = this;
+            $scope.id = $stateParams.id;
+
+            eventSvc.get($stateParams.id)
+                .then(function(res){
+                    $scope.event = res.data.event;
+                });
+
+            $scope.shareEmail = function(){
+                $cordovaSocialSharing
+                    .shareViaEmail($scope.event.headline, $scope.event.headline, $scope.event.image, $scope.event.url) // Share via native share sheet
+                    .then(function(result) {
+                      // Success!
+                    }, function(err) {
+                      // An error occured. Show a message to the user
+                    });
+            }
+
+            $scope.shareTwitter = function(){
+                $cordovaSocialTwitter
+                    .shareViaFacebook($scope.event.headline, $scope.event.headline, $scope.event.image, $scope.event.url) // Share via native share sheet
+                    .then(function(result) {
+                      // Success!
+                    }, function(err) {
+                      // An error occured. Show a message to the user
+                    });
+            }
+
+            $scope.shareFacebook = function(){
+                $cordovaSocialSharing
+                    .shareViaFacebook($scope.event.headline, $scope.event.headline, $scope.event.image, $scope.event.url) // Share via native share sheet
+                    .then(function(result) {
+                      // Success!
+                    }, function(err) {
+                      // An error occured. Show a message to the user
+                    });
+            }
+        }]);
+})();
+(function(){
+	angular
+		.module('stuv.core')
+		.controller('stuv.core.news.newsCreateCtrl', ['pi.core.app.articleSvc', '$scope', '$cordovaFileOpener2', function(newsSvc, $scope, $cordovaFileOpener2){
+			var self = this;
+			
+			$scope.showFileDialog = function(){
+				$cordovaFileOpener2.open(
+			    '/sdcard/Download/gmail.apk',
+			    'application/vnd.android.package-archive'
+			  ).then(function() {
+			      // Success!
+			  }, function(err) {
+			      // An error occurred. Show a message to the user
+			  });	
+			}
+			
+			$scope.news = {};
+
+			this.prepareRequest = function(){
+				var dto = angular.copy($scope.news);
+				dto.city = 'Viseu';
+				return dto;
+			}
+
+			var submitErrorFn = function(response) {
+
+			}
+
+			$scope.submitForm = function(){
+				try {
+					var model = self.prepareRequest();
+					newsSvc.post(model)
+						.then(function(res){
+
+						}, submitErrorFn);	
+				}
+				catch(e){
+					submitErrorFn();
+				}
+				
+			}
+		}]);
+})();
+(function(){
+    angular
+        .module('stuv.core')
+        .controller('stuv.core.news.newsListCtrl', ['stuv.common.responseUtilsSvc', 'pi.core.article.articleSvc', '$scope', function(responseUtilsSvc, articleSvc, $scope){
+        	$scope.articlesPerDay = [];
+
+            var find = function(model) {
+                    return articleSvc.find(model)
+                        .then(function(res){
+                            
+                            var data = responseUtilsSvc.orderByNewest(res.data.articles, 'datePublished');
+                            
+                            angular.forEach(data, function(dto){
+                                $scope.articlesPerDay.push(dto);
+                            });
+                        });
+                },
+                reset = function(){
+                    $scope.articlesPerDay = [];
+                }
+
+            $scope.filterByCategory = function(id){
+                reset();
+                find({categoryId: id});
+            }
+
+            find();
+            
+        }]);
+})();
+(function(){
+	angular
+		.module('stuv.core')
+		.controller('stuv.core.news.newsUpdateCtrl', ['pi.core.app.eventSvc', '$scope', '$stateParams', function(eventSvc, $scope, $stateParams){
+			var self = this,
+				id = $stateParams.id;
+
+			eventSvc.get($stateParams.id)
+                .then(function(res){
+                    $scope.event = res.data.event;
+                });
+
+
+			this.prepareRequest = function(){
+				var dto = angular.copy($scope.event);
+				dto.city = 'Viseu';
+				return dto;
+			}
+
+			$scope.submitForm = function(){
+				var model = self.prepareRequest();
+				
+				eventSvc.put(id, model)
+					.then(function(res){
+						
+					}, function(res){
+
+					});
+			}
+		}]);
+})();
+(function(){
+    angular
+        .module('stuv.core')
+        .controller('stuv.core.news.newsViewCtrl', ['pi.core.article.articleSvc', '$scope', '$stateParams', function(articleSvc, $scope, $stateParams){
+           var self = this;
+            $scope.id = $stateParams.id;
+
+            articleSvc.get($stateParams.id)
+                .then(function(res){
+                    $scope.article = res.data.article;
+                });
+
+        }]);
+})();
+(function(){
+	angular
+		.module('stuv.core.bus')
+		.controller('stuv.core.bus.busHomeCtrl', ['$scope', 'stuv.core.stuvSvc', 'leafletData', 'stuv.core.setupSvc', function($scope, stuvSvc, leafletData, setupSvc){
+
+            angular.extend($scope, {
+                center: {
+                    lat: 40.704472,
+                    lng: -7.949354,
+                    zoom: 8
+                },
+                markers: {
+                    main_marker: {
+                        lat: 40.676032,
+                        lng: -7.949354,
+                        focus: true,
+                        //message: "Hey, drag me if you want",
+                        title: "Marker",
+                        draggable: true,
+                        label: {
+                            message: "Hey, drag me if you want",
+                            options: {
+                                noHide: true
+                            }
+                        }
+                    }
+                }
+            });
+
+            var getFormatedCords = function() {
+				var coords = [];
+
+				angular.forEach($scope.stations, function(value, key){
+					coords.push(value.location);
+				});
+
+				return coords;
+			}
+
+			stuvSvc.getNearest()
+				.then(function(res){
+					$scope.nearest = res;
+				});
+
+			$scope.getDistance = function(from) {
+				return geolib.getDistance($scope.stations[0].location, from) / 1000;
+			};
+
+			$scope.lines = stuvSvc.lines;
+
+			$scope.stations = stuvSvc.stations;
+		}]);
+})();
+(function(){
+	angular	
+		.module('stuv.core.bus')
+		.controller('stuv.core.bus.busSchedulesCtrl', ['stuv.core.stuvSvc', '$scope', '$ionicModal', '$stateParams', function(stuvSvc, $scope, $ionicModal, $stateParams){
+			
+			$scope.line = $stateParams.id;
+
+			var getFormatedCords = function() {
+				var coords = [];
+
+				angular.forEach($scope.stations, function(value, key){
+					coords.push(value.location);
+				});
+
+				return coords;
+			};
+
+            $scope.openModalRoute = function(trip)
+            {
+                stuvSvc.openModalRoute($scope.line, $scope.viewSchedule, trip);
+            }
+
+			$scope.getNearest = function(from){
+				var coords = getFormatedCords();
+				var n = geolib.findNearest(from, coords, 1);
+				$scope.nearest = $scope.stations[parseInt(n.key)];
+			}
+
+			$scope.getDistance = function(from) {
+				return geolib.getDistance($scope.stations[0].location, from) / 1000;
+			};
+			
+			var holidays = [new Date("01/06/2015"), new Date("01/26/2015")];
+
+			function isWeekday(date) {
+				var day = date.getDay();
+				return day !=0 && day !=6;
+			}
+
+			var currentDate = new Date();
+			var now = new moment();
+
+			$scope.isAvailable = function(time) {
+				//var date = currentDate.getFullYear() + "-" + currentDate.getMonth() + "-" + currentDate.getDay() + ;
+				var before = new moment(now.format('YYYY-MM-DD') + " " + time, "YYYY-MM-DD HH:mm");
+				
+				return $scope.viewSchedule === $scope.schedule && now.isBefore(before);
+			}
+
+			if(_.contains(holidays, currentDate) || currentDate.getDay() === 0) {
+				$scope.schedule = 2;
+				$scope.viewSchedule = 2;
+			} else if(currentDate.getDay() === 6) {
+				$scope.schedule = 1;
+				$scope.viewSchedule = 1;
+			} else {
+				$scope.schedule = 0;
+				$scope.viewSchedule = 0;
+			}
+
+			$scope.stations = [
+				{ name: 'Rossio', location: {latitude: 40.681565, longitude: -7.927381}},
+				{ name: 'Abraveses', location: {latitude: 40.696208, longitude: -7.932960}}
+			];
+			$scope.lines = stuvSvc.lines;
+		}])
+})();
+(function(){
+	angular
+		.module('stuv.core.bus')
+		.controller('stuv.core.bus.registerStopCtrl', ['stuv.core.stuvSvc', '$scope', function(stuvSvc, $scope){
+			$scope.stations = stuvSvc.stations;
+		}]);
+})();
+(function(){
+    angular
+        .module('stuv.core.bus')
         .factory('stuv.core.stuvSvc', ['$cordovaGeolocation', '$q', '$rootScope', '$ionicModal', function($cordovaGeolocation, $q, $rootScope, $ionicModal){
 
             var getFormatedCords = function() {
@@ -470,7 +814,7 @@
 
             var $scope = $rootScope.$new();
 
-            $ionicModal.fromTemplateUrl('core/schedule-modal.tpl.html', {
+            $ionicModal.fromTemplateUrl('core/bus/schedule-modal.tpl.html', {
                 scope: $scope,
                 animation: 'slide-in-up'
             }).then(function(modal) {
@@ -1821,30 +2165,4 @@
                 }
             }
         }])
-})();
-(function(){
-	angular
-		.module('stuv.core')
-		.controller('stuv.core.supportCtrl', [function(){
-
-		}]);
-})();
-(function(){
-	angular
-		.module('stuv.core')
-		.controller('stuv.core.webcamCtrl', ['$scope', 'stuv.core.stuvSvc', 'leafletData', 'stuv.core.setupSvc', '$timeout', function($scope, stuvSvc, leafletData, setupSvc, $timeout){
-			var self = this;
-			this.webcamSrc = 'http://abss.dyndns.info/viseu.jpg' + '?' + new Date().getTime();;
-			
-			var reloadImg = function(){
-				self.webcamSrc = 'http://abss.dyndns.info/viseu.jpg' + '?' + new Date().getTime();;
-			}
-			reloadImg();
-
-			$timeout(function(){
-				reloadImg();
-				$scope.$apply();
-			}, 3000);
-
-		}]);
 })();
