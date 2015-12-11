@@ -7737,7 +7737,13 @@ h3.item__name {
 .list-query__item {
   float: left; }
 
+.creative-reffer__info {
+  padding: 0 0 0 9px;
+  box-sizing: border-box; }
+
 .creative-reffer__info-owner {
   font-size: 1.2em;
   font-weight: bold; }
 
+.creative-reffer__img {
+  box-sizing: border-box; }
