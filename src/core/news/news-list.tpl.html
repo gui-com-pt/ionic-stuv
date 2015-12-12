@@ -1,25 +1,38 @@
-<ion-view view-title="Feira São Mateus 2015">
-    <ion-nav-buttons side="secondary">
-        <button class="button button-clear" ui-sref="news-create">Criar Evento</button>
-    </ion-nav-buttons>
+<ion-view view-title="Noticias">
     <ion-content>
-        <div class="list-query">
-            <div ng-repeat="category in $root.articleCategories" class="list-query__item">
-                <button class="list-query__btn" ng-bind="category.displayName" ng-click="filterByCategory(category.id)"></button>
-            </div>
-        </div>
         <div class="list">
-        <div ng-repeat-start="current in articlesPerDay">
-        	<a class="item item-positive">
-        	{{current.day}} <span am-time-ago="current.day"></span>
-        	</a>
-            <a ng-repeat="article in current.results" class="item item-thumbnail-left" href="" ui-sref="news-view({id: article.id})" >
-                <img ng-src="{{article.image}}" />
-                <h2 ng-bind="article.name"></h2>
-                <p ng-bind-html="article.headline"></p>
-            </a>
+            <div class="item-blocks">
+                <div ng-repeat="category in $root.articleCategories" class="list-query__item">
+                    <button class="list-query__btn" ng-bind="category.displayName" ng-click="filterByCategory(category.id)"></button>
+                </div>
+            </div>
+            <div class="item item-input-inset">
+                <label class="item-input-wrapper">
+                  <input type="text" placeholder="Pesquisar" ng-model="queryModel.text">
+                </label>
+                <button class="button button-small button-clear" ng-click="filterByText()">
+                  <i class="icon ion-ios-search"></i>
+                </button>
+                <button class="button button-small button-clear" ng-click="clearText()" ng-show="queryModel.text != '' && queryModel.text != null">
+                  <i class="icon ion-close-round"></i>
+                </button>
+              </div>
+            <div ng-repeat-start="current in articlesPerDay">
+            	<a class="item item-positive">
+            	<span am-time-ago="current.day"></span> <small class="pull-right">{{current.day}}</small>
+            	</a>
+                <a ng-repeat="article in current.results" class="item item-thumbnail-left" href="" ui-sref="news-view({id: article.id})" >
+                    <img ng-src="{{article.image}}" />
+                    <h2 ng-bind="article.name"></h2>
+                    <p ng-bind-html="article.headline"></p>
+                </a>
             </div>
             <div ng-repeat-end=""></div>
+             <p class="padding" ng-show="queryModel.noResult">
+                <p>Nao foram encontrados resultados.</p>
+                <p ng-show="query.model.text!==''">Tenta pesquisar com outras palavras sem ser "<b ng-bind="queryModel.text"></b>"</p>
+                <button class="button button-block button-positive">limpa a pesquisa</button>
+            </p>
         </div>
     </ion-content>
 </ion-view>

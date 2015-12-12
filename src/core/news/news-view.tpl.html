@@ -2,9 +2,6 @@
     <ion-nav-title>
         Noticia
     </ion-nav-title>
-    <ion-nav-buttons side="secondary">
-        <button class="button button-clear" ui-sref="article-update({id: article.id})">Editar</button>
-    </ion-nav-buttons>
     <ion-content>
         <div ng-style="{'background':'url(' + article.image + ')'}" class="cover__wrapper">
             <h3 class="item__name" ng-bind="article.name"></h3>
@@ -19,6 +16,11 @@
                 <span class="creative-reffer__info-owner" ng-bind="article.refferName"></span>
             </div>
         </a>
+        <div class="row">
+            <a ng-click="shareFacebook()" class="col"><i class="icon ion-social-facebook"></i></a>
+            <a ng-click="shareTwitter()" class="col"><i class="icon ion-social-twitter"></i></a>
+            <a ng-click="shareEmail()" class="col"><i class="icon ion-social-email"></i></a>
+        </div>
         <div pi-facebook-comment page-href="{{article.url}}" numposts="5" colorscheme="light"></div>
     </ion-content>
 </ion-view>
