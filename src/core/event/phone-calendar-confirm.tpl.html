@@ -1,0 +1,12 @@
+<ion-modal-view>
+    <ion-header-bar>
+      <h1 class="title">Pesquisar Noticias</h1>
+    </ion-header-bar>
+    <ion-content>
+	<p>Deseja adicionar o evento <strong ng-bind="event.title"></strong> ao calendario do seu telemovel?</p>
+
+      <button class="button button-full button-energized" ng-click="register()"><i class="icon ion-ios-search"></i> Sim</button>
+      <button class="button button-full button-energized" ng-click="registerAndSave()"><i class="icon ion-close-round"></i> Sim e Guardar Definicao</button>
+      <button class="button button-full button-energized" ng-click="cancel()"><i class="icon ion-close-round"></i> Cancelar</button>
+    </ion-content>
+</ion-modal-view>

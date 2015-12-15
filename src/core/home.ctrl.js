@@ -1,8 +1,32 @@
 (function(){
 	angular
 		.module('stuv.core')
-		.controller('stuv.core.homeCtrl', ['$scope', 'stuv.core.stuvSvc', 'leafletData', 'stuv.core.setupSvc', function($scope, stuvSvc, leafletData, setupSvc){
+		.controller('stuv.core.homeCtrl', ['$scope', 'stuv.core.stuvSvc', 'leafletData', 'stuv.core.setupSvc', 'pi.core.article.articleSvc', 'pi.core.app.eventSvc', function($scope, stuvSvc, leafletData, setupSvc, articleSvc, eventSvc){
 
+            $scope.articles = [];
+            $scope.events = [];
+
+            articleSvc.find({})
+                .then(function(res){
+                    if(!_.isArray(res.data.articles) || res.data.articles.length === 0) {
+                        return;
+                    }
+
+                    angular.forEach(res.data.articles, function(dto){
+                        $scope.articles.push(dto);
+                    });
+
+                });
+            eventSvc.find({})
+                .then(function(res){
+                    if(!_.isArray(res.data.events) || res.data.events.length === 0) {
+                        return;
+                    }
+
+                    angular.forEach(res.data.events, function(dto){
+                        $scope.events.push(dto);
+                    });
+            });
             angular.extend($scope, {
                 center: {
                     lat: 40.704472,

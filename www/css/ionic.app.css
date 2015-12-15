@@ -2,6 +2,26 @@
 img {
   max-width: 100%; }
 
+.home-container {
+  display: -webkit-flex;
+  -webkit-flex-direction: column;
+  height: 100%; }
+
+.home-container > .row, .home-container > .creative-reffer {
+  -webkit-flex: 1; }
+
+.row-height {
+  display: flex;
+  flex-direction: column;
+  height: 100%; }
+
+.ng-hide {
+  /* this is just another form of hiding an element */
+  display: block !important;
+  position: absolute;
+  top: -9999px;
+  left: -9999px; }
+
 /*
 To customize the look and feel of Ionic, you can override the variables
 in ionic's _variables.scss file.
@@ -6847,13 +6867,13 @@ progress {
         box-shadow: none;
         color: #fff; }
 
-.button-small, .list-query__btn {
+.button-small, .list-query__btn, .item-meta.item-button-right > .buttons > .button, .item-meta.item-button-right > .buttons > .list-query__btn, .item-meta.item-button-left > .buttons > .button, .item-meta.item-button-left > .buttons > .list-query__btn {
   padding: 2px 4px 1px;
   min-width: 28px;
   min-height: 30px;
   font-size: 12px;
   line-height: 26px; }
-  .button-small .icon:before, .list-query__btn .icon:before, .button-small.icon:before, .icon.list-query__btn:before, .button-small.icon-left:before, .icon-left.list-query__btn:before, .button-small.icon-right:before, .icon-right.list-query__btn:before {
+  .button-small .icon:before, .list-query__btn .icon:before, .item-meta.item-button-right > .buttons > .button .icon:before, .item-meta.item-button-right > .buttons > .list-query__btn .icon:before, .item-meta.item-button-left > .buttons > .button .icon:before, .item-meta.item-button-left > .buttons > .list-query__btn .icon:before, .button-small.icon:before, .icon.list-query__btn:before, .item-meta.item-button-right > .buttons > .icon.button:before, .item-meta.item-button-right > .buttons > .icon.list-query__btn:before, .item-meta.item-button-left > .buttons > .icon.button:before, .item-meta.item-button-left > .buttons > .icon.list-query__btn:before, .button-small.icon-left:before, .icon-left.list-query__btn:before, .item-meta.item-button-right > .buttons > .icon-left.button:before, .item-meta.item-button-right > .buttons > .icon-left.list-query__btn:before, .item-meta.item-button-left > .buttons > .icon-left.button:before, .item-meta.item-button-left > .buttons > .icon-left.list-query__btn:before, .button-small.icon-right:before, .icon-right.list-query__btn:before, .item-meta.item-button-right > .buttons > .icon-right.button:before, .item-meta.item-button-right > .buttons > .icon-right.list-query__btn:before, .item-meta.item-button-left > .buttons > .icon-right.button:before, .item-meta.item-button-left > .buttons > .icon-right.list-query__btn:before {
     font-size: 16px;
     line-height: 19px;
     margin-top: 3px; }
@@ -7004,7 +7024,7 @@ a.button, a.list-query__btn {
     border-right-width: 1px;
     border-radius: 0px 2px 2px 0px; }
 
-.button-bar > .button-small:before, .button-bar > .list-query__btn:before, .button-bar > .button-small .icon:before, .button-bar > .list-query__btn .icon:before {
+.button-bar > .button-small:before, .button-bar > .list-query__btn:before, .item-meta.item-button-right > .buttons.button-bar > .button:before, .item-meta.item-button-right > .buttons.button-bar > .list-query__btn:before, .item-meta.item-button-left > .buttons.button-bar > .button:before, .item-meta.item-button-left > .buttons.button-bar > .list-query__btn:before, .button-bar > .button-small .icon:before, .button-bar > .list-query__btn .icon:before, .item-meta.item-button-right > .buttons.button-bar > .button .icon:before, .item-meta.item-button-right > .buttons.button-bar > .list-query__btn .icon:before, .item-meta.item-button-left > .buttons.button-bar > .button .icon:before, .item-meta.item-button-left > .buttons.button-bar > .list-query__btn .icon:before {
   line-height: 28px; }
 
 /**
@@ -7718,19 +7738,21 @@ a.button, a.list-query__btn {
 h3.item__name {
   background-color: rgba(0, 0, 0, 0.5);
   padding: 3px 6px;
-  color: #ffffff; }
+  color: #ffffff;
+  text-transform: uppercase;
+  font-size: 1.2em;
+  font-weight: bold; }
 
 .cover__wrapper {
   min-height: 90px;
-  padding-top: 70px; }
+  padding-top: 100px;
+  background-size: cover; }
 
 .item-blocks {
-  padding: 16px;
-  *zoom: 1; }
+  padding: 16px; }
   .item-blocks:before, .item-blocks:after {
-    display: table;
     content: "";
-    line-height: 0; }
+    display: table; }
   .item-blocks:after {
     clear: both; }
 
@@ -7754,3 +7776,39 @@ h3.item__name {
 
 .creative-reffer__img {
   box-sizing: border-box; }
+
+[ion-content], ion-content {
+  /*background-image: url(/img/v1.jpg);
+    background-repeat: no-repeat;
+    background-size: cover;*/ }
+
+.resource-view__date {
+  font-size: 0.9em;
+  font-weight: bold; }
+  .resource-view__date .badge {
+    font-size: 0.9em; }
+  .resource-view__date .badge-fb > i.icon {
+    font-size: 0.9em; }
+
+.item-event {
+  padding: 0; }
+
+.item__content {
+  padding: 10px; }
+
+.item__cover {
+  min-height: 100px;
+  background-size: cover;
+  position: relative; }
+  .item__cover > .item__name {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0; }
+
+a.item__cover {
+  display: block; }
+
+.item-meta {
+  font-size: 0.9em; }
+

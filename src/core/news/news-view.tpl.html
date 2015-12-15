@@ -6,7 +6,12 @@
         <div ng-style="{'background':'url(' + article.image + ')'}" class="cover__wrapper">
             <h3 class="item__name" ng-bind="article.name"></h3>
         </div>
-        <div ng-bind-html="article.articleBody"></div>
+        <a class="item item-icon-left resource-view__date" href="#">
+            <i class="icon ion-android-calendar"></i>
+            Quinta Dez 27
+            <span class="badge badge-assertive">08:00</span>
+        </a>
+        <div class="padding" ng-bind-html="article.articleBody"></div>
         <a class="creative-reffer" target="_blank" ng-ref="{{article.refferUrl">
             <div class="creative-reffer__img">
                 <img ng-src="{{article.refferImage}}" />
@@ -16,11 +21,6 @@
                 <span class="creative-reffer__info-owner" ng-bind="article.refferName"></span>
             </div>
         </a>
-        <div class="row">
-            <a ng-click="shareFacebook()" class="col"><i class="icon ion-social-facebook"></i></a>
-            <a ng-click="shareTwitter()" class="col"><i class="icon ion-social-twitter"></i></a>
-            <a ng-click="shareEmail()" class="col"><i class="icon ion-social-email"></i></a>
-        </div>
         <div pi-facebook-comment page-href="{{article.url}}" numposts="5" colorscheme="light"></div>
     </ion-content>
 </ion-view>

@@ -1,6 +1,6 @@
 <ion-view view-title="Eventos">
     <ion-nav-buttons side="secondary">
-        <a ui-sref="event-create"><i class="ion-ios-search-strong"></i></a>
+        <button class="button button-clear" ng-click="filter()"><i class="icon ion-android-search"></i></button>
     </ion-nav-buttons>
     <ion-content>
         <div class="list">
@@ -8,11 +8,7 @@
         	<a class="item item-positive">
         	{{current.day}}
         	</a>
-            <a ng-repeat="event in current.results" class="item item-thumbnail-left" href="" ui-sref="event-view({id: event.id})" >
-                <img ng-src="{{event.thumbnailSrc}}" />
-                <h2><span am-time-ago="event.doorTime | amFromUnix"></span> | {{event.title}}</h2>
-                <div ng-bind-html="event.excerpt"></div>
-            </a>
+            <div ng-repeat="event in current.results" event-card event="event"></div>
             </div>
             <div ng-repeat-end=""></div>
         </div>

@@ -1,9 +1,30 @@
-<ion-view view-title="STUV">
-    <ion-nav-buttons side="secondary">
-        
-    </ion-nav-buttons>
+<ion-view view-title="Bem Vindo">
     <ion-content>
-        
-        
+        <h3>A unica App completa para Viseu</h3>
+        <div class="list">
+        <div class="item item-positive item-button-right">
+        	Noticias
+            <button ui-sref="news-list" class="button button-positive"><i class="icon ion-android-search"></i></button>
+        </div>
+        <div news-card article="article" ng-repeat="article in articles | limitTo: 2" class="item item-thumbnail-left"></div>
+        <div class="item item-positive item-button-right">
+            Eventos
+            <button ui-sref="event-list" class="button button-positive"><i class="icon ion-android-search"></i></button>
+        </div>
+        <div event-card event="event" ng-repeat="event in events | limitTo: 3"></div>
+        <div class="row">
+        <div class="col">
+        <a ui-sref="bus-schedules({id: nearest.id})" class="item item-positive item-icon-left">
+            <i class="icon ion-android-bus"></i>
+            Estação + Próxima <p ng-bind="nearest.name"></p>
+        </a>
+        </div>
+        <div class="col">
+        <a ui-sref="bus-schedules({id: nearest.id})" class="item item-energized item-icon-left">
+            <i class="icon ion-ios-partlysunny"></i>
+            12º 
+        </a>
+        </div>
+        </div>
     </ion-content>
 </ion-view>

@@ -1,45 +1,66 @@
 (function(){
     angular
         .module('stuv.core')
-        .controller('stuv.core.news.newsListCtrl', ['stuv.common.responseUtilsSvc', 'pi.core.article.articleSvc', '$scope', '$stateParams', function(responseUtilsSvc, articleSvc, $scope, $stateParams){
-        	
-            $scope.articlesPerDay = [];
+        .controller('stuv.core.news.newsListCtrl', ['$ionicModal', 'stuv.common.responseUtilsSvc', 'pi.core.article.articleSvc', '$scope', '$stateParams', '$rootScope', '$q', function($ionicModal, responseUtilsSvc, articleSvc, $scope, $stateParams, $rootScope, $q){
             
-            $scope.queryName = null;
-
             $scope.cachedArticles = [];
-            
-            var self = this,
-                queryKeys = ['name', 'categoryId'];
-            
+                        
             $scope.queryModel = {
                 busy: false,
-                text: null,
-                noResult: false
+                noResult: false,
+                data: []
             };
 
-            $scope.$on('$destroy', function(){
-                $scope.articlesPerDay = [];
-                $scope.cachedArticles = [];
+            $scope.modalScope = $rootScope.$new();
+
+            $ionicModal.fromTemplateUrl('core/news/news-list-filter.tpl.html', {
+                scope: $scope.modalScope,
+                animation: 'slide-in-up',
+                controller: 'stuv.core.news.newsListFilterCtrl'
+            }).then(function(modal) {
+                $scope.modalScope.modal = modal;
+                $scope.modalScope.closeModal = closeModal;
             });
 
-            $scope.filterByCategory = function(id){
-                $scope.queryModel.text = null;
-                reset();
-                find({categoryId: id});
+            var modalDefer,
+                openModal = function() {
+                    modalDefer = $q.defer();
+                    $scope.modalScope.modal.show();
+                    return modalDefer.promise;
+                },
+                closeModal = function(model) {
+                    var res = $scope.modalScope.modal.hide();
+                    modalDefer.resolve(model);
+                };
+
+            $scope.modalScope.queryModel = {};
+
+            $scope.modalScope.filterByCategory = function(id){
+                $scope.modalScope.queryModel.text = null;
+                $scope.modalScope.queryModel.categoryId = id;
+                closeModal($scope.modalScope.queryModel);
             }
 
-            $scope.filterByText = function(){
-                reset();
-                find({
-                    name: $scope.queryModel.text
-                });
+            $scope.modalScope.filterByText = function(){
+                $scope.queryModel.categoryId = null;
+                closeModal($scope.modalScope.queryModel);
             }
 
-            $scope.clearText = function(){
-                $scope.queryModel.text = null;
-                reset();
-                find({});
+            var self = this,
+                queryKeys = ['name', 'categoryId'];
+
+            $scope.$on('$destroy', function(){
+                $scope.queryModel.data = [];
+                $scope.cachedArticles = [];
+                resetModel();
+            });
+
+            $scope.filter = function(){
+                openModal()
+                    .then(function(model){
+                        reset();
+                        find(model);
+                    });
             }
 
             $scope.findMore = function(){
@@ -47,33 +68,45 @@
                 find(model);
             }
 
-            $scope.noResult = function(){
-                return $scope.queryModel.noResult;
+            $scope.reset = function(){
+                reset();
+                find({});
+            }
+
+            var resetModel = function(){
+                $scope.queryModel = {
+                    text: null,
+                    categoryId: null
+                };    
             }
 
             var find = function(model) {
-                    $scope.cachedArticles = $scope.articlesPerDay;
+                    
+                    $scope.cachedArticles = $scope.queryModel.data;
+                    $scope.queryModel.busy = true;
 
                     return articleSvc.find(model)
                         .then(function(res){
                             if(!_.isArray(res.data.articles) || res.data.articles.length === 0) {
                                 $scope.queryModel.noResult = true;
+                                $scope.queryModel.busy = false;
+                                return;
                             }
 
-                            $scope.queryModel.noResult = false;
                             var data = responseUtilsSvc.orderByNewest(res.data.articles, 'datePublished');
-                            $scope.queryModel.busy = true;
-
                             angular.forEach(data, function(dto){
-                                $scope.articlesPerDay.push(dto);
-                                $scope.queryModel.busy = false;
-                            }, function(){
-                                $scope.queryModel.busy = false;
+                                $scope.queryModel.data.push(dto);
                             });
+                            
+                            $scope.queryModel.busy = false;
+                            $scope.queryModel.noResult = false;
+                        },
+                        function(){
+                            $scope.queryModel.busy = false;
                         });
                 },
                 reset = function(){
-                    $scope.articlesPerDay = [];
+                    $scope.queryModel.data = [];
                 };
 
             find();

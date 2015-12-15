@@ -1,0 +1,19 @@
+<div class="item item-event">
+	<a ui-sref="event-view({id: event.id})" class="item__cover" ng-style="{'background':'url(' + event.image + ')'}">
+		<h3 class="item__name" ng-bind="event.title"></h3>
+	</a>
+	<div class="item item-meta item-button-right">
+        Hoje as 02:00 ate as 04:00
+        <div class="buttons">
+        	<button event-calendar-trigger class="button button-energized" event="event" type="button">
+                <i class="icon ion-android-textsms"></i>
+            </button>
+            <button class="button button-energized">
+                <i class="icon ion-social-facebook"></i>
+            </button>
+            <button class="button button-energized">
+                <i class="icon ion-android-phone-portrait"></i>
+            </button>
+        </div>
+    </div>
+</div>

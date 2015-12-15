@@ -42,7 +42,6 @@
 				.state('home', {
 					url: '/',
 					controller: 'stuv.core.homeCtrl',
-					controllerAs: 'ctrl',
 					templateUrl: 'core/home.tpl.html'
 				})
 				.state('webcam', {
@@ -62,7 +61,7 @@
                     templateUrl: 'core/places-list.tpl.html'
                 });
 		}])
-		.run(['$ionicPlatform', '$cordovaGeolocation', '$state', 'stuv.core.setupSvc', 'pi.core.app.eventSvc', 'pi.core.article.articleCategorySvc', '$rootScope', function($ionicPlatform, $cordovaGeolocation, $state, setupSvc, eventCategorySvc, articleCategorySvc, $rootScope){
+		.run(['$ionicPlatform', '$cordovaGeolocation', '$state', 'stuv.core.setupSvc', 'pi.core.app.eventCategorySvc', 'pi.core.article.articleCategorySvc', '$rootScope', function($ionicPlatform, $cordovaGeolocation, $state, setupSvc, eventCategorySvc, articleCategorySvc, $rootScope){
 
 			articleCategorySvc.find({take: 100})
 		        .then(function(res){
@@ -71,7 +70,7 @@
 		        
 		    eventCategorySvc.find({take: 100})
 		        .then(function(res){
-		          $rootScope.eventCategories = res.data.categories;
+		          $rootScope.eventCategories = res.data.events;
 		        });
 
 			$ionicPlatform.ready(function() {
@@ -95,7 +94,7 @@
 })();
 (function(){
 	angular
-		.module('stuv.core', ['ngCordova', 'ui.router', 'pi']);
+		.module('stuv.core', ['ngCordova', 'ui.router', 'pi', 'ionic', 'ngCordova']);
 })();
 (function(){
 	angular
@@ -182,6 +181,101 @@
                 });
 		}]);
 })();
+var appDirectives = angular.module('appDirectives', []);
+
+appDirectives.directive('datetimepicker', function($rootScope, $state, $ionicPopup, $cordovaDatePicker, $timeout, $translate) {
+	return {
+		restrict: 'A',
+		replace: true,
+		scope: {
+			selectedDateTime: '=datetime',
+			mode: '='
+		},
+		link: function(scope) {
+
+			scope.selectDateTime = function() {
+
+				if (!scope.selectedDateTime) {
+					scope.selectedDateTime = new Date();
+				}
+
+				var options = {
+					date: scope.selectedDateTime,
+					mode: scope.mode
+				};
+
+				/***
+				*
+				* Make sure that the user's browser/device can use the datepicker functionality
+				*
+				***/
+
+				if (navigator.userAgent.match(/(iPhone|iPod|iPad|Android)/gi)) {
+
+					$cordovaDatePicker.show(options).then(function(date) {
+						$timeout(function() {
+							scope.selectedDateTime = date;
+						}, 50);
+					}, function(err) {
+						alert(err);
+					});
+
+				} else if ( ionic.Platform.platform() === 'windowsphone') {
+
+
+					// $cordova datepicker doesn't support wp8 
+					// so we'll use https://github.com/michaelfranz89/cordova-plugin-datepicker for this instead
+
+					// If we are getting date & time, we need to do them separately.
+					// First of all, get the date
+					if (scope.mode === 'datetime') {
+						options.mode = 'date';
+					}
+
+					datePicker.show(options, function(date) {
+
+						if (scope.mode === 'datetime') {
+							// If we are getting date & time, we now need to get the time and then combine the 2 values together
+							datePicker.show({
+								mode: 'time',
+								date: scope.selectedDateTime
+							}, function(time) {
+								// Create a new date with year, month and date from the date variable and hours, minutes and seconds from the time variable
+								$timeout(function() {
+									scope.selectedDateTime = new Date(date.getFullYear(), date.getMonth(), date.getDate(), time.getHours(), time.getMinutes(), time.getSeconds());
+								}, 50);
+							});
+						} else {
+							// If we're only getting the date OR time, send the value back
+							$timeout(function() {
+								scope.selectedDateTime = date;
+							}, 50);
+						}
+
+					});
+
+				} else {
+
+					$translate(['directives.datepicker.DATEPICKER_ERROR_TITLE', 'directives.datepicker.DATEPICKER_ERROR'])
+						.then(function(translations) {
+
+							$ionicPopup.alert({
+								title: translations['directives.datepicker.DATEPICKER_ERROR_TITLE'],
+								template: translations['directives.datepicker.DATEPICKER_ERROR']
+							});
+
+						});
+
+				}
+
+			};
+
+		},
+		template: '<button type="button" class="button button-icon icon ion-ios-calendar-outline" ng-click="selectDateTime()"></button>'
+	}
+});
+
+
 (function(){
 	angular
 		.module('stuv.common')
@@ -263,8 +357,32 @@
 (function(){
 	angular
 		.module('stuv.core')
-		.controller('stuv.core.homeCtrl', ['$scope', 'stuv.core.stuvSvc', 'leafletData', 'stuv.core.setupSvc', function($scope, stuvSvc, leafletData, setupSvc){
+		.controller('stuv.core.homeCtrl', ['$scope', 'stuv.core.stuvSvc', 'leafletData', 'stuv.core.setupSvc', 'pi.core.article.articleSvc', 'pi.core.app.eventSvc', function($scope, stuvSvc, leafletData, setupSvc, articleSvc, eventSvc){
 
+            $scope.articles = [];
+            $scope.events = [];
+
+            articleSvc.find({})
+                .then(function(res){
+                    if(!_.isArray(res.data.articles) || res.data.articles.length === 0) {
+                        return;
+                    }
+
+                    angular.forEach(res.data.articles, function(dto){
+                        $scope.articles.push(dto);
+                    });
+
+                });
+            eventSvc.find({})
+                .then(function(res){
+                    if(!_.isArray(res.data.events) || res.data.events.length === 0) {
+                        return;
+                    }
+
+                    angular.forEach(res.data.events, function(dto){
+                        $scope.events.push(dto);
+                    });
+            });
             angular.extend($scope, {
                 center: {
                     lat: 40.704472,
@@ -1934,6 +2052,23 @@
 (function(){
 	angular
 		.module('stuv.core')
+		.directive('eventCard', [function(){
+
+			return {
+				templateUrl: 'core/event/event-card.tpl.html',
+				scope: {
+					'event': '='
+				},
+				controller: ['$scope', function($scope){
+
+				}],
+				replace: false
+			}
+		}]);
+})();
+(function(){
+	angular
+		.module('stuv.core')
 		.controller('stuv.core.event.eventCreateCtrl', ['pi.core.app.eventSvc', '$scope', '$cordovaImagePicker', function(eventSvc, $scope, $cordovaImagePicker){
 			var self = this;
 			
@@ -1978,18 +2113,111 @@
 (function(){
     angular
         .module('stuv.core')
-        .controller('stuv.core.event.eventListCtrl', ['stuv.common.responseUtilsSvc', 'pi.core.app.eventSvc', '$scope', function(responseUtilsSvc, eventSvc, $scope){
+        .controller('stuv.core.event.eventListCtrl', ['stuv.common.responseUtilsSvc', 'pi.core.app.eventSvc', '$scope', '$ionicModal', '$q', '$rootScope', function(responseUtilsSvc, eventSvc, $scope, $ionicModal, $q, $rootScope){
+            var modalDefer,
+                openModal = function() {
+                    modalDefer = $q.defer();
+                    $scope.modalScope.modal.show();
+                    return modalDefer.promise;
+                },
+                closeModal = function(model) {
+                    var res = $scope.modalScope.modal.hide();
+                    modalDefer.resolve(model);
+                },
+                self = this,
+                queryKeys = ['name', 'categoryId'];
+
         	$scope.eventsPerDay = [];
+            $scope.cachedEvents = [];
+            $scope.queryModel = {
+                busy: false,
+                noResult: false,
+                data: []
+            };
 
-            eventSvc.find()
-                .then(function(res){
-                	
-                    var events = responseUtilsSvc.orderByNewest(res.data.events, 'doorTime');
+            $scope.modalScope = $rootScope.$new();
 
-                	angular.forEach(events, function(dto){
-                		$scope.eventsPerDay.push(dto);
-                	});
-                });
+            $ionicModal.fromTemplateUrl('core/event/event-list-filter.tpl.html', {
+                scope: $scope.modalScope,
+                animation: 'slide-in-up'
+            }).then(function(modal) {
+                $scope.modalScope.modal = modal;
+                $scope.modalScope.closeModal = closeModal;
+            });
+
+            $scope.modalScope.queryModel = {};
+
+            $scope.modalScope.filterByCategory = function(id){
+                $scope.modalScope.queryModel.text = null;
+                $scope.modalScope.queryModel.categoryId = id;
+                closeModal($scope.modalScope.queryModel);
+            }
+
+            $scope.modalScope.filterByText = function(){
+                $scope.queryModel.categoryId = null;
+                closeModal($scope.modalScope.queryModel);
+            }
+
+            $scope.$on('$destroy', function(){
+                $scope.queryModel.data = [];
+                $scope.cachedArticles = [];
+                resetModel();
+            });
+
+            $scope.filter = function(){
+                openModal()
+                    .then(function(model){
+                        reset();
+                        find(model);
+                    });
+            }
+
+            $scope.findMore = function(){
+                var model = responseUtils.getQueryModel(queryKeys);
+                find(model);
+            }
+
+            $scope.reset = function(){
+                reset();
+                find({});
+            }
+
+            var resetModel = function(){
+                $scope.queryModel = {
+                    text: null,
+                    categoryId: null
+                };    
+            }
+
+            var find = function(model) {
+                $scope.cachedEvents = $scope.eventsPerDay;
+
+                $scope.queryModel.busy = true;
+              
+                    eventSvc.find()
+                    .then(function(res){
+                        $scope.queryModel.busy = false;
+
+                        if(!_.isArray(res.data.events) || res.data.events === 0) {
+                            $scope.queryModel.noResult = true;
+                            $scope.queryModel.busy = false;
+                            return;
+                        }
+                        
+                        var events = responseUtilsSvc.orderByNewest(res.data.events, 'doorTime');
+
+                        angular.forEach(events, function(dto){
+                            $scope.eventsPerDay.push(dto);
+                        });
+                        $scope.queryModel.noResult = false;
+                    }, function(res){
+                        $scope.queryModel.busy = false;
+                    });    
+               
+                
+            };
+
+            find({});
         }]);
 })();
 (function(){
@@ -2068,6 +2296,116 @@
 })();
 (function(){
 	angular
+		.module('stuv')
+		.directive('eventCalendarTrigger', ['stuv.core.event.phoneCalendar', function(phoneCalendar){
+			var linkFn = function(scope, elem, attrs, piContentCtrl)
+			{
+				elem.addClass('event-calendar__trigger');
+
+				elem.bind('click', function(){
+					phoneCalendar.register(scope.event);
+				});
+			}
+			return {
+			   link: linkFn,
+			   restrict: 'A',
+			   scope: {
+			   	'event': '='
+			   }
+			}
+		}])
+		.provider('stuv.core.event.phoneCalendar', [function(){
+			return {
+				$get: ['$ionicModal', '$rootScope', '$q', '$cordovaCalendar', '$cordovaPreferences', function($ionicModal, $rootScope, $q, $cordovaCalendar, $cordovaPreferences){
+					var scope = $rootScope.$new(),
+					 	modalDefer,
+		                closeModal = function(res) {
+		                    var res = scope.modal.hide();
+		                    modalDefer.resolve(res);
+		                },
+		                showModal = function(event){
+							scope.event = event;
+			                modalDefer = $q.defer();
+			                scope.modal.show();
+				            return modalDefer.promise;
+						},
+						disposeModal= function(){
+							scope.moda.remove();
+						},
+						savePreferences = function(save){
+							$cordovaPreferences.store('phone-calendar.register-auto', 'true');
+						},
+						modalRegistersAuto = function(){
+							return $cordovaPreferences.fetch('phone-calendar.register-auto') === 'true';
+						},
+						saveEvent = function(event) {
+							$cordovaCalendar.createEvent({
+							    title: scope.event.title,
+							    location: 'The Moon',
+							    notes: scope.event.excerpt,
+							    startDate: new Date(scope.event.doorTime),
+							    endDate: new Date(scope.event.endDate)
+							  }).then(function (result) {
+							    closeModal(result);
+							  }, function (err) {
+							    
+							  });
+						};
+
+					scope.register = function(event){
+						saveEvent(event);
+					}
+
+					scope.registerAndSave = function(event){
+						register(event);
+						savePreferences(true);
+					}
+					scope.cancel = function(){
+						closeModal();
+						disposeModal();
+					}
+					$ionicModal.fromTemplateUrl('core/event/phone-calendar-confirm.tpl.html', {
+			                scope: scope,
+			                animation: 'slide-in-up'
+			            }).then(function(modal) {
+			                scope.modal = modal;
+			                scope.closeModal = closeModal;
+			            });
+					return {
+						register: function(event) {
+							if(modalRegistersAuto()) {
+								saveEvent(event);
+							} else {
+								showModal(event);
+							}
+						},
+						sync: function(){
+
+						}
+					}
+				}]
+			}
+		}])
+})();
+(function(){
+	angular
+		.module('stuv.core')
+		.directive('newsCard', [function(){
+
+			return {
+				templateUrl: 'core/news/news-card.tpl.html',
+				scope: {
+					'article': '='
+				},
+				controller: ['$scope', function($scope){
+
+				}],
+				replace: false
+			}
+		}]);
+})();
+(function(){
+	angular
 		.module('stuv.core')
 		.controller('stuv.core.news.newsCreateCtrl', ['pi.core.app.articleSvc', '$scope', '$cordovaFileOpener2', function(newsSvc, $scope, $cordovaFileOpener2){
 			var self = this;
@@ -2113,45 +2451,76 @@
 (function(){
     angular
         .module('stuv.core')
-        .controller('stuv.core.news.newsListCtrl', ['stuv.common.responseUtilsSvc', 'pi.core.article.articleSvc', '$scope', '$stateParams', function(responseUtilsSvc, articleSvc, $scope, $stateParams){
-        	
-            $scope.articlesPerDay = [];
+        .controller('stuv.core.news.newsListFilterCtrl', ['stuv.common.responseUtilsSvc', 'pi.core.article.articleSvc', '$scope', '$stateParams', function(responseUtilsSvc, articleSvc, $scope, $stateParams){
             
-            $scope.queryName = null;
+            $scope.queryModel = {};
 
+            
+        }]);
+})();
+(function(){
+    angular
+        .module('stuv.core')
+        .controller('stuv.core.news.newsListCtrl', ['$ionicModal', 'stuv.common.responseUtilsSvc', 'pi.core.article.articleSvc', '$scope', '$stateParams', '$rootScope', '$q', function($ionicModal, responseUtilsSvc, articleSvc, $scope, $stateParams, $rootScope, $q){
+            
             $scope.cachedArticles = [];
-            
-            var self = this,
-                queryKeys = ['name', 'categoryId'];
-            
+                        
             $scope.queryModel = {
                 busy: false,
-                text: null,
-                noResult: false
+                noResult: false,
+                data: []
             };
 
-            $scope.$on('$destroy', function(){
-                $scope.articlesPerDay = [];
-                $scope.cachedArticles = [];
+            $scope.modalScope = $rootScope.$new();
+
+            $ionicModal.fromTemplateUrl('core/news/news-list-filter.tpl.html', {
+                scope: $scope.modalScope,
+                animation: 'slide-in-up',
+                controller: 'stuv.core.news.newsListFilterCtrl'
+            }).then(function(modal) {
+                $scope.modalScope.modal = modal;
+                $scope.modalScope.closeModal = closeModal;
             });
 
-            $scope.filterByCategory = function(id){
-                $scope.queryModel.text = null;
-                reset();
-                find({categoryId: id});
+            var modalDefer,
+                openModal = function() {
+                    modalDefer = $q.defer();
+                    $scope.modalScope.modal.show();
+                    return modalDefer.promise;
+                },
+                closeModal = function(model) {
+                    var res = $scope.modalScope.modal.hide();
+                    modalDefer.resolve(model);
+                };
+
+            $scope.modalScope.queryModel = {};
+
+            $scope.modalScope.filterByCategory = function(id){
+                $scope.modalScope.queryModel.text = null;
+                $scope.modalScope.queryModel.categoryId = id;
+                closeModal($scope.modalScope.queryModel);
             }
 
-            $scope.filterByText = function(){
-                reset();
-                find({
-                    name: $scope.queryModel.text
-                });
+            $scope.modalScope.filterByText = function(){
+                $scope.queryModel.categoryId = null;
+                closeModal($scope.modalScope.queryModel);
             }
 
-            $scope.clearText = function(){
-                $scope.queryModel.text = null;
-                reset();
-                find({});
+            var self = this,
+                queryKeys = ['name', 'categoryId'];
+
+            $scope.$on('$destroy', function(){
+                $scope.queryModel.data = [];
+                $scope.cachedArticles = [];
+                resetModel();
+            });
+
+            $scope.filter = function(){
+                openModal()
+                    .then(function(model){
+                        reset();
+                        find(model);
+                    });
             }
 
             $scope.findMore = function(){
@@ -2159,33 +2528,45 @@
                 find(model);
             }
 
-            $scope.noResult = function(){
-                return $scope.queryModel.noResult;
+            $scope.reset = function(){
+                reset();
+                find({});
+            }
+
+            var resetModel = function(){
+                $scope.queryModel = {
+                    text: null,
+                    categoryId: null
+                };    
             }
 
             var find = function(model) {
-                    $scope.cachedArticles = $scope.articlesPerDay;
+                    
+                    $scope.cachedArticles = $scope.queryModel.data;
+                    $scope.queryModel.busy = true;
 
                     return articleSvc.find(model)
                         .then(function(res){
                             if(!_.isArray(res.data.articles) || res.data.articles.length === 0) {
                                 $scope.queryModel.noResult = true;
+                                $scope.queryModel.busy = false;
+                                return;
                             }
 
-                            $scope.queryModel.noResult = false;
                             var data = responseUtilsSvc.orderByNewest(res.data.articles, 'datePublished');
-                            $scope.queryModel.busy = true;
-
                             angular.forEach(data, function(dto){
-                                $scope.articlesPerDay.push(dto);
-                                $scope.queryModel.busy = false;
-                            }, function(){
-                                $scope.queryModel.busy = false;
+                                $scope.queryModel.data.push(dto);
                             });
+                            
+                            $scope.queryModel.busy = false;
+                            $scope.queryModel.noResult = false;
+                        },
+                        function(){
+                            $scope.queryModel.busy = false;
                         });
                 },
                 reset = function(){
-                    $scope.articlesPerDay = [];
+                    $scope.queryModel.data = [];
                 };
 
             find();

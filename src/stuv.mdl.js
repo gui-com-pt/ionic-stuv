@@ -42,7 +42,6 @@
 				.state('home', {
 					url: '/',
 					controller: 'stuv.core.homeCtrl',
-					controllerAs: 'ctrl',
 					templateUrl: 'core/home.tpl.html'
 				})
 				.state('webcam', {
@@ -62,7 +61,7 @@
                     templateUrl: 'core/places-list.tpl.html'
                 });
 		}])
-		.run(['$ionicPlatform', '$cordovaGeolocation', '$state', 'stuv.core.setupSvc', 'pi.core.app.eventSvc', 'pi.core.article.articleCategorySvc', '$rootScope', function($ionicPlatform, $cordovaGeolocation, $state, setupSvc, eventCategorySvc, articleCategorySvc, $rootScope){
+		.run(['$ionicPlatform', '$cordovaGeolocation', '$state', 'stuv.core.setupSvc', 'pi.core.app.eventCategorySvc', 'pi.core.article.articleCategorySvc', '$rootScope', function($ionicPlatform, $cordovaGeolocation, $state, setupSvc, eventCategorySvc, articleCategorySvc, $rootScope){
 
 			articleCategorySvc.find({take: 100})
 		        .then(function(res){
@@ -71,7 +70,7 @@
 		        
 		    eventCategorySvc.find({take: 100})
 		        .then(function(res){
-		          $rootScope.eventCategories = res.data.categories;
+		          $rootScope.eventCategories = res.data.events;
 		        });
 
 			$ionicPlatform.ready(function() {
