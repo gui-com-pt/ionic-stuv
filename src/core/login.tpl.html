@@ -1,0 +1,34 @@
+<ion-view view-title="Bem Vindo">
+    <ion-content>
+        <div class="list">
+        <div class="item__logo">
+            <img src="/img/logo.jpg" />
+        </div>
+        <div class="item item-positive item-button-right">
+        	Noticias
+            <button ui-sref="news-list" class="button button-positive button-clear"><i class="icon ion-android-search"></i></button>
+        </div>
+        <div ui-sref="news-view({id: article.id})" news-card article="article" ng-repeat="article in articles | limitTo: 2" class="news-card"></div>
+        <div class="item item-positive item-button-right">
+            Eventos
+            <button ui-sref="event-list" class="button button-positive button-clear"><i class="icon ion-android-search"></i></button>
+        </div>
+        <div class="row">
+        <a event-card event="event" ng-repeat="event in events | limitTo: 4" ui-sref="event-view({id: event.id})"></a   
+        </div>
+        <div class="row home-tiles">
+        <div class="col">
+        <a ui-sref="bus-schedules({id: nearest.id})" class="item item-positive item-icon-left">
+            <i class="icon ion-android-bus"></i>
+            Estação + Próxima <p ng-bind="nearest.name"></p>
+        </a>
+        </div>
+        <div class="col">
+        <a ui-sref="bus-schedules({id: nearest.id})" class="item item-energized item-icon-left">
+            <i class="icon ion-ios-partlysunny"></i>
+            12º 
+        </a>
+        </div>
+        </div>
+    </ion-content>
+</ion-view>

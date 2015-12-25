@@ -1,4 +1,4 @@
 (function(){
 	angular
-		.module('stuv.core', ['ngCordova', 'ui.router', 'pi', 'ionic', 'ngCordova']);
+		.module('stuv.core', ['ngCordova', 'ngCordova.plugins.preferences', 'ui.router', 'pi', 'ionic', 'ngCordova']);
 })();

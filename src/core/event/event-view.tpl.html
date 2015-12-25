@@ -7,16 +7,21 @@
     </ion-nav-buttons>
     <ion-content>
         <div style="background-image:url(https://codigo.ovh/cdn/main_22srTAcHetCNrqadskVB.png)" class="cover__wrapper">
-            <h3 class="item__name" ng-bind="article.name"></h3>
+            <div class="item__name-wrap item__name-wrap--pad">
+                <h3 class="item__name" ng-bind="event.title"></h3>
+            </div>
         </div>
+        <a class="item item-icon-left resource-view__date" href="#">
+            <i class="icon ion-android-calendar"></i>
+            <span am-time-ago="event.doorTime"></span> - <span am-time-ago="event.endDate"></span>
+            <span ng-repeat="name in event.tags" class="keyword" ng-bind="name"></span>
+        </a>
         <div class="row">
-            <div class="col"><i class="icon ion-android-calendar"></i> <span ng-bind="event.doorTime"></span></div>
-            <div class="col"><i class="icon ion-android-calendar"></i> <span ng-bind="event.endDate"></span></div>
             <a ng-click="shareFacebook()" class="col"><i class="icon ion-social-facebook"></i></a>
             <a ng-click="shareTwitter()" class="col"><i class="icon ion-social-twitter"></i></a>
             <a ng-click="shareEmail()" class="col"><i class="icon ion-social-email"></i></a>
         </div>
-        <div ng-bind-html="event.content"></div>
+        <div class="cnt" ng-bind-html="event.content"></div>
         <div pi-facebook-comment page-href="{{event.url}}" numposts="5" colorscheme="light"></div>
     </ion-content>
 </ion-view>

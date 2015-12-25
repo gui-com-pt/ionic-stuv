@@ -1,0 +1,5 @@
+<img ng-src="{{place.image}}"/>
+<h2 ng-bind="place.name"></h2>
+<p class="right" am-time-ago="place.datePublished"></p>
+<span ng-repeat="type in place.types" place-type-icon  place-type="type"></span>
+<span ng-repeat="name in place.keywords" ng-bind="name" class="keyword"></span>

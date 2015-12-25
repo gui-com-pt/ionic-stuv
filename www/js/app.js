@@ -12,6 +12,7 @@
 			'stuv.core.event',
 			'stuv.core.news',
 			'stuv.core.bus',
+			'stuv.core.place',
 			'angularMoment',
 			'stuv.common',
 			'templates',
@@ -21,11 +22,12 @@
             'ngFileUpload',
             'pi',
             'pi.core',
-            'pi.core.app'
+            'pi.core.app',
+            'pi.core.place'
 			])
 		.config(['piProvider', 'piHttpProvider', 'facebookMetaServiceProvider', '$stateProvider', '$cordovaFacebookProvider', function(piProvider, piHttpProvider, facebookMetaServiceProvider, $stateProvider, $cordovaFacebookProvider){
 
-			piHttpProvider.setBaseUrl('https://viseu.ovh/api');
+			piHttpProvider.setBaseUrl('http://localhost/api');
 	        facebookMetaServiceProvider.setAuthor('https://www.facebook.com/living.with.jesus');
 	        facebookMetaServiceProvider.setPublisher('https://www.facebook.com/viseu.ovh');
 	        facebookMetaServiceProvider.setSiteName('Viseu');
@@ -50,19 +52,26 @@
 					controllerAs: 'ctrl',
 					templateUrl: 'core/webcam.tpl.html'
 				})
+				.state('login', {
+					url: '/login',
+					controller: 'stuv.core.loginCtrl',
+					controllerAs: 'ctrl',
+					templateUrl: 'core/login.tpl.html'
+				})
 				.state('support', {
 					url: '/support',
 					controller: 'stuv.core.supportCtrl',
 					templateUrl: 'core/support.tpl.html'
-				})
-                .state('place-list', {
-                    url: '/sitios',
-                    controller: 'stuv.core.placesListCtrl',
-                    templateUrl: 'core/places-list.tpl.html'
-                });
+				});
 		}])
-		.run(['$ionicPlatform', '$cordovaGeolocation', '$state', 'stuv.core.setupSvc', 'pi.core.app.eventCategorySvc', 'pi.core.article.articleCategorySvc', '$rootScope', function($ionicPlatform, $cordovaGeolocation, $state, setupSvc, eventCategorySvc, articleCategorySvc, $rootScope){
+		.run(['$ionicPlatform', '$cordovaGeolocation', '$state', 'stuv.core.setupSvc', 'pi.core.app.eventCategorySvc', 'pi.core.article.articleCategorySvc', '$rootScope', 'stuv', function($ionicPlatform, $cordovaGeolocation, $state, setupSvc, eventCategorySvc, articleCategorySvc, $rootScope, stuv){
 
+			function boot(){	
+    			$rootScope.booted = true;
+                $state.go("home")
+			}
+
+			$rootScope.booted = false;
 			articleCategorySvc.find({take: 100})
 		        .then(function(res){
 		          $rootScope.articleCategories = res.data.categories;
@@ -84,8 +93,35 @@
 			    }
 
                 setupSvc.reset();
-                $state.transitionTo('home');
+
+                stuv.init()
+            	.then(function(){
+            		boot();		
+            	}, function(){
+            		boot();
+            	});
 		  	});
+
+		  	$rootScope.$on('$stateChangeStart',
+			    function(event, toState, toParams, fromState, fromParams){
+			    	if(!$rootScope.booted) {
+			    		event.preventDefault();
+			    		return;
+			    	}
+			    	return;
+			        // check if user is set
+//			        if(!$rootScope.userId && toState.name !== 'login'){  
+			            event.preventDefault();
+
+			            stuv.init()
+			            	.then(function(){
+			            		event.currentScope.$apply(function() {
+				                    $state.go("home")
+				                });	
+			            	})
+			    }
+			);
+
 		}]);
 })();
 (function(){
@@ -94,7 +130,7 @@
 })();
 (function(){
 	angular
-		.module('stuv.core', ['ngCordova', 'ui.router', 'pi', 'ionic', 'ngCordova']);
+		.module('stuv.core', ['ngCordova', 'ngCordova.plugins.preferences', 'ui.router', 'pi', 'ionic', 'ngCordova']);
 })();
 (function(){
 	angular
@@ -178,6 +214,31 @@
                     url: '/newso-editar/:id',
                     controller: 'stuv.core.news.newsUpdateCtrl',
                     templateUrl: 'core/news/news-update.tpl.html'
+                });
+		}]);
+})();
+(function(){
+	angular
+		.module('stuv.core.place', ['ngCordova', 'stuv.core']);
+	angular
+		.module('stuv.core.place')
+		.config(['$stateProvider', function($stateProvider){
+
+			$stateProvider
+				.state('place-list', {
+                    url: '/place-list',
+                    controller: 'stuv.core.place.placeListCtrl',
+                    templateUrl: 'core/place/place-list.tpl.html'
+                })
+                .state('place-list-map', {
+                    url: '/place-list-map',
+                    controller: 'stuv.core.place.placeListMapCtrl',
+                    templateUrl: 'core/place/place-list-map.tpl.html'
+                })
+                .state('place-view', {
+                    url: '/placeo/:id',
+                    controller: 'stuv.core.place.placeViewCtrl',
+                    templateUrl: 'core/place/place-view.tpl.html'
                 });
 		}]);
 })();
@@ -431,6 +492,93 @@ appDirectives.directive('datetimepicker', function($rootScope, $state, $ionicPop
 			$scope.stations = stuvSvc.stations;
 		}]);
 })();
+
+(function(){
+	angular
+		.module('stuv.core')
+		.provider('stuv', [function(){
+
+			var _settingsDict = 'app::settings',
+				_settings;
+
+			return {
+
+				$get: ['$cordovaPreferences', '$cordovaNetwork', '$q', '$rootScope',
+					function($cordovaPreferences, $cordovaNetwork, $q, $rootScope){
+					
+						function getSettings(){
+							var defer = $q.defer();
+							$cordovaPreferences.show(_settingsDict)
+								.success(function(res){
+									defer.resolve(res);
+								})
+								.error(function(err){
+									defer.reject(err);
+								});
+							return defer.promise;
+
+						}
+
+						function storeSetting(key, value) {
+							var defer = $q.defer();
+							$cordovaPreferences.store(key, value, _settingsDict)
+								.success(function(res){
+									defer.resolve(res);
+								})
+								.error(function(err){
+									defer.reject(err);
+								});
+							return defer.promise;
+						}
+
+						function setDefaults(){
+							$cordovaPreferences.store('updated', null, _settingsDict);
+							$cordovaPreferences.store('locale', 'pt_PT', _settingsDict);
+							$cordovaPreferences.store('theme', 'default', _settingsDict);
+							_settings = {
+								updated: null,
+								locale: 'pt_PT',
+								theme: 'default'
+							}
+						}
+
+						return {
+							init: function(){
+
+								if($cordovaNetwork.isOffline()) {
+									setDefaults();
+									$rootScope.offline = true;
+								} else {
+									$rootScope.offline = false;
+								}
+
+								var defer = $q.defer();
+								getSettings()
+									.then(function(res){
+										_settings = res;
+										defer.resolve(res);
+									}, function(res){
+										setDefaults();
+										defer.reject(res);
+									});
+
+								return defer.promise;
+							},
+							settings: function(){
+								return _settings;
+							}
+						}
+
+				}]
+			}
+		}])
+		.controller('stuv.core.loginCtrl', ['$scope', 'stuv.core.stuvSvc', 'leafletData', 'stuv.core.setupSvc', '$timeout', 'stuv', function($scope, stuvSvc, leafletData, setupSvc, $timeout, stuv){
+			var self = this;
+			
+
+		}]);
+})();
+/*
 (function(){
     angular
         .module('stuv.core')
@@ -442,6 +590,7 @@ appDirectives.directive('datetimepicker', function($rootScope, $state, $ionicPop
                 })
         }])
 })();
+*/
 (function(){
     angular
         .module('stuv.core')
@@ -2062,7 +2211,7 @@ appDirectives.directive('datetimepicker', function($rootScope, $state, $ionicPop
 				controller: ['$scope', function($scope){
 
 				}],
-				replace: false
+				replace: true
 			}
 		}]);
 })();
@@ -2468,7 +2617,8 @@ appDirectives.directive('datetimepicker', function($rootScope, $state, $ionicPop
             $scope.queryModel = {
                 busy: false,
                 noResult: false,
-                data: []
+                data: [],
+                currentCategory: 'Todas'
             };
 
             $scope.modalScope = $rootScope.$new();
@@ -2616,5 +2766,276 @@ appDirectives.directive('datetimepicker', function($rootScope, $state, $ionicPop
                     $scope.article = res.data.article;
                 });
 
+        }]);
+})();
+(function(){
+	angular
+		.module('stuv.core')
+		.directive('placeCard', [function(){
+
+			return {
+				templateUrl: 'core/place/place-card.tpl.html',
+				scope: {
+					'place': '='
+				},
+				controller: ['$scope', function($scope){
+
+				}],
+				replace: false
+			}
+		}]);
+})();
+(function(){
+    angular
+        .module('stuv.core')
+        .controller('stuv.core.place.placeListFilterCtrl', ['stuv.common.responseUtilsSvc', 'pi.core.article.articleSvc', '$scope', '$stateParams', function(responseUtilsSvc, articleSvc, $scope, $stateParams){
+            
+            $scope.queryModel = {};
+
+            
+        }]);
+})();
+(function(){
+
+  angular
+    .module('stuv.core')
+    .controller('stuv.core.place.placeListMapCtrl', ['$ionicModal', 'stuv.common.responseUtilsSvc', 'pi.core.place.placeSvc', '$scope', '$stateParams', '$rootScope', '$q', function($ionicModal, responseUtilsSvc, placeSvc, $scope, $stateParams, $rootScope, $q){
+
+      var mbAccessToken = 'pk.eyJ1IjoiZ3VpbGhlcm1lZ2VlayIsImEiOiJjaWlndXM1eXAwMDN0dnJrcmIydWpzNHRmIn0.4N9q6HjOGEiksMCvhYR9cQ';
+      
+      $scope.layers = {
+        baselayers: {
+          osm: {
+            name: 'Mapbox',
+            type: 'xyz',
+            url: 'https://api.mapbox.com/v4/mapbox.streets/0/0/0.png?access_token=pk.eyJ1IjoiZ3VpbGhlcm1lZ2VlayIsImEiOiJjaWlndXM1eXAwMDN0dnJrcmIydWpzNHRmIn0.4N9q6HjOGEiksMCvhYR9cQ'
+          }
+        }
+      };
+
+      $scope.center = {
+        lat: null,
+        lng: null,
+        zoom: 18
+      }
+
+      $scope.defaults = {
+        scrollWheelZoom: false,
+        // maxZoom: 22
+      }
+
+      var getClusterResult = function(nodes) {
+        var totalVotes = nodes.length;
+        var pollName = '';
+        var votesObj = {};
+
+        //computes counts for each vote
+        $.each(nodes, function(index) {
+          if (!pollName) {
+            pollName = this.feature.properties.pollName;
+          }
+          var voteKey = this.feature.properties.vote;
+
+          if (!(voteKey in votesObj)) {
+            votesObj[voteKey] = 1;
+          } else {
+            votesObj[voteKey] += 1;
+          }
+        });
+        // returns object of all votes
+        return {
+          pollName: pollName,
+          votesObj: votesObj,
+          totalVotes: totalVotes
+        };
+      };
+
+     function addGeoJsonLayerWithClustering(data) {
+        var markers = L.markerClusterGroup({
+          showCoverageOnHover: false,
+          zoomToBoundsOnClick: false
+        });
+        markers.on('clusterclick', function(a) {
+          var children = a.layer.getAllChildMarkers();
+          var resultObj = getClusterResult(children);
+
+          popupContent = '<div>' +
+            '<p><b>' + resultObj.pollName + '</b></p>' +
+            '<p>Votes: ' + resultObj.totalVotes + '</p>' +
+            '<p>yes:' + resultObj.votesObj.Yes + '</p>' +
+            '<p>no:' + resultObj.votesObj.No + '</p>' +
+            '</div>';
+
+          a.layer.bindPopup(popupContent, {
+            closeButton: true,
+            keepInView: true
+          }).openPopup();
+
+        });
+        var geoJsonLayer = L.geoJson(data, {
+          onEachFeature: function(feature, layer) {
+            // layer.bindPopup(feature.properties.vote);
+          }
+        });
+        markers.addLayer(geoJsonLayer);
+        leafletData.getMap().then(function(map) {
+          map.addLayer(markers);
+          map.fitBounds(markers.getBounds());
+        });
+      }
+
+  }]);
+
+})();
+(function(){
+    angular
+        .module('stuv.core')
+        .controller('stuv.core.place.placeListCtrl', ['$ionicModal', 'stuv.common.responseUtilsSvc', 'pi.core.place.placeSvc', '$scope', '$stateParams', '$rootScope', '$q', function($ionicModal, responseUtilsSvc, placeSvc, $scope, $stateParams, $rootScope, $q){
+            
+            $scope.cachedArticles = [];
+                        
+            $scope.queryModel = {
+                busy: false,
+                noResult: false,
+                data: [],
+                currentCategory: 'Todas'
+            };
+
+            $scope.modalScope = $rootScope.$new();
+
+            $ionicModal.fromTemplateUrl('core/place/place-list-filter.tpl.html', {
+                scope: $scope.modalScope,
+                animation: 'slide-in-up',
+                controller: 'stuv.core.place.placeListFilterCtrl'
+            }).then(function(modal) {
+                $scope.modalScope.modal = modal;
+                $scope.modalScope.closeModal = closeModal;
+            });
+
+            var modalDefer,
+                openModal = function() {
+                    modalDefer = $q.defer();
+                    $scope.modalScope.modal.show();
+                    return modalDefer.promise;
+                },
+                closeModal = function(model) {
+                    var res = $scope.modalScope.modal.hide();
+                    modalDefer.resolve(model);
+                };
+
+            $scope.modalScope.queryModel = {};
+
+            $scope.modalScope.filterByCategory = function(id){
+                $scope.modalScope.queryModel.text = null;
+                $scope.modalScope.queryModel.categoryId = id;
+                closeModal($scope.modalScope.queryModel);
+            }
+
+            $scope.modalScope.filterByText = function(){
+                $scope.queryModel.categoryId = null;
+                closeModal($scope.modalScope.queryModel);
+            }
+
+            var self = this,
+                queryKeys = ['name', 'categoryId'];
+
+            $scope.$on('$destroy', function(){
+                $scope.queryModel.data = [];
+                $scope.cachedArticles = [];
+                resetModel();
+            });
+
+            $scope.filter = function(){
+                openModal()
+                    .then(function(model){
+                        reset();
+                        find(model);
+                    });
+            }
+
+            $scope.findMore = function(){
+                var model = responseUtils.getQueryModel(queryKeys);
+                find(model);
+            }
+
+            $scope.reset = function(){
+                reset();
+                find({});
+            }
+
+            var resetModel = function(){
+                $scope.queryModel = {
+                    text: null,
+                    categoryId: null
+                };    
+            }
+
+
+            var find = function(model) {
+                    
+                    $scope.cachedArticles = $scope.queryModel.data;
+                    $scope.queryModel.busy = true;
+
+                    return placeSvc.find(model)
+                        .then(function(res){
+                            if(!_.isArray(res.data.places) || res.data.places.length === 0) {
+                                $scope.queryModel.noResult = true;
+                                $scope.queryModel.busy = false;
+                                return;
+                            }
+
+                            var data = responseUtilsSvc.orderByNewest(res.data.places, 'datePublished');
+                            angular.forEach(data, function(dto){
+                                $scope.queryModel.data.push(dto);
+                            });
+                            
+                            $scope.queryModel.busy = false;
+                            $scope.queryModel.noResult = false;
+                        },
+                        function(){
+                            $scope.queryModel.busy = false;
+                        });
+                },
+                reset = function(){
+                    $scope.queryModel.data = [];
+                };
+
+            find();
+
+        }]);
+})();
+(function(){
+	angular
+		.module('stuv.core')
+		.directive('placeTypeIcon', [function(){
+
+			return {
+				scope: {
+					'placeType': '='
+				},
+				replace: true,
+				template: '<i ng-class="icon {{icon}}"></i>',
+				link: function(scope, elem, attrs){
+					switch(scope.placeType) {
+						case 22:
+							scope.icon = 'ion-medkit';
+					}
+				}
+			}
+		}]);
+})();
+(function(){
+    angular
+        .module('stuv.core')
+        .controller('stuv.core.place.placeViewCtrl', ['pi.core.place.placeSvc', '$scope', '$stateParams', function(placeSvc, $scope, $stateParams){
+           var self = this;
+
+            $scope.id = $stateParams.id;
+
+            placeSvc.get($stateParams.id)
+                .then(function(res){
+                    $scope.place = res.data.place;
+              
+                });
         }]);
 })();

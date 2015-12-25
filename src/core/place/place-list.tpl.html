@@ -1,5 +1,6 @@
-<ion-view view-title="Noticias">
+<ion-view view-title="Sitios">
     <ion-nav-buttons side="secondary">
+        <button class="button button-clear" ui-sref="place-list-map"><i class="icon ion-map"></i></button>
         <button class="button button-clear" ng-click="filter()"><i class="icon ion-android-search"></i></button>
     </ion-nav-buttons>
     <ion-content>
@@ -10,7 +11,7 @@
                 <button class="button button-block button-positive" ng-click="clearText()">limpa a pesquisa</button>
             </div>
             <div ng-repeat-start="current in queryModel.data">
-                <a news-card article="article" ng-repeat="article in current.results" class="news-card" href="" ui-sref="news-view({id: article.id})" >
+                <a place-card place="place" ng-repeat="place in current.results" class="place-card" href="" ui-sref="place-view({id: place.id})" >
                     
                 </a>
             </div>

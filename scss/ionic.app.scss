@@ -10,6 +10,19 @@ img {
 .home-container > .row {
      -webkit-flex: 1;
 }
+
+.home-tiles > .col{
+	.item {
+		min-height: 80px;
+		display: flex;
+	    -webkit-box-align: center;
+	    -ms-flex-align: center;
+	    -webkit-align-items: center;
+	    -moz-align-items: center;
+	    align-items: center;
+	}
+	
+}
 .row-height {
   display: flex;
   flex-direction: column;
@@ -63,18 +76,27 @@ $dark:                            #444 !default;
   font-weight: 400;
 }
 
-.item p, .item h2, .item h3 {
+.item p, .item h2, .item h3, .item p, .item h2, .item h4 {
 	white-space:normal;
 }
 
-h3.item__name {
+.item__name-wrap {
 	background-color: rgba(0,0,0,0.5);
+	margin: 0;
+}
+
+.item__name-wrap--pad {
+	padding: 10px;	
+}
+h3.item__name {
 	padding: 3px 6px;
 	color: #ffffff;
 	text-transform: uppercase;
-	font-size: 1.2em;
+	font-size: 1em;
+	line-height: 1.06em;
     font-weight: bold;
 }
+
 
 .cover__wrapper {
 	min-height: 90px; 
@@ -104,17 +126,19 @@ h3.item__name {
 
 .creative-reffer {
 	@extend .row;
+	margin: 10px;
 }
 
 .creative-reffer__info {
 	@extend .col-50;
-	padding: 0 0 0 9px;
+	padding: 10px;
 	box-sizing: border-box;
 }
 
 .creative-reffer__info-owner {
 	font-size: 1.2em;
 	font-weight: bold;
+	padding: 10px;
 }
 
 .creative-reffer__img {
@@ -130,20 +154,23 @@ h3.item__name {
 .resource-view__date {
 	font-size: 0.9em;
     font-weight: bold;
+    margin: 10px;
 
-    .badge {
-    	font-size: 0.9em;
-    }
-
-    .badge-fb > i.icon {
-    	font-size: 0.9em;
+    .keyword {
+    	float: right;
     }
 }
 
 
-.item-event {
-	padding: 0;
+.event-card  {
+	@extend .col;
+	@extend .col-50;
 }
+
+.event-card__wrap {
+	background-color: #ffffff;
+}
+
 
 .item__content {
 	padding: $content-padding;
@@ -155,7 +182,7 @@ h3.item__name {
 	background-size: cover;
 	position: relative;
 
-	> .item__name {
+	> .item__name-wrap {
 		position: absolute;
 		bottom: 0;
 		left: 0;
@@ -180,4 +207,55 @@ a.item__cover {
 	> .buttons > .button {
 		@extend .button-small;
 	}
+}
+
+.item-button-right {
+	
+	.button.button-positive.button-clear {
+		color: #ffffff;
+	}
+}
+
+
+.pane, .view {
+	background-color: #dddddd;
+}
+
+.news-card, .place-card {
+	@extend .item;
+	@extend .item-thumbnail-right;
+	margin: 10px;
+
+}
+
+.keyword {
+	background-color: $stable;
+    z-index: 1;
+    display: inline-block;
+    padding: 3px 8px;
+    min-width: 10px;
+    border-radius: 10px;
+    vertical-align: baseline;
+    text-align: center;
+    white-space: nowrap;
+    font-weight: bold;
+    font-size: 14px;
+    line-height: 16px;
+}
+
+.cnt {
+	@extend .padding;
+	background-color: #ffffff;
+	margin: 10px;
+}
+
+.item__logo {
+	background-color: #ffffff;
+	padding: $item-padding;	
+	> img {
+		max-width: 60%;
+		display: block;
+		margin: 0 auto;
+	}
+	
 }

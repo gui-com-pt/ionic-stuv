@@ -10,7 +10,7 @@
 	configFn.$inject = ['FacebookProvider', '$httpProvider'];
 
 	angular
-		.module('pi', ['ngResource', 'facebook', 'pi.core', 'pi.core.app', 'pi.core.question', 'pi.core.article', 'pi.core.payment', 'pi.core.chat', 'pi.core.likes', 'pi.core.product'])
+		.module('pi', ['ngResource', 'facebook', 'pi.core', 'pi.core.app', 'pi.core.place', 'pi.core.question', 'pi.core.article', 'pi.core.payment', 'pi.core.chat', 'pi.core.likes', 'pi.core.product'])
 		.config(configFn)
 		.provider('pi', [function(){
 			var appId,
@@ -58,6 +58,9 @@
 
 	angular
 		.module('pi.core.question', ['pi.core']);
+
+	angular
+		.module('pi.core.place', ['pi.core']);
 })();
 function getCookie(cname) {
    var name = cname + "=",
@@ -868,6 +871,56 @@ angular
             return this;
 
         }]);
+})();
+(function(){
+	angular
+		.module('pi.core')
+		.provider('pi.core.responseUtilsSvc', [function(){
+
+			var getModelFromStateParams = function(names, model){
+                angular.forEach(names, function(value){
+                    if(!_.isUndefined($stateParams[value])) {
+                        model[value] = $stateParams[value];
+                    }
+                });
+
+                return model;
+            };
+			return {
+				$get: ['$stateParams', function($stateParams){
+					return {
+						orderByNewest: function(items, keyDate) {
+							if(!_.isArray(items) || !_.isString(keyDate)) {
+								return null;
+							}
+
+							var events = _.groupBy(items, function (event) {
+		                      return moment.utc(event[keyDate], 'X').startOf('day').format('DD-MM-YYYY');
+		                    });
+
+		                    events = _.map(events, function(group, day){
+		                        return {
+		                            day: day,
+		                            results: group
+		                        }
+		                    });
+
+							return events;
+						},
+						getModelFromStateParams: function(names, model){
+		                    getModelFromStateParams(names, model);
+		                },
+		                getQueryModel: function(data, queryKeys, take){
+		                	var take = _.isNumber(take) ? take : 12,
+		                		model = {skip: data.length, take: take};
+
+		                    getModelFromStateParams(queryKeys, model);
+		                    return model;
+		                },
+					}
+				}]
+			}
+		}]);
 })();
 (function(){
   angular
@@ -4251,6 +4304,65 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 				require: '^ngModel',
 				templateUrl: 'html/pi/price-specification.tpl.html'
 			}
+		}]);
+})();
+(function(){
+	angular
+		.module('pi.core.place')
+		.factory('pi.core.place.placeCategorySvc', ['piHttp', function(piHttp){
+
+			this.post = function(model){
+				return piHttp.post('/place-category', model);
+			}
+
+			this.remove = function(id){
+				return piHttp.post('/place-category-remove/' + id);
+			}
+
+			this.get = function(id, model) {
+				return piHttp.get('/place-category/' + id, model);
+			}
+
+			this.find = function(model) {
+				return piHttp.get('/place-category', {params: model});
+			};
+
+			this.put = function(id, model) {
+				return piHttp.post('/place-serie/' + id, model);
+			};
+
+			return this;
+		}]);
+})();
+
+(function(){
+	'use strict';
+
+	angular
+		.module('pi.core.place')
+		.factory('pi.core.place.placeSvc', ['piHttp', function(piHttp){
+
+			this.post = function(model){
+				return piHttp.post('/place', model);
+			}
+
+			this.get = function(id, model) {
+				return piHttp.get('/place/' + id, model);
+			}
+
+			this.find = function(model) {
+				return piHttp.get('/place', model);
+			};
+
+			this.remove = function(id) {
+				return piHttp.post('/place-remove/' + id);
+			};
+
+			this.put = function(id, model) {
+				return piHttp.post('/place/' + id, model);
+			};
+
+			return this;
 		}]);
 })();
 (function(){

@@ -1,3 +1,4 @@
-<img ng-src="{{article.image}}" />
+<img ng-src="{{article.image}}"/>
 <h2 ng-bind="article.name"></h2>
-<p ng-bind-html="article.headline"></p>
+<p class="right" am-time-ago="article.datePublished"></p>
+<span ng-repeat="name in article.keywords" ng-bind="name" class="keyword"></span>

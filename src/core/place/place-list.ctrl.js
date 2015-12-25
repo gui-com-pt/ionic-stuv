@@ -1,7 +1,7 @@
 (function(){
     angular
         .module('stuv.core')
-        .controller('stuv.core.news.newsListCtrl', ['$ionicModal', 'stuv.common.responseUtilsSvc', 'pi.core.article.articleSvc', '$scope', '$stateParams', '$rootScope', '$q', function($ionicModal, responseUtilsSvc, articleSvc, $scope, $stateParams, $rootScope, $q){
+        .controller('stuv.core.place.placeListCtrl', ['$ionicModal', 'stuv.common.responseUtilsSvc', 'pi.core.place.placeSvc', '$scope', '$stateParams', '$rootScope', '$q', function($ionicModal, responseUtilsSvc, placeSvc, $scope, $stateParams, $rootScope, $q){
             
             $scope.cachedArticles = [];
                         
@@ -14,10 +14,10 @@
 
             $scope.modalScope = $rootScope.$new();
 
-            $ionicModal.fromTemplateUrl('core/news/news-list-filter.tpl.html', {
+            $ionicModal.fromTemplateUrl('core/place/place-list-filter.tpl.html', {
                 scope: $scope.modalScope,
                 animation: 'slide-in-up',
-                controller: 'stuv.core.news.newsListFilterCtrl'
+                controller: 'stuv.core.place.placeListFilterCtrl'
             }).then(function(modal) {
                 $scope.modalScope.modal = modal;
                 $scope.modalScope.closeModal = closeModal;
@@ -81,20 +81,21 @@
                 };    
             }
 
+
             var find = function(model) {
                     
                     $scope.cachedArticles = $scope.queryModel.data;
                     $scope.queryModel.busy = true;
 
-                    return articleSvc.find(model)
+                    return placeSvc.find(model)
                         .then(function(res){
-                            if(!_.isArray(res.data.articles) || res.data.articles.length === 0) {
+                            if(!_.isArray(res.data.places) || res.data.places.length === 0) {
                                 $scope.queryModel.noResult = true;
                                 $scope.queryModel.busy = false;
                                 return;
                             }
 
-                            var data = responseUtilsSvc.orderByNewest(res.data.articles, 'datePublished');
+                            var data = responseUtilsSvc.orderByNewest(res.data.places, 'datePublished');
                             angular.forEach(data, function(dto){
                                 $scope.queryModel.data.push(dto);
                             });

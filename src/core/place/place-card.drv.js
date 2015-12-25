@@ -1,17 +1,17 @@
 (function(){
 	angular
 		.module('stuv.core')
-		.directive('eventCard', [function(){
+		.directive('placeCard', [function(){
 
 			return {
-				templateUrl: 'core/event/event-card.tpl.html',
+				templateUrl: 'core/place/place-card.tpl.html',
 				scope: {
-					'event': '='
+					'place': '='
 				},
 				controller: ['$scope', function($scope){
 
 				}],
-				replace: true
+				replace: false
 			}
 		}]);
 })();

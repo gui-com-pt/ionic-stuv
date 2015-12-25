@@ -21277,7 +21277,7 @@ angular.module("leaflet-directive")
 	configFn.$inject = ['FacebookProvider', '$httpProvider'];
 
 	angular
-		.module('pi', ['ngResource', 'facebook', 'pi.core', 'pi.core.app', 'pi.core.question', 'pi.core.article', 'pi.core.payment', 'pi.core.chat', 'pi.core.likes', 'pi.core.product'])
+		.module('pi', ['ngResource', 'facebook', 'pi.core', 'pi.core.app', 'pi.core.place', 'pi.core.question', 'pi.core.article', 'pi.core.payment', 'pi.core.chat', 'pi.core.likes', 'pi.core.product'])
 		.config(configFn)
 		.provider('pi', [function(){
 			var appId,
@@ -21325,6 +21325,9 @@ angular.module("leaflet-directive")
 
 	angular
 		.module('pi.core.question', ['pi.core']);
+
+	angular
+		.module('pi.core.place', ['pi.core']);
 })();
 function getCookie(cname) {
    var name = cname + "=",
@@ -22135,6 +22138,56 @@ angular
             return this;
 
         }]);
+})();
+(function(){
+	angular
+		.module('pi.core')
+		.provider('pi.core.responseUtilsSvc', [function(){
+
+			var getModelFromStateParams = function(names, model){
+                angular.forEach(names, function(value){
+                    if(!_.isUndefined($stateParams[value])) {
+                        model[value] = $stateParams[value];
+                    }
+                });
+
+                return model;
+            };
+			return {
+				$get: ['$stateParams', function($stateParams){
+					return {
+						orderByNewest: function(items, keyDate) {
+							if(!_.isArray(items) || !_.isString(keyDate)) {
+								return null;
+							}
+
+							var events = _.groupBy(items, function (event) {
+		                      return moment.utc(event[keyDate], 'X').startOf('day').format('DD-MM-YYYY');
+		                    });
+
+		                    events = _.map(events, function(group, day){
+		                        return {
+		                            day: day,
+		                            results: group
+		                        }
+		                    });
+
+							return events;
+						},
+						getModelFromStateParams: function(names, model){
+		                    getModelFromStateParams(names, model);
+		                },
+		                getQueryModel: function(data, queryKeys, take){
+		                	var take = _.isNumber(take) ? take : 12,
+		                		model = {skip: data.length, take: take};
+
+		                    getModelFromStateParams(queryKeys, model);
+		                    return model;
+		                },
+					}
+				}]
+			}
+		}]);
 })();
 (function(){
   angular
@@ -25522,6 +25575,65 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 })();
 (function(){
 	angular
+		.module('pi.core.place')
+		.factory('pi.core.place.placeCategorySvc', ['piHttp', function(piHttp){
+
+			this.post = function(model){
+				return piHttp.post('/place-category', model);
+			}
+
+			this.remove = function(id){
+				return piHttp.post('/place-category-remove/' + id);
+			}
+
+			this.get = function(id, model) {
+				return piHttp.get('/place-category/' + id, model);
+			}
+
+			this.find = function(model) {
+				return piHttp.get('/place-category', {params: model});
+			};
+
+			this.put = function(id, model) {
+				return piHttp.post('/place-serie/' + id, model);
+			};
+
+			return this;
+		}]);
+})();
+
+(function(){
+	'use strict';
+
+	angular
+		.module('pi.core.place')
+		.factory('pi.core.place.placeSvc', ['piHttp', function(piHttp){
+
+			this.post = function(model){
+				return piHttp.post('/place', model);
+			}
+
+			this.get = function(id, model) {
+				return piHttp.get('/place/' + id, model);
+			}
+
+			this.find = function(model) {
+				return piHttp.get('/place', model);
+			};
+
+			this.remove = function(id) {
+				return piHttp.post('/place-remove/' + id);
+			};
+
+			this.put = function(id, model) {
+				return piHttp.post('/place/' + id, model);
+			};
+
+			return this;
+		}]);
+})();
+(function(){
+	angular
 		.module('pi.core.product')
 		.factory('pi.core.product.businessEntity', [function(){
 			var svc = [
@@ -28131,7 +28243,7 @@ function plural(ms, n, name) {
  * AngularJS file upload directives and services. Supoorts: file upload/drop/paste, resume, cancel/abort,
  * progress, resize, thumbnail, preview, validation and CORS
  * @author  Danial  <danial.farid@gmail.com>
- * @version 10.1.9
+ * @version 10.1.14
  */
 
 if (window.XMLHttpRequest && !(window.FileAPI && FileAPI.shouldLoad)) {
@@ -28152,7 +28264,7 @@ if (window.XMLHttpRequest && !(window.FileAPI && FileAPI.shouldLoad)) {
 
 var ngFileUpload = angular.module('ngFileUpload', []);
 
-ngFileUpload.version = '10.1.9';
+ngFileUpload.version = '10.1.14';
 
 ngFileUpload.service('UploadBase', ['$http', '$q', '$timeout', function ($http, $q, $timeout) {
   var upload = this;
@@ -28611,7 +28723,6 @@ ngFileUpload.service('Upload', ['$parse', '$timeout', '$compile', '$q', 'UploadE
 
       if (ngModel) {
         upload.applyModelValidation(ngModel, files);
-        ngModel.$ngfModelChange = true;
         ngModel.$setViewValue(isSingleModel ? file : files);
       }
 
@@ -29221,7 +29332,7 @@ ngFileUpload.service('UploadValidate', ['UploadDataUrl', '$q', '$timeout', funct
     return valid;
   };
 
-  upload.ratioToFloat = function(val) {
+  upload.ratioToFloat = function (val) {
     var r = val.toString(), xIndex = r.search(/[x:]/i);
     if (xIndex > -1) {
       r = parseFloat(r.substring(0, xIndex)) / parseFloat(r.substring(xIndex + 1));
@@ -29234,12 +29345,10 @@ ngFileUpload.service('UploadValidate', ['UploadDataUrl', '$q', '$timeout', funct
   upload.registerModelChangeValidator = function (ngModel, attr, scope) {
     if (ngModel) {
       ngModel.$formatters.push(function (files) {
-        if (!ngModel.$ngfModelChange) {
-          upload.validate(files, ngModel, attr, scope, function () {
+        if (ngModel.$dirty) {
+          upload.validate(files, ngModel, attr, scope).then(function () {
             upload.applyModelValidation(ngModel, files);
           });
-        } else {
-          ngModel.$ngfModelChange = false;
         }
       });
     }
@@ -29425,7 +29534,7 @@ ngFileUpload.service('UploadValidate', ['UploadDataUrl', '$q', '$timeout', funct
     }, /image/, this.imageDimensions, function (d, val) {
       return (d.width / d.height) - upload.ratioToFloat(val) < 0.0001;
     })));
-      promises.push(upload.happyPromise(validateAsync('minRatio', function (cons) {
+    promises.push(upload.happyPromise(validateAsync('minRatio', function (cons) {
       return cons.ratio;
     }, /image/, this.imageDimensions, function (d, val) {
       return (d.width / d.height) - upload.ratioToFloat(val) > -0.0001;
@@ -29824,7 +29933,8 @@ ngFileUpload.service('UploadResize', ['UploadValidate', '$q', function (UploadVa
       }
     }, false);
     elem[0].addEventListener('paste', function (evt) {
-      if (navigator.userAgent.toLowerCase().indexOf('firefox') > -1) {
+      if (navigator.userAgent.toLowerCase().indexOf('firefox') > -1 &&
+        attrGetter('ngfEnableFirefoxPaste', scope)) {
         evt.preventDefault();
       }
       if (isDisabled() || !upload.shouldUpdateOn('paste', attr, scope)) return;

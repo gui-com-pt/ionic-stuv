@@ -12,6 +12,7 @@
 			'stuv.core.event',
 			'stuv.core.news',
 			'stuv.core.bus',
+			'stuv.core.place',
 			'angularMoment',
 			'stuv.common',
 			'templates',
@@ -21,11 +22,12 @@
             'ngFileUpload',
             'pi',
             'pi.core',
-            'pi.core.app'
+            'pi.core.app',
+            'pi.core.place'
 			])
 		.config(['piProvider', 'piHttpProvider', 'facebookMetaServiceProvider', '$stateProvider', '$cordovaFacebookProvider', function(piProvider, piHttpProvider, facebookMetaServiceProvider, $stateProvider, $cordovaFacebookProvider){
 
-			piHttpProvider.setBaseUrl('https://viseu.ovh/api');
+			piHttpProvider.setBaseUrl('http://localhost/api');
 	        facebookMetaServiceProvider.setAuthor('https://www.facebook.com/living.with.jesus');
 	        facebookMetaServiceProvider.setPublisher('https://www.facebook.com/viseu.ovh');
 	        facebookMetaServiceProvider.setSiteName('Viseu');
@@ -50,19 +52,26 @@
 					controllerAs: 'ctrl',
 					templateUrl: 'core/webcam.tpl.html'
 				})
+				.state('login', {
+					url: '/login',
+					controller: 'stuv.core.loginCtrl',
+					controllerAs: 'ctrl',
+					templateUrl: 'core/login.tpl.html'
+				})
 				.state('support', {
 					url: '/support',
 					controller: 'stuv.core.supportCtrl',
 					templateUrl: 'core/support.tpl.html'
-				})
-                .state('place-list', {
-                    url: '/sitios',
-                    controller: 'stuv.core.placesListCtrl',
-                    templateUrl: 'core/places-list.tpl.html'
-                });
+				});
 		}])
-		.run(['$ionicPlatform', '$cordovaGeolocation', '$state', 'stuv.core.setupSvc', 'pi.core.app.eventCategorySvc', 'pi.core.article.articleCategorySvc', '$rootScope', function($ionicPlatform, $cordovaGeolocation, $state, setupSvc, eventCategorySvc, articleCategorySvc, $rootScope){
+		.run(['$ionicPlatform', '$cordovaGeolocation', '$state', 'stuv.core.setupSvc', 'pi.core.app.eventCategorySvc', 'pi.core.article.articleCategorySvc', '$rootScope', 'stuv', function($ionicPlatform, $cordovaGeolocation, $state, setupSvc, eventCategorySvc, articleCategorySvc, $rootScope, stuv){
 
+			function boot(){	
+    			$rootScope.booted = true;
+                $state.go("home")
+			}
+
+			$rootScope.booted = false;
 			articleCategorySvc.find({take: 100})
 		        .then(function(res){
 		          $rootScope.articleCategories = res.data.categories;
@@ -84,7 +93,34 @@
 			    }
 
                 setupSvc.reset();
-                $state.transitionTo('home');
+
+                stuv.init()
+            	.then(function(){
+            		boot();		
+            	}, function(){
+            		boot();
+            	});
 		  	});
+
+		  	$rootScope.$on('$stateChangeStart',
+			    function(event, toState, toParams, fromState, fromParams){
+			    	if(!$rootScope.booted) {
+			    		event.preventDefault();
+			    		return;
+			    	}
+			    	return;
+			        // check if user is set
+//			        if(!$rootScope.userId && toState.name !== 'login'){  
+			            event.preventDefault();
+
+			            stuv.init()
+			            	.then(function(){
+			            		event.currentScope.$apply(function() {
+				                    $state.go("home")
+				                });	
+			            	})
+			    }
+			);
+
 		}]);
 })();

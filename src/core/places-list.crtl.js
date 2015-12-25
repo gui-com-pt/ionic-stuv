@@ -1,3 +1,4 @@
+/*
 (function(){
     angular
         .module('stuv.core')
@@ -9,3 +10,4 @@
                 })
         }])
 })();
+*/
