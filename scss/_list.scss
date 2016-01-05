@@ -1,0 +1,14 @@
+.list-query__item {
+	float: left;
+}
+.list-query__search {
+	width: 100%;
+	display: block;
+
+}
+.list-query__btn {
+	@extend .button;
+	@extend .button-small;
+	@extend .button-positive;	
+	margin-right: 4px;
+}

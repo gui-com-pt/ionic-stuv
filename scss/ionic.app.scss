@@ -1,3 +1,16 @@
+@import "variables";
+@import "www/lib/ionic/scss/ionic";
+@import "www/lib/pi-sass-mixins/src/mixins";
+
+@import "angular";
+
+@import "event";
+@import "news";
+@import "place";
+@import "bus";
+@import "item";
+@import "list";
+
 img {
 	max-width: 100%;
 }
@@ -28,100 +41,11 @@ img {
   flex-direction: column;
   height: 100%;
 }
-@import "angular";
-
-
-/*
-To customize the look and feel of Ionic, you can override the variables
-in ionic's _variables.scss file.
-
-For example, you might change some of the default colors:
-
-$light:                           #fff !default;
-$stable:                          #f8f8f8 !default;
-$positive:                        #387ef5 !default;
-$calm:                            #11c1f3 !default;
-$balanced:                        #33cd5f !default;
-$energized:                       #ffc900 !default;
-$assertive:                       #ef473a !default;
-$royal:                           #886aea !default;
-
-*/
-
-// The path for our ionicons font files, relative to the built CSS in www/css
-$ionicons-font-path: "../lib/ionic/fonts" !default;
-// Colors
-// -------------------------------
-
-$light:                           #fff !default;
-$stable:                          #ffcb01 !default;
-$positive:                        #ed2e7e !default;
-$calm:                            #353535 !default;
-$balanced:                        #33cd5f !default;
-$energized:                       #ffc900 !default;
-$assertive:                       #ef473a !default;
-$royal:                           #886aea !default;
-$dark:                            #444 !default;
-
-@import "www/lib/ionic/scss/ionic";
-@import "www/lib/pi-sass-mixins/src/mixins";
-.register-stop__form {
-	.icon {
-		font-size: 2.1em;
-	}
-}
-
-.item__time {
-  font-size: 1.4em;
-  font-weight: 400;
-}
-
-.item p, .item h2, .item h3, .item p, .item h2, .item h4 {
-	white-space:normal;
-}
-
-.item__name-wrap {
-	background-color: rgba(0,0,0,0.5);
-	margin: 0;
-}
-
-.item__name-wrap--pad {
-	padding: 10px;	
-}
-h3.item__name {
-	padding: 3px 6px;
-	color: #ffffff;
-	text-transform: uppercase;
-	font-size: 1em;
-	line-height: 1.06em;
-    font-weight: bold;
-}
-
 
 .cover__wrapper {
 	min-height: 90px; 
 	padding-top: 100px; 
 	background-size: cover;
-}
-
-.item-blocks {
-	padding: $item-padding;
-	@extend .item;
-	@include clearfix();
-}
-.list-query__item {
-	float: left;
-}
-.list-query__search {
-	width: 100%;
-	display: block;
-
-}
-.list-query__btn {
-	@extend .button;
-	@extend .button-small;
-	@extend .button-positive;	
-	margin-right: 4px;
 }
 
 .creative-reffer {
@@ -145,11 +69,6 @@ h3.item__name {
 	@extend .col-50;	
 	box-sizing: border-box;
 }
-[ion-content], ion-content {
-	/*background-image: url(/img/v1.jpg);
-    background-repeat: no-repeat;
-    background-size: cover;*/
-}
 
 .resource-view__date {
 	font-size: 0.9em;
@@ -161,71 +80,8 @@ h3.item__name {
     }
 }
 
-
-.event-card  {
-	@extend .col;
-	@extend .col-50;
-}
-
-.event-card__wrap {
-	background-color: #ffffff;
-}
-
-
-.item__content {
-	padding: $content-padding;
-}
-
-.item__cover {
-
-	min-height: 100px;
-	background-size: cover;
-	position: relative;
-
-	> .item__name-wrap {
-		position: absolute;
-		bottom: 0;
-		left: 0;
-		right: 0;
-	}
-}
-a.item__cover {
-	display: block;
-}
-
-.item-meta {
-	font-size: 0.9em;
-	
-	button.button {
-		
-
-	}
-}
-
-.item-meta.item-button-right, .item-meta.item-button-left {
-
-	> .buttons > .button {
-		@extend .button-small;
-	}
-}
-
-.item-button-right {
-	
-	.button.button-positive.button-clear {
-		color: #ffffff;
-	}
-}
-
-
 .pane, .view {
 	background-color: #dddddd;
-}
-
-.news-card, .place-card {
-	@extend .item;
-	@extend .item-thumbnail-right;
-	margin: 10px;
-
 }
 
 .keyword {
@@ -249,13 +105,3 @@ a.item__cover {
 	margin: 10px;
 }
 
-.item__logo {
-	background-color: #ffffff;
-	padding: $item-padding;	
-	> img {
-		max-width: 60%;
-		display: block;
-		margin: 0 auto;
-	}
-	
-}

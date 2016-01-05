@@ -21328,6 +21328,10 @@ angular.module("leaflet-directive")
 
 	angular
 		.module('pi.core.place', ['pi.core']);
+
+	angular
+		.module('pi.ionic', ['pi.core']);
+
 })();
 function getCookie(cname) {
    var name = cname + "=",
@@ -21583,6 +21587,25 @@ angular
   }]);
 })();
 
+(function(){
+	
+	angular
+		.module('pi.ionic')
+		.config(['$httpProvider', function($httpProvider){
+			$httpProvider.interceptors.push(function($rootScope) {
+		    return {
+		      request: function(config) {
+		        $rootScope.$broadcast('http:start')
+		        return config
+		      },
+		      response: function(response) {
+		        $rootScope.$broadcast('http:end')
+		        return response
+		      }
+		    }
+		  });
+		}]);
+})();
 (function(){
 	'use strict';
 
@@ -22175,11 +22198,14 @@ angular
 							return events;
 						},
 						getModelFromStateParams: function(names, model){
-		                    getModelFromStateParams(names, model);
+		                    return getModelFromStateParams(names, model);
 		                },
 		                getQueryModel: function(data, queryKeys, take){
 		                	var take = _.isNumber(take) ? take : 12,
-		                		model = {skip: data.length, take: take};
+		                		model = {
+		                			skip: _.isObject(data) && _.isNumber(data.length) ? data.length : 0, 
+		                			take: take
+		                		};
 
 		                    getModelFromStateParams(queryKeys, model);
 		                    return model;
@@ -25175,7 +25201,7 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 			}
 
 			this.find = function(model) {
-				return piHttp.get('/application', model);
+				return piHttp.get('/application', {params: model});
 			}
 
 			this.put = function(id, model){
@@ -25381,7 +25407,7 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 			}
 
 			this.find = function(model) {
-				return piHttp.get('/event', model);
+				return piHttp.get('/event', {params: model});
 			};
 
 			this.remove = function(id) {
@@ -25618,7 +25644,7 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 			}
 
 			this.find = function(model) {
-				return piHttp.get('/place', model);
+				return piHttp.get('/place', {params: model});
 			};
 
 			this.remove = function(id) {
@@ -25723,7 +25749,7 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 			}
 
 			this.find = function(model) {
-				return piHttp.get('/product', model);
+				return piHttp.get('/product', {params: model});
 			};
 
 			this.postOffer = function(productId, model) {

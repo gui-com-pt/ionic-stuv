@@ -1,52 +1,4 @@
 @charset "UTF-8";
-img {
-  max-width: 100%; }
-
-.home-container {
-  display: -webkit-flex;
-  -webkit-flex-direction: column;
-  height: 100%; }
-
-.home-container > .row, .home-container > .creative-reffer {
-  -webkit-flex: 1; }
-
-.home-tiles > .col .item, .home-tiles > .event-card .item, .home-tiles > .col .item-blocks, .home-tiles > .event-card .item-blocks, .home-tiles > .col .news-card, .home-tiles > .event-card .news-card, .home-tiles > .col .place-card, .home-tiles > .event-card .place-card {
-  min-height: 80px;
-  display: flex;
-  -webkit-box-align: center;
-  -ms-flex-align: center;
-  -webkit-align-items: center;
-  -moz-align-items: center;
-  align-items: center; }
-
-.row-height {
-  display: flex;
-  flex-direction: column;
-  height: 100%; }
-
-.ng-hide {
-  /* this is just another form of hiding an element */
-  display: block !important;
-  position: absolute;
-  top: -9999px;
-  left: -9999px; }
-
-/*
-To customize the look and feel of Ionic, you can override the variables
-in ionic's _variables.scss file.
-
-For example, you might change some of the default colors:
-
-$light:                           #fff !default;
-$stable:                          #f8f8f8 !default;
-$positive:                        #387ef5 !default;
-$calm:                            #11c1f3 !default;
-$balanced:                        #33cd5f !default;
-$energized:                       #ffc900 !default;
-$assertive:                       #ef473a !default;
-$royal:                           #886aea !default;
-
-*/
 /*!
   Ionicons, v2.0.1
   Created by Ben Sperry for the Ionic Framework, http://ionicons.com/
@@ -4254,7 +4206,7 @@ ion-tabs.tabs-color-active-dark .tab-item {
   .tab-item.tab-item-active.tab-item-dark, .tab-item.active.tab-item-dark, .tab-item.activated.tab-item-dark {
     color: #444; }
 
-.item.tabs, .tabs.item-blocks, .tabs.news-card, .tabs.place-card {
+.item.tabs, .tabs.news-card, .tabs.place-card, .tabs.item-blocks {
   display: -webkit-box;
   display: -webkit-flex;
   display: -moz-box;
@@ -4262,7 +4214,7 @@ ion-tabs.tabs-color-active-dark .tab-item {
   display: -ms-flexbox;
   display: flex;
   padding: 0; }
-  .item.tabs .icon:before, .tabs.item-blocks .icon:before, .tabs.news-card .icon:before, .tabs.place-card .icon:before {
+  .item.tabs .icon:before, .tabs.news-card .icon:before, .tabs.place-card .icon:before, .tabs.item-blocks .icon:before {
     position: relative; }
 
 .tab-item.disabled, .tab-item[disabled] {
@@ -4422,9 +4374,9 @@ ion-tabs.tabs-color-active-dark .tab-item {
   background-color: #fff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
   opacity: 0; }
-  .popover .item:first-child, .popover .item-blocks:first-child, .popover .news-card:first-child, .popover .place-card:first-child {
+  .popover .item:first-child, .popover .news-card:first-child, .popover .place-card:first-child, .popover .item-blocks:first-child {
     border-top: 0; }
-  .popover .item:last-child, .popover .item-blocks:last-child, .popover .news-card:last-child, .popover .place-card:last-child {
+  .popover .item:last-child, .popover .news-card:last-child, .popover .place-card:last-child, .popover .item-blocks:last-child {
     border-bottom: 0; }
   .popover.popover-bottom {
     margin-top: -12px; }
@@ -4488,7 +4440,7 @@ ion-tabs.tabs-color-active-dark .tab-item {
   margin-top: -32px;
   background-color: #fafafa;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35); }
-  .platform-android .popover .item, .platform-android .popover .item-blocks, .platform-android .popover .news-card, .platform-android .popover .place-card {
+  .platform-android .popover .item, .platform-android .popover .news-card, .platform-android .popover .place-card, .platform-android .popover .item-blocks {
     border-color: #fafafa;
     background-color: #fafafa;
     color: #4d4d4d; }
@@ -4687,7 +4639,7 @@ ion-tabs.tabs-color-active-dark .tab-item {
  * Items
  * --------------------------------------------------
  */
-.item, .item-blocks, .news-card, .place-card {
+.item, .news-card, .place-card, .item-blocks {
   border-color: #ddd;
   background-color: #fff;
   color: #444;
@@ -4699,26 +4651,26 @@ ion-tabs.tabs-color-active-dark .tab-item {
   border-width: 1px;
   border-style: solid;
   font-size: 16px; }
-  .item h2, .item-blocks h2, .news-card h2, .place-card h2 {
+  .item h2, .news-card h2, .place-card h2, .item-blocks h2 {
     margin: 0 0 2px 0;
     font-size: 16px;
     font-weight: normal; }
-  .item h3, .item-blocks h3, .news-card h3, .place-card h3 {
+  .item h3, .news-card h3, .place-card h3, .item-blocks h3 {
     margin: 0 0 4px 0;
     font-size: 14px; }
-  .item h4, .item-blocks h4, .news-card h4, .place-card h4 {
+  .item h4, .news-card h4, .place-card h4, .item-blocks h4 {
     margin: 0 0 4px 0;
     font-size: 12px; }
-  .item h5, .item-blocks h5, .news-card h5, .place-card h5, .item h6, .item-blocks h6, .news-card h6, .place-card h6 {
+  .item h5, .news-card h5, .place-card h5, .item-blocks h5, .item h6, .news-card h6, .place-card h6, .item-blocks h6 {
     margin: 0 0 3px 0;
     font-size: 10px; }
-  .item p, .item-blocks p, .news-card p, .place-card p {
+  .item p, .news-card p, .place-card p, .item-blocks p {
     color: #666;
     font-size: 14px;
     margin-bottom: 2px; }
-  .item h1:last-child, .item-blocks h1:last-child, .news-card h1:last-child, .place-card h1:last-child, .item h2:last-child, .item-blocks h2:last-child, .news-card h2:last-child, .place-card h2:last-child, .item h3:last-child, .item-blocks h3:last-child, .news-card h3:last-child, .place-card h3:last-child, .item h4:last-child, .item-blocks h4:last-child, .news-card h4:last-child, .place-card h4:last-child, .item h5:last-child, .item-blocks h5:last-child, .news-card h5:last-child, .place-card h5:last-child, .item h6:last-child, .item-blocks h6:last-child, .news-card h6:last-child, .place-card h6:last-child, .item p:last-child, .item-blocks p:last-child, .news-card p:last-child, .place-card p:last-child {
+  .item h1:last-child, .news-card h1:last-child, .place-card h1:last-child, .item-blocks h1:last-child, .item h2:last-child, .news-card h2:last-child, .place-card h2:last-child, .item-blocks h2:last-child, .item h3:last-child, .news-card h3:last-child, .place-card h3:last-child, .item-blocks h3:last-child, .item h4:last-child, .news-card h4:last-child, .place-card h4:last-child, .item-blocks h4:last-child, .item h5:last-child, .news-card h5:last-child, .place-card h5:last-child, .item-blocks h5:last-child, .item h6:last-child, .news-card h6:last-child, .place-card h6:last-child, .item-blocks h6:last-child, .item p:last-child, .news-card p:last-child, .place-card p:last-child, .item-blocks p:last-child {
     margin-bottom: 0; }
-  .item .badge, .item-blocks .badge, .news-card .badge, .place-card .badge {
+  .item .badge, .news-card .badge, .place-card .badge, .item-blocks .badge {
     display: -webkit-box;
     display: -webkit-flex;
     display: -moz-box;
@@ -4728,94 +4680,94 @@ ion-tabs.tabs-color-active-dark .tab-item {
     position: absolute;
     top: 16px;
     right: 32px; }
-  .item.item-button-right .badge, .item-button-right.item-blocks .badge, .item-button-right.news-card .badge, .item-button-right.place-card .badge {
+  .item.item-button-right .badge, .item-button-right.news-card .badge, .item-button-right.place-card .badge, .item-button-right.item-blocks .badge {
     right: 67px; }
-  .item.item-divider .badge, .item-divider.item-blocks .badge, .item-divider.news-card .badge, .item-divider.place-card .badge {
+  .item.item-divider .badge, .item-divider.news-card .badge, .item-divider.place-card .badge, .item-divider.item-blocks .badge {
     top: 8px; }
-  .item .badge + .badge, .item-blocks .badge + .badge, .news-card .badge + .badge, .place-card .badge + .badge {
+  .item .badge + .badge, .news-card .badge + .badge, .place-card .badge + .badge, .item-blocks .badge + .badge {
     margin-right: 5px; }
-  .item.item-light, .item-light.item-blocks, .item-light.news-card, .item-light.place-card {
+  .item.item-light, .item-light.news-card, .item-light.place-card, .item-light.item-blocks {
     border-color: #ddd;
     background-color: #fff;
     color: #444; }
-  .item.item-stable, .item-stable.item-blocks, .item-stable.news-card, .item-stable.place-card {
+  .item.item-stable, .item-stable.news-card, .item-stable.place-card, .item-stable.item-blocks {
     border-color: #b2b2b2;
     background-color: #ffcb01;
     color: #444; }
-  .item.item-positive, .item-positive.item-blocks, .item-positive.news-card, .item-positive.place-card {
+  .item.item-positive, .item-positive.news-card, .item-positive.place-card, .item-positive.item-blocks {
     border-color: #d61264;
     background-color: #ed2e7e;
     color: #fff; }
-  .item.item-calm, .item-calm.item-blocks, .item-calm.news-card, .item-calm.place-card {
+  .item.item-calm, .item-calm.news-card, .item-calm.place-card, .item-calm.item-blocks {
     border-color: #1c1c1c;
     background-color: #353535;
     color: #fff; }
-  .item.item-assertive, .item-assertive.item-blocks, .item-assertive.news-card, .item-assertive.place-card {
+  .item.item-assertive, .item-assertive.news-card, .item-assertive.place-card, .item-assertive.item-blocks {
     border-color: #e42112;
     background-color: #ef473a;
     color: #fff; }
-  .item.item-balanced, .item-balanced.item-blocks, .item-balanced.news-card, .item-balanced.place-card {
+  .item.item-balanced, .item-balanced.news-card, .item-balanced.place-card, .item-balanced.item-blocks {
     border-color: #28a54c;
     background-color: #33cd5f;
     color: #fff; }
-  .item.item-energized, .item-energized.item-blocks, .item-energized.news-card, .item-energized.place-card {
+  .item.item-energized, .item-energized.news-card, .item-energized.place-card, .item-energized.item-blocks {
     border-color: #e6b500;
     background-color: #ffc900;
     color: #fff; }
-  .item.item-royal, .item-royal.item-blocks, .item-royal.news-card, .item-royal.place-card {
+  .item.item-royal, .item-royal.news-card, .item-royal.place-card, .item-royal.item-blocks {
     border-color: #6b46e5;
     background-color: #886aea;
     color: #fff; }
-  .item.item-dark, .item-dark.item-blocks, .item-dark.news-card, .item-dark.place-card {
+  .item.item-dark, .item-dark.news-card, .item-dark.place-card, .item-dark.item-blocks {
     border-color: #111;
     background-color: #444;
     color: #fff; }
-  .item[ng-click]:hover, [ng-click].item-blocks:hover, [ng-click].news-card:hover, [ng-click].place-card:hover {
+  .item[ng-click]:hover, [ng-click].news-card:hover, [ng-click].place-card:hover, [ng-click].item-blocks:hover {
     cursor: pointer; }
 
-.list-borderless .item, .list-borderless .item-blocks, .list-borderless .news-card, .list-borderless .place-card, .item-borderless {
+.list-borderless .item, .list-borderless .news-card, .list-borderless .place-card, .list-borderless .item-blocks, .item-borderless {
   border-width: 0; }
 
-.item.active, .active.item-blocks, .active.news-card, .active.place-card, .item.activated, .activated.item-blocks, .activated.news-card, .activated.place-card, .item-complex.active .item-content, .item-complex.activated .item-content, .item .item-content.active, .item-blocks .item-content.active, .news-card .item-content.active, .place-card .item-content.active, .item .item-content.activated, .item-blocks .item-content.activated, .news-card .item-content.activated, .place-card .item-content.activated {
+.item.active, .active.news-card, .active.place-card, .active.item-blocks, .item.activated, .activated.news-card, .activated.place-card, .activated.item-blocks, .item-complex.active .item-content, .item-complex.activated .item-content, .item .item-content.active, .news-card .item-content.active, .place-card .item-content.active, .item-blocks .item-content.active, .item .item-content.activated, .news-card .item-content.activated, .place-card .item-content.activated, .item-blocks .item-content.activated {
   border-color: #ccc;
   background-color: #D9D9D9; }
-  .item.active.item-light, .active.item-light.item-blocks, .active.item-light.news-card, .active.item-light.place-card, .item.activated.item-light, .activated.item-light.item-blocks, .activated.item-light.news-card, .activated.item-light.place-card, .item-complex.active .item-content.item-light, .item-complex.activated .item-content.item-light, .item .item-content.active.item-light, .item-blocks .item-content.active.item-light, .news-card .item-content.active.item-light, .place-card .item-content.active.item-light, .item .item-content.activated.item-light, .item-blocks .item-content.activated.item-light, .news-card .item-content.activated.item-light, .place-card .item-content.activated.item-light {
+  .item.active.item-light, .active.item-light.news-card, .active.item-light.place-card, .active.item-light.item-blocks, .item.activated.item-light, .activated.item-light.news-card, .activated.item-light.place-card, .activated.item-light.item-blocks, .item-complex.active .item-content.item-light, .item-complex.activated .item-content.item-light, .item .item-content.active.item-light, .news-card .item-content.active.item-light, .place-card .item-content.active.item-light, .item-blocks .item-content.active.item-light, .item .item-content.activated.item-light, .news-card .item-content.activated.item-light, .place-card .item-content.activated.item-light, .item-blocks .item-content.activated.item-light {
     border-color: #ccc;
     background-color: #fafafa; }
-  .item.active.item-stable, .active.item-stable.item-blocks, .active.item-stable.news-card, .active.item-stable.place-card, .item.activated.item-stable, .activated.item-stable.item-blocks, .activated.item-stable.news-card, .activated.item-stable.place-card, .item-complex.active .item-content.item-stable, .item-complex.activated .item-content.item-stable, .item .item-content.active.item-stable, .item-blocks .item-content.active.item-stable, .news-card .item-content.active.item-stable, .place-card .item-content.active.item-stable, .item .item-content.activated.item-stable, .item-blocks .item-content.activated.item-stable, .news-card .item-content.activated.item-stable, .place-card .item-content.activated.item-stable {
+  .item.active.item-stable, .active.item-stable.news-card, .active.item-stable.place-card, .active.item-stable.item-blocks, .item.activated.item-stable, .activated.item-stable.news-card, .activated.item-stable.place-card, .activated.item-stable.item-blocks, .item-complex.active .item-content.item-stable, .item-complex.activated .item-content.item-stable, .item .item-content.active.item-stable, .news-card .item-content.active.item-stable, .place-card .item-content.active.item-stable, .item-blocks .item-content.active.item-stable, .item .item-content.activated.item-stable, .news-card .item-content.activated.item-stable, .place-card .item-content.activated.item-stable, .item-blocks .item-content.activated.item-stable {
     border-color: #a2a2a2;
     background-color: #e5e5e5; }
-  .item.active.item-positive, .active.item-positive.item-blocks, .active.item-positive.news-card, .active.item-positive.place-card, .item.activated.item-positive, .activated.item-positive.item-blocks, .activated.item-positive.news-card, .activated.item-positive.place-card, .item-complex.active .item-content.item-positive, .item-complex.activated .item-content.item-positive, .item .item-content.active.item-positive, .item-blocks .item-content.active.item-positive, .news-card .item-content.active.item-positive, .place-card .item-content.active.item-positive, .item .item-content.activated.item-positive, .item-blocks .item-content.activated.item-positive, .news-card .item-content.activated.item-positive, .place-card .item-content.activated.item-positive {
+  .item.active.item-positive, .active.item-positive.news-card, .active.item-positive.place-card, .active.item-positive.item-blocks, .item.activated.item-positive, .activated.item-positive.news-card, .activated.item-positive.place-card, .activated.item-positive.item-blocks, .item-complex.active .item-content.item-positive, .item-complex.activated .item-content.item-positive, .item .item-content.active.item-positive, .news-card .item-content.active.item-positive, .place-card .item-content.active.item-positive, .item-blocks .item-content.active.item-positive, .item .item-content.activated.item-positive, .news-card .item-content.activated.item-positive, .place-card .item-content.activated.item-positive, .item-blocks .item-content.activated.item-positive {
     border-color: #d61264;
     background-color: #d61264; }
-  .item.active.item-calm, .active.item-calm.item-blocks, .active.item-calm.news-card, .active.item-calm.place-card, .item.activated.item-calm, .activated.item-calm.item-blocks, .activated.item-calm.news-card, .activated.item-calm.place-card, .item-complex.active .item-content.item-calm, .item-complex.activated .item-content.item-calm, .item .item-content.active.item-calm, .item-blocks .item-content.active.item-calm, .news-card .item-content.active.item-calm, .place-card .item-content.active.item-calm, .item .item-content.activated.item-calm, .item-blocks .item-content.activated.item-calm, .news-card .item-content.activated.item-calm, .place-card .item-content.activated.item-calm {
+  .item.active.item-calm, .active.item-calm.news-card, .active.item-calm.place-card, .active.item-calm.item-blocks, .item.activated.item-calm, .activated.item-calm.news-card, .activated.item-calm.place-card, .activated.item-calm.item-blocks, .item-complex.active .item-content.item-calm, .item-complex.activated .item-content.item-calm, .item .item-content.active.item-calm, .news-card .item-content.active.item-calm, .place-card .item-content.active.item-calm, .item-blocks .item-content.active.item-calm, .item .item-content.activated.item-calm, .news-card .item-content.activated.item-calm, .place-card .item-content.activated.item-calm, .item-blocks .item-content.activated.item-calm {
     border-color: #1c1c1c;
     background-color: #1c1c1c; }
-  .item.active.item-assertive, .active.item-assertive.item-blocks, .active.item-assertive.news-card, .active.item-assertive.place-card, .item.activated.item-assertive, .activated.item-assertive.item-blocks, .activated.item-assertive.news-card, .activated.item-assertive.place-card, .item-complex.active .item-content.item-assertive, .item-complex.activated .item-content.item-assertive, .item .item-content.active.item-assertive, .item-blocks .item-content.active.item-assertive, .news-card .item-content.active.item-assertive, .place-card .item-content.active.item-assertive, .item .item-content.activated.item-assertive, .item-blocks .item-content.activated.item-assertive, .news-card .item-content.activated.item-assertive, .place-card .item-content.activated.item-assertive {
+  .item.active.item-assertive, .active.item-assertive.news-card, .active.item-assertive.place-card, .active.item-assertive.item-blocks, .item.activated.item-assertive, .activated.item-assertive.news-card, .activated.item-assertive.place-card, .activated.item-assertive.item-blocks, .item-complex.active .item-content.item-assertive, .item-complex.activated .item-content.item-assertive, .item .item-content.active.item-assertive, .news-card .item-content.active.item-assertive, .place-card .item-content.active.item-assertive, .item-blocks .item-content.active.item-assertive, .item .item-content.activated.item-assertive, .news-card .item-content.activated.item-assertive, .place-card .item-content.activated.item-assertive, .item-blocks .item-content.activated.item-assertive {
     border-color: #e42112;
     background-color: #e42112; }
-  .item.active.item-balanced, .active.item-balanced.item-blocks, .active.item-balanced.news-card, .active.item-balanced.place-card, .item.activated.item-balanced, .activated.item-balanced.item-blocks, .activated.item-balanced.news-card, .activated.item-balanced.place-card, .item-complex.active .item-content.item-balanced, .item-complex.activated .item-content.item-balanced, .item .item-content.active.item-balanced, .item-blocks .item-content.active.item-balanced, .news-card .item-content.active.item-balanced, .place-card .item-content.active.item-balanced, .item .item-content.activated.item-balanced, .item-blocks .item-content.activated.item-balanced, .news-card .item-content.activated.item-balanced, .place-card .item-content.activated.item-balanced {
+  .item.active.item-balanced, .active.item-balanced.news-card, .active.item-balanced.place-card, .active.item-balanced.item-blocks, .item.activated.item-balanced, .activated.item-balanced.news-card, .activated.item-balanced.place-card, .activated.item-balanced.item-blocks, .item-complex.active .item-content.item-balanced, .item-complex.activated .item-content.item-balanced, .item .item-content.active.item-balanced, .news-card .item-content.active.item-balanced, .place-card .item-content.active.item-balanced, .item-blocks .item-content.active.item-balanced, .item .item-content.activated.item-balanced, .news-card .item-content.activated.item-balanced, .place-card .item-content.activated.item-balanced, .item-blocks .item-content.activated.item-balanced {
     border-color: #28a54c;
     background-color: #28a54c; }
-  .item.active.item-energized, .active.item-energized.item-blocks, .active.item-energized.news-card, .active.item-energized.place-card, .item.activated.item-energized, .activated.item-energized.item-blocks, .activated.item-energized.news-card, .activated.item-energized.place-card, .item-complex.active .item-content.item-energized, .item-complex.activated .item-content.item-energized, .item .item-content.active.item-energized, .item-blocks .item-content.active.item-energized, .news-card .item-content.active.item-energized, .place-card .item-content.active.item-energized, .item .item-content.activated.item-energized, .item-blocks .item-content.activated.item-energized, .news-card .item-content.activated.item-energized, .place-card .item-content.activated.item-energized {
+  .item.active.item-energized, .active.item-energized.news-card, .active.item-energized.place-card, .active.item-energized.item-blocks, .item.activated.item-energized, .activated.item-energized.news-card, .activated.item-energized.place-card, .activated.item-energized.item-blocks, .item-complex.active .item-content.item-energized, .item-complex.activated .item-content.item-energized, .item .item-content.active.item-energized, .news-card .item-content.active.item-energized, .place-card .item-content.active.item-energized, .item-blocks .item-content.active.item-energized, .item .item-content.activated.item-energized, .news-card .item-content.activated.item-energized, .place-card .item-content.activated.item-energized, .item-blocks .item-content.activated.item-energized {
     border-color: #e6b500;
     background-color: #e6b500; }
-  .item.active.item-royal, .active.item-royal.item-blocks, .active.item-royal.news-card, .active.item-royal.place-card, .item.activated.item-royal, .activated.item-royal.item-blocks, .activated.item-royal.news-card, .activated.item-royal.place-card, .item-complex.active .item-content.item-royal, .item-complex.activated .item-content.item-royal, .item .item-content.active.item-royal, .item-blocks .item-content.active.item-royal, .news-card .item-content.active.item-royal, .place-card .item-content.active.item-royal, .item .item-content.activated.item-royal, .item-blocks .item-content.activated.item-royal, .news-card .item-content.activated.item-royal, .place-card .item-content.activated.item-royal {
+  .item.active.item-royal, .active.item-royal.news-card, .active.item-royal.place-card, .active.item-royal.item-blocks, .item.activated.item-royal, .activated.item-royal.news-card, .activated.item-royal.place-card, .activated.item-royal.item-blocks, .item-complex.active .item-content.item-royal, .item-complex.activated .item-content.item-royal, .item .item-content.active.item-royal, .news-card .item-content.active.item-royal, .place-card .item-content.active.item-royal, .item-blocks .item-content.active.item-royal, .item .item-content.activated.item-royal, .news-card .item-content.activated.item-royal, .place-card .item-content.activated.item-royal, .item-blocks .item-content.activated.item-royal {
     border-color: #6b46e5;
     background-color: #6b46e5; }
-  .item.active.item-dark, .active.item-dark.item-blocks, .active.item-dark.news-card, .active.item-dark.place-card, .item.activated.item-dark, .activated.item-dark.item-blocks, .activated.item-dark.news-card, .activated.item-dark.place-card, .item-complex.active .item-content.item-dark, .item-complex.activated .item-content.item-dark, .item .item-content.active.item-dark, .item-blocks .item-content.active.item-dark, .news-card .item-content.active.item-dark, .place-card .item-content.active.item-dark, .item .item-content.activated.item-dark, .item-blocks .item-content.activated.item-dark, .news-card .item-content.activated.item-dark, .place-card .item-content.activated.item-dark {
+  .item.active.item-dark, .active.item-dark.news-card, .active.item-dark.place-card, .active.item-dark.item-blocks, .item.activated.item-dark, .activated.item-dark.news-card, .activated.item-dark.place-card, .activated.item-dark.item-blocks, .item-complex.active .item-content.item-dark, .item-complex.activated .item-content.item-dark, .item .item-content.active.item-dark, .news-card .item-content.active.item-dark, .place-card .item-content.active.item-dark, .item-blocks .item-content.active.item-dark, .item .item-content.activated.item-dark, .news-card .item-content.activated.item-dark, .place-card .item-content.activated.item-dark, .item-blocks .item-content.activated.item-dark {
     border-color: #000;
     background-color: #262626; }
 
-.item, .item-blocks, .news-card, .place-card, .item h1, .item-blocks h1, .news-card h1, .place-card h1, .item h2, .item-blocks h2, .news-card h2, .place-card h2, .item h3, .item-blocks h3, .news-card h3, .place-card h3, .item h4, .item-blocks h4, .news-card h4, .place-card h4, .item h5, .item-blocks h5, .news-card h5, .place-card h5, .item h6, .item-blocks h6, .news-card h6, .place-card h6, .item p, .item-blocks p, .news-card p, .place-card p, .item-content, .item-content h1, .item-content h2, .item-content h3, .item-content h4, .item-content h5, .item-content h6, .item-content p {
+.item, .news-card, .place-card, .item-blocks, .item h1, .news-card h1, .place-card h1, .item-blocks h1, .item h2, .news-card h2, .place-card h2, .item-blocks h2, .item h3, .news-card h3, .place-card h3, .item-blocks h3, .item h4, .news-card h4, .place-card h4, .item-blocks h4, .item h5, .news-card h5, .place-card h5, .item-blocks h5, .item h6, .news-card h6, .place-card h6, .item-blocks h6, .item p, .news-card p, .place-card p, .item-blocks p, .item-content, .item-content h1, .item-content h2, .item-content h3, .item-content h4, .item-content h5, .item-content h6, .item-content p {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap; }
 
-a.item, a.item-blocks, a.news-card, a.place-card {
+a.item, a.news-card, a.place-card, a.item-blocks {
   color: inherit;
   text-decoration: none; }
-  a.item:hover, a.item-blocks:hover, a.news-card:hover, a.place-card:hover, a.item:focus, a.item-blocks:focus, a.news-card:focus, a.place-card:focus {
+  a.item:hover, a.news-card:hover, a.place-card:hover, a.item-blocks:hover, a.item:focus, a.news-card:focus, a.place-card:focus, a.item-blocks:focus {
     text-decoration: none; }
 
 /**
@@ -4827,7 +4779,7 @@ a.item, a.item-blocks, a.news-card, a.place-card {
  * Basically .item-complex removes any default settings which
  * .item added, so that .item-content looks them as just .item.
  */
-.item-complex, a.item.item-complex, a.item-complex.item-blocks, a.item-complex.news-card, a.item-complex.place-card, button.item.item-complex, button.item-complex.item-blocks, button.item-complex.news-card, button.item-complex.place-card {
+.item-complex, a.item.item-complex, a.item-complex.news-card, a.item-complex.place-card, a.item-complex.item-blocks, button.item.item-complex, button.item-complex.news-card, button.item-complex.place-card, button.item-complex.item-blocks {
   padding: 0; }
 
 .item-complex .item-content, .item-radio .item-content {
@@ -4842,7 +4794,7 @@ a.item-content {
   color: inherit;
   text-decoration: none; }
 
-.item-text-wrap .item, .item-text-wrap .item-blocks, .item-text-wrap .news-card, .item-text-wrap .place-card, .item-text-wrap .item-content, .item-text-wrap, .item-text-wrap h1, .item-text-wrap h2, .item-text-wrap h3, .item-text-wrap h4, .item-text-wrap h5, .item-text-wrap h6, .item-text-wrap p, .item-complex.item-text-wrap .item-content, .item-body h1, .item-body h2, .item-body h3, .item-body h4, .item-body h5, .item-body h6, .item-body p {
+.item-text-wrap .item, .item-text-wrap .news-card, .item-text-wrap .place-card, .item-text-wrap .item-blocks, .item-text-wrap .item-content, .item-text-wrap, .item-text-wrap h1, .item-text-wrap h2, .item-text-wrap h3, .item-text-wrap h4, .item-text-wrap h5, .item-text-wrap h6, .item-text-wrap p, .item-complex.item-text-wrap .item-content, .item-body h1, .item-body h2, .item-body h3, .item-body h4, .item-body h5, .item-body h6, .item-body p {
   overflow: visible;
   white-space: normal; }
 
@@ -4939,7 +4891,7 @@ a.item-content {
     width: 32px;
     text-align: center; }
 
-.item .fill-icon, .item-blocks .fill-icon, .news-card .fill-icon, .place-card .fill-icon {
+.item .fill-icon, .news-card .fill-icon, .place-card .fill-icon, .item-blocks .fill-icon {
   min-width: 30px;
   min-height: 30px;
   font-size: 28px; }
@@ -5018,7 +4970,7 @@ a.item-content {
     font-size: 18px;
     line-height: 32px; }
 
-.item-button-right, a.item.item-button-right, a.item-button-right.item-blocks, a.item-button-right.news-card, a.item-button-right.place-card, button.item.item-button-right, button.item-button-right.item-blocks, button.item-button-right.news-card, button.item-button-right.place-card {
+.item-button-right, a.item.item-button-right, a.item-button-right.news-card, a.item-button-right.place-card, a.item-button-right.item-blocks, button.item.item-button-right, button.item-button-right.news-card, button.item-button-right.place-card, button.item-button-right.item-blocks {
   padding-right: 80px; }
 
 .item-button-right > .button, .item-button-right > .list-query__btn, .item-button-right .item-content > .button, .item-button-right .item-content > .list-query__btn, .item-button-right > .buttons, .item-button-right .item-content > .buttons {
@@ -5371,44 +5323,44 @@ a.item-content {
   padding-top: 1px;
   padding-bottom: 1px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); }
-  .card .item, .card .item-blocks, .card .news-card, .card .place-card {
+  .card .item, .card .news-card, .card .place-card, .card .item-blocks {
     border-left: 0;
     border-right: 0; }
-  .card .item:first-child, .card .item-blocks:first-child, .card .news-card:first-child, .card .place-card:first-child {
+  .card .item:first-child, .card .news-card:first-child, .card .place-card:first-child, .card .item-blocks:first-child {
     border-top: 0; }
-  .card .item:last-child, .card .item-blocks:last-child, .card .news-card:last-child, .card .place-card:last-child {
+  .card .item:last-child, .card .news-card:last-child, .card .place-card:last-child, .card .item-blocks:last-child {
     border-bottom: 0; }
 
 .padding .card, .cnt .card, .padding .list-inset, .cnt .list-inset {
   margin-left: 0;
   margin-right: 0; }
 
-.card .item:first-child, .card .item-blocks:first-child, .card .news-card:first-child, .card .place-card:first-child, .list-inset .item:first-child, .list-inset .item-blocks:first-child, .list-inset .news-card:first-child, .list-inset .place-card:first-child, .padding > .list .item:first-child, .cnt > .list .item:first-child, .padding > .list .item-blocks:first-child, .cnt > .list .item-blocks:first-child, .padding > .list .news-card:first-child, .cnt > .list .news-card:first-child, .padding > .list .place-card:first-child, .cnt > .list .place-card:first-child {
+.card .item:first-child, .card .news-card:first-child, .card .place-card:first-child, .card .item-blocks:first-child, .list-inset .item:first-child, .list-inset .news-card:first-child, .list-inset .place-card:first-child, .list-inset .item-blocks:first-child, .padding > .list .item:first-child, .cnt > .list .item:first-child, .padding > .list .news-card:first-child, .cnt > .list .news-card:first-child, .padding > .list .place-card:first-child, .cnt > .list .place-card:first-child, .padding > .list .item-blocks:first-child, .cnt > .list .item-blocks:first-child {
   border-top-left-radius: 2px;
   border-top-right-radius: 2px; }
-  .card .item:first-child .item-content, .card .item-blocks:first-child .item-content, .card .news-card:first-child .item-content, .card .place-card:first-child .item-content, .list-inset .item:first-child .item-content, .list-inset .item-blocks:first-child .item-content, .list-inset .news-card:first-child .item-content, .list-inset .place-card:first-child .item-content, .padding > .list .item:first-child .item-content, .cnt > .list .item:first-child .item-content, .padding > .list .item-blocks:first-child .item-content, .cnt > .list .item-blocks:first-child .item-content, .padding > .list .news-card:first-child .item-content, .cnt > .list .news-card:first-child .item-content, .padding > .list .place-card:first-child .item-content, .cnt > .list .place-card:first-child .item-content {
+  .card .item:first-child .item-content, .card .news-card:first-child .item-content, .card .place-card:first-child .item-content, .card .item-blocks:first-child .item-content, .list-inset .item:first-child .item-content, .list-inset .news-card:first-child .item-content, .list-inset .place-card:first-child .item-content, .list-inset .item-blocks:first-child .item-content, .padding > .list .item:first-child .item-content, .cnt > .list .item:first-child .item-content, .padding > .list .news-card:first-child .item-content, .cnt > .list .news-card:first-child .item-content, .padding > .list .place-card:first-child .item-content, .cnt > .list .place-card:first-child .item-content, .padding > .list .item-blocks:first-child .item-content, .cnt > .list .item-blocks:first-child .item-content {
     border-top-left-radius: 2px;
     border-top-right-radius: 2px; }
-.card .item:last-child, .card .item-blocks:last-child, .card .news-card:last-child, .card .place-card:last-child, .list-inset .item:last-child, .list-inset .item-blocks:last-child, .list-inset .news-card:last-child, .list-inset .place-card:last-child, .padding > .list .item:last-child, .cnt > .list .item:last-child, .padding > .list .item-blocks:last-child, .cnt > .list .item-blocks:last-child, .padding > .list .news-card:last-child, .cnt > .list .news-card:last-child, .padding > .list .place-card:last-child, .cnt > .list .place-card:last-child {
+.card .item:last-child, .card .news-card:last-child, .card .place-card:last-child, .card .item-blocks:last-child, .list-inset .item:last-child, .list-inset .news-card:last-child, .list-inset .place-card:last-child, .list-inset .item-blocks:last-child, .padding > .list .item:last-child, .cnt > .list .item:last-child, .padding > .list .news-card:last-child, .cnt > .list .news-card:last-child, .padding > .list .place-card:last-child, .cnt > .list .place-card:last-child, .padding > .list .item-blocks:last-child, .cnt > .list .item-blocks:last-child {
   border-bottom-right-radius: 2px;
   border-bottom-left-radius: 2px; }
-  .card .item:last-child .item-content, .card .item-blocks:last-child .item-content, .card .news-card:last-child .item-content, .card .place-card:last-child .item-content, .list-inset .item:last-child .item-content, .list-inset .item-blocks:last-child .item-content, .list-inset .news-card:last-child .item-content, .list-inset .place-card:last-child .item-content, .padding > .list .item:last-child .item-content, .cnt > .list .item:last-child .item-content, .padding > .list .item-blocks:last-child .item-content, .cnt > .list .item-blocks:last-child .item-content, .padding > .list .news-card:last-child .item-content, .cnt > .list .news-card:last-child .item-content, .padding > .list .place-card:last-child .item-content, .cnt > .list .place-card:last-child .item-content {
+  .card .item:last-child .item-content, .card .news-card:last-child .item-content, .card .place-card:last-child .item-content, .card .item-blocks:last-child .item-content, .list-inset .item:last-child .item-content, .list-inset .news-card:last-child .item-content, .list-inset .place-card:last-child .item-content, .list-inset .item-blocks:last-child .item-content, .padding > .list .item:last-child .item-content, .cnt > .list .item:last-child .item-content, .padding > .list .news-card:last-child .item-content, .cnt > .list .news-card:last-child .item-content, .padding > .list .place-card:last-child .item-content, .cnt > .list .place-card:last-child .item-content, .padding > .list .item-blocks:last-child .item-content, .cnt > .list .item-blocks:last-child .item-content {
     border-bottom-right-radius: 2px;
     border-bottom-left-radius: 2px; }
 
-.card .item:last-child, .card .item-blocks:last-child, .card .news-card:last-child, .card .place-card:last-child, .list-inset .item:last-child, .list-inset .item-blocks:last-child, .list-inset .news-card:last-child, .list-inset .place-card:last-child {
+.card .item:last-child, .card .news-card:last-child, .card .place-card:last-child, .card .item-blocks:last-child, .list-inset .item:last-child, .list-inset .news-card:last-child, .list-inset .place-card:last-child, .list-inset .item-blocks:last-child {
   margin-bottom: -1px; }
 
-.card .item, .card .item-blocks, .card .news-card, .card .place-card, .list-inset .item, .list-inset .item-blocks, .list-inset .news-card, .list-inset .place-card, .padding > .list .item, .cnt > .list .item, .padding > .list .item-blocks, .cnt > .list .item-blocks, .padding > .list .news-card, .cnt > .list .news-card, .padding > .list .place-card, .cnt > .list .place-card, .padding-horizontal > .list .item, .padding-horizontal > .list .item-blocks, .padding-horizontal > .list .news-card, .padding-horizontal > .list .place-card {
+.card .item, .card .news-card, .card .place-card, .card .item-blocks, .list-inset .item, .list-inset .news-card, .list-inset .place-card, .list-inset .item-blocks, .padding > .list .item, .cnt > .list .item, .padding > .list .news-card, .cnt > .list .news-card, .padding > .list .place-card, .cnt > .list .place-card, .padding > .list .item-blocks, .cnt > .list .item-blocks, .padding-horizontal > .list .item, .padding-horizontal > .list .news-card, .padding-horizontal > .list .place-card, .padding-horizontal > .list .item-blocks {
   margin-right: 0;
   margin-left: 0; }
-  .card .item.item-input input, .card .item-input.item-blocks input, .card .item-input.news-card input, .card .item-input.place-card input, .list-inset .item.item-input input, .list-inset .item-input.item-blocks input, .list-inset .item-input.news-card input, .list-inset .item-input.place-card input, .padding > .list .item.item-input input, .cnt > .list .item.item-input input, .padding > .list .item-input.item-blocks input, .cnt > .list .item-input.item-blocks input, .padding > .list .item-input.news-card input, .cnt > .list .item-input.news-card input, .padding > .list .item-input.place-card input, .cnt > .list .item-input.place-card input, .padding-horizontal > .list .item.item-input input, .padding-horizontal > .list .item-input.item-blocks input, .padding-horizontal > .list .item-input.news-card input, .padding-horizontal > .list .item-input.place-card input {
+  .card .item.item-input input, .card .item-input.news-card input, .card .item-input.place-card input, .card .item-input.item-blocks input, .list-inset .item.item-input input, .list-inset .item-input.news-card input, .list-inset .item-input.place-card input, .list-inset .item-input.item-blocks input, .padding > .list .item.item-input input, .cnt > .list .item.item-input input, .padding > .list .item-input.news-card input, .cnt > .list .item-input.news-card input, .padding > .list .item-input.place-card input, .cnt > .list .item-input.place-card input, .padding > .list .item-input.item-blocks input, .cnt > .list .item-input.item-blocks input, .padding-horizontal > .list .item.item-input input, .padding-horizontal > .list .item-input.news-card input, .padding-horizontal > .list .item-input.place-card input, .padding-horizontal > .list .item-input.item-blocks input {
     padding-right: 44px; }
 
-.padding-left > .list .item, .padding-left > .list .item-blocks, .padding-left > .list .news-card, .padding-left > .list .place-card {
+.padding-left > .list .item, .padding-left > .list .news-card, .padding-left > .list .place-card, .padding-left > .list .item-blocks {
   margin-left: 0; }
 
-.padding-right > .list .item, .padding-right > .list .item-blocks, .padding-right > .list .news-card, .padding-right > .list .place-card {
+.padding-right > .list .item, .padding-right > .list .news-card, .padding-right > .list .place-card, .padding-right > .list .item-blocks {
   margin-right: 0; }
 
 /**
@@ -6876,13 +6828,13 @@ progress {
         box-shadow: none;
         color: #fff; }
 
-.button-small, .list-query__btn, .item-meta.item-button-right > .buttons > .button, .item-meta.item-button-right > .buttons > .list-query__btn, .item-meta.item-button-left > .buttons > .button, .item-meta.item-button-left > .buttons > .list-query__btn {
+.button-small, .item-meta.item-button-right > .buttons > .button, .item-meta.item-button-right > .buttons > .list-query__btn, .item-meta.item-button-left > .buttons > .button, .item-meta.item-button-left > .buttons > .list-query__btn, .list-query__btn {
   padding: 2px 4px 1px;
   min-width: 28px;
   min-height: 30px;
   font-size: 12px;
   line-height: 26px; }
-  .button-small .icon:before, .list-query__btn .icon:before, .item-meta.item-button-right > .buttons > .button .icon:before, .item-meta.item-button-right > .buttons > .list-query__btn .icon:before, .item-meta.item-button-left > .buttons > .button .icon:before, .item-meta.item-button-left > .buttons > .list-query__btn .icon:before, .button-small.icon:before, .icon.list-query__btn:before, .item-meta.item-button-right > .buttons > .icon.button:before, .item-meta.item-button-right > .buttons > .icon.list-query__btn:before, .item-meta.item-button-left > .buttons > .icon.button:before, .item-meta.item-button-left > .buttons > .icon.list-query__btn:before, .button-small.icon-left:before, .icon-left.list-query__btn:before, .item-meta.item-button-right > .buttons > .icon-left.button:before, .item-meta.item-button-right > .buttons > .icon-left.list-query__btn:before, .item-meta.item-button-left > .buttons > .icon-left.button:before, .item-meta.item-button-left > .buttons > .icon-left.list-query__btn:before, .button-small.icon-right:before, .icon-right.list-query__btn:before, .item-meta.item-button-right > .buttons > .icon-right.button:before, .item-meta.item-button-right > .buttons > .icon-right.list-query__btn:before, .item-meta.item-button-left > .buttons > .icon-right.button:before, .item-meta.item-button-left > .buttons > .icon-right.list-query__btn:before {
+  .button-small .icon:before, .item-meta.item-button-right > .buttons > .button .icon:before, .item-meta.item-button-right > .buttons > .list-query__btn .icon:before, .item-meta.item-button-left > .buttons > .button .icon:before, .item-meta.item-button-left > .buttons > .list-query__btn .icon:before, .list-query__btn .icon:before, .button-small.icon:before, .item-meta.item-button-right > .buttons > .icon.button:before, .item-meta.item-button-right > .buttons > .icon.list-query__btn:before, .item-meta.item-button-left > .buttons > .icon.button:before, .item-meta.item-button-left > .buttons > .icon.list-query__btn:before, .icon.list-query__btn:before, .button-small.icon-left:before, .item-meta.item-button-right > .buttons > .icon-left.button:before, .item-meta.item-button-right > .buttons > .icon-left.list-query__btn:before, .item-meta.item-button-left > .buttons > .icon-left.button:before, .item-meta.item-button-left > .buttons > .icon-left.list-query__btn:before, .icon-left.list-query__btn:before, .button-small.icon-right:before, .item-meta.item-button-right > .buttons > .icon-right.button:before, .item-meta.item-button-right > .buttons > .icon-right.list-query__btn:before, .item-meta.item-button-left > .buttons > .icon-right.button:before, .item-meta.item-button-left > .buttons > .icon-right.list-query__btn:before, .icon-right.list-query__btn:before {
     font-size: 16px;
     line-height: 19px;
     margin-top: 3px; }
@@ -7033,7 +6985,7 @@ a.button, a.list-query__btn {
     border-right-width: 1px;
     border-radius: 0px 2px 2px 0px; }
 
-.button-bar > .button-small:before, .button-bar > .list-query__btn:before, .item-meta.item-button-right > .buttons.button-bar > .button:before, .item-meta.item-button-right > .buttons.button-bar > .list-query__btn:before, .item-meta.item-button-left > .buttons.button-bar > .button:before, .item-meta.item-button-left > .buttons.button-bar > .list-query__btn:before, .button-bar > .button-small .icon:before, .button-bar > .list-query__btn .icon:before, .item-meta.item-button-right > .buttons.button-bar > .button .icon:before, .item-meta.item-button-right > .buttons.button-bar > .list-query__btn .icon:before, .item-meta.item-button-left > .buttons.button-bar > .button .icon:before, .item-meta.item-button-left > .buttons.button-bar > .list-query__btn .icon:before {
+.button-bar > .button-small:before, .item-meta.item-button-right > .buttons.button-bar > .button:before, .item-meta.item-button-right > .buttons.button-bar > .list-query__btn:before, .item-meta.item-button-left > .buttons.button-bar > .button:before, .item-meta.item-button-left > .buttons.button-bar > .list-query__btn:before, .button-bar > .list-query__btn:before, .button-bar > .button-small .icon:before, .item-meta.item-button-right > .buttons.button-bar > .button .icon:before, .item-meta.item-button-right > .buttons.button-bar > .list-query__btn .icon:before, .item-meta.item-button-left > .buttons.button-bar > .button .icon:before, .item-meta.item-button-left > .buttons.button-bar > .list-query__btn .icon:before, .button-bar > .list-query__btn .icon:before {
   line-height: 28px; }
 
 /**
@@ -7205,7 +7157,7 @@ a.button, a.list-query__btn {
   flex: 0 0 33.3333%;
   max-width: 33.3333%; }
 
-.col-50, .creative-reffer__info, .creative-reffer__img, .event-card {
+.col-50, .event-card, .creative-reffer__info, .creative-reffer__img {
   -webkit-box-flex: 0;
   -webkit-flex: 0 0 50%;
   -moz-box-flex: 0;
@@ -7264,7 +7216,7 @@ a.button, a.list-query__btn {
     -webkit-flex-direction: column;
     -ms-flex-direction: column;
     flex-direction: column; }
-    .responsive-sm .col, .responsive-sm .event-card, .responsive-sm .col-10, .responsive-sm .col-20, .responsive-sm .col-25, .responsive-sm .col-33, .responsive-sm .col-34, .responsive-sm .col-50, .responsive-sm .creative-reffer__info, .responsive-sm .creative-reffer__img, .responsive-sm .event-card, .responsive-sm .col-66, .responsive-sm .col-67, .responsive-sm .col-75, .responsive-sm .col-80, .responsive-sm .col-90 {
+    .responsive-sm .col, .responsive-sm .event-card, .responsive-sm .col-10, .responsive-sm .col-20, .responsive-sm .col-25, .responsive-sm .col-33, .responsive-sm .col-34, .responsive-sm .col-50, .responsive-sm .event-card, .responsive-sm .creative-reffer__info, .responsive-sm .creative-reffer__img, .responsive-sm .col-66, .responsive-sm .col-67, .responsive-sm .col-75, .responsive-sm .col-80, .responsive-sm .col-90 {
       -webkit-box-flex: 1;
       -webkit-flex: 1;
       -moz-box-flex: 1;
@@ -7285,7 +7237,7 @@ a.button, a.list-query__btn {
     -webkit-flex-direction: column;
     -ms-flex-direction: column;
     flex-direction: column; }
-    .responsive-md .col, .responsive-md .event-card, .responsive-md .col-10, .responsive-md .col-20, .responsive-md .col-25, .responsive-md .col-33, .responsive-md .col-34, .responsive-md .col-50, .responsive-md .creative-reffer__info, .responsive-md .creative-reffer__img, .responsive-md .event-card, .responsive-md .col-66, .responsive-md .col-67, .responsive-md .col-75, .responsive-md .col-80, .responsive-md .col-90 {
+    .responsive-md .col, .responsive-md .event-card, .responsive-md .col-10, .responsive-md .col-20, .responsive-md .col-25, .responsive-md .col-33, .responsive-md .col-34, .responsive-md .col-50, .responsive-md .event-card, .responsive-md .creative-reffer__info, .responsive-md .creative-reffer__img, .responsive-md .col-66, .responsive-md .col-67, .responsive-md .col-75, .responsive-md .col-80, .responsive-md .col-90 {
       -webkit-box-flex: 1;
       -webkit-flex: 1;
       -moz-box-flex: 1;
@@ -7306,7 +7258,7 @@ a.button, a.list-query__btn {
     -webkit-flex-direction: column;
     -ms-flex-direction: column;
     flex-direction: column; }
-    .responsive-lg .col, .responsive-lg .event-card, .responsive-lg .col-10, .responsive-lg .col-20, .responsive-lg .col-25, .responsive-lg .col-33, .responsive-lg .col-34, .responsive-lg .col-50, .responsive-lg .creative-reffer__info, .responsive-lg .creative-reffer__img, .responsive-lg .event-card, .responsive-lg .col-66, .responsive-lg .col-67, .responsive-lg .col-75, .responsive-lg .col-80, .responsive-lg .col-90 {
+    .responsive-lg .col, .responsive-lg .event-card, .responsive-lg .col-10, .responsive-lg .col-20, .responsive-lg .col-25, .responsive-lg .col-33, .responsive-lg .col-34, .responsive-lg .col-50, .responsive-lg .event-card, .responsive-lg .creative-reffer__info, .responsive-lg .creative-reffer__img, .responsive-lg .col-66, .responsive-lg .col-67, .responsive-lg .col-75, .responsive-lg .col-80, .responsive-lg .col-90 {
       -webkit-box-flex: 1;
       -webkit-flex: 1;
       -moz-box-flex: 1;
@@ -7734,83 +7686,35 @@ a.button, a.list-query__btn {
   -webkit-transition-duration: 0s;
   transition-duration: 0s; }
 
-.register-stop__form .icon {
-  font-size: 2.1em; }
-
-.item__time {
-  font-size: 1.4em;
-  font-weight: 400; }
-
-.item p, .item-blocks p, .news-card p, .place-card p, .item h2, .item-blocks h2, .news-card h2, .place-card h2, .item h3, .item-blocks h3, .news-card h3, .place-card h3, .item p, .item-blocks p, .news-card p, .place-card p, .item h2, .item-blocks h2, .news-card h2, .place-card h2, .item h4, .item-blocks h4, .news-card h4, .place-card h4 {
-  white-space: normal; }
-
-.item__name-wrap {
-  background-color: rgba(0, 0, 0, 0.5);
-  margin: 0; }
-
-.item__name-wrap--pad {
-  padding: 10px; }
-
-h3.item__name {
-  padding: 3px 6px;
-  color: #ffffff;
-  text-transform: uppercase;
-  font-size: 1em;
-  line-height: 1.06em;
-  font-weight: bold; }
-
-.cover__wrapper {
-  min-height: 90px;
-  padding-top: 100px;
-  background-size: cover; }
-
-.item-blocks {
-  padding: 16px; }
-  .item-blocks:before, .item-blocks:after {
-    content: "";
-    display: table; }
-  .item-blocks:after {
-    clear: both; }
-
-.list-query__item {
-  float: left; }
-
-.list-query__search {
-  width: 100%;
-  display: block; }
-
-.list-query__btn {
-  margin-right: 4px; }
-
-.creative-reffer {
-  margin: 10px; }
-
-.creative-reffer__info {
-  padding: 10px;
-  box-sizing: border-box; }
-
-.creative-reffer__info-owner {
-  font-size: 1.2em;
-  font-weight: bold;
-  padding: 10px; }
-
-.creative-reffer__img {
-  box-sizing: border-box; }
-
-[ion-content], ion-content {
-  /*background-image: url(/img/v1.jpg);
-    background-repeat: no-repeat;
-    background-size: cover;*/ }
-
-.resource-view__date {
-  font-size: 0.9em;
-  font-weight: bold;
-  margin: 10px; }
-  .resource-view__date .keyword {
-    float: right; }
+.ng-hide {
+  /* this is just another form of hiding an element */
+  display: block !important;
+  position: absolute;
+  top: -9999px;
+  left: -9999px; }
 
 .event-card__wrap {
   background-color: #ffffff; }
+
+.news-card {
+  margin: 10px; }
+
+.place-card {
+  margin: 10px; }
+
+.register-stop__form .icon {
+  font-size: 2.1em; }
+
+.item__logo {
+  background-color: #ffffff;
+  padding: 16px; }
+  .item__logo > img {
+    max-width: 60%;
+    display: block;
+    margin: 0 auto; }
+
+.item-button-right .button.button-positive.button-clear, .item-button-right .button-clear.list-query__btn {
+  color: #ffffff; }
 
 .item__content {
   padding: 10px; }
@@ -7831,14 +7735,100 @@ a.item__cover {
 .item-meta {
   font-size: 0.9em; }
 
-.item-button-right .button.button-positive.button-clear, .item-button-right .button-clear.list-query__btn {
-  color: #ffffff; }
+.item__time {
+  font-size: 1.4em;
+  font-weight: 400; }
+
+.item p, .news-card p, .place-card p, .item-blocks p, .item h2, .news-card h2, .place-card h2, .item-blocks h2, .item h3, .news-card h3, .place-card h3, .item-blocks h3, .item p, .news-card p, .place-card p, .item-blocks p, .item h2, .news-card h2, .place-card h2, .item-blocks h2, .item h4, .news-card h4, .place-card h4, .item-blocks h4 {
+  white-space: normal; }
+
+.item__name-wrap {
+  background-color: rgba(0, 0, 0, 0.5);
+  margin: 0; }
+
+.item__name-wrap--pad {
+  padding: 10px; }
+
+h3.item__name {
+  padding: 3px 6px;
+  color: #ffffff;
+  text-transform: uppercase;
+  font-size: 1em;
+  line-height: 1.06em;
+  font-weight: bold; }
+
+.item-blocks {
+  padding: 16px; }
+  .item-blocks:before, .item-blocks:after {
+    content: "";
+    display: table; }
+  .item-blocks:after {
+    clear: both; }
+
+.list-query__item {
+  float: left; }
+
+.list-query__search {
+  width: 100%;
+  display: block; }
+
+.list-query__btn {
+  margin-right: 4px; }
+
+img {
+  max-width: 100%; }
+
+.home-container {
+  display: -webkit-flex;
+  -webkit-flex-direction: column;
+  height: 100%; }
+
+.home-container > .row, .home-container > .creative-reffer {
+  -webkit-flex: 1; }
+
+.home-tiles > .col .item, .home-tiles > .event-card .item, .home-tiles > .col .news-card, .home-tiles > .event-card .news-card, .home-tiles > .col .place-card, .home-tiles > .event-card .place-card, .home-tiles > .col .item-blocks, .home-tiles > .event-card .item-blocks {
+  min-height: 80px;
+  display: flex;
+  -webkit-box-align: center;
+  -ms-flex-align: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  align-items: center; }
+
+.row-height {
+  display: flex;
+  flex-direction: column;
+  height: 100%; }
+
+.cover__wrapper {
+  min-height: 90px;
+  padding-top: 100px;
+  background-size: cover; }
+
+.creative-reffer {
+  margin: 10px; }
+
+.creative-reffer__info {
+  padding: 10px;
+  box-sizing: border-box; }
+
+.creative-reffer__info-owner {
+  font-size: 1.2em;
+  font-weight: bold;
+  padding: 10px; }
+
+.creative-reffer__img {
+  box-sizing: border-box; }
+
+.resource-view__date {
+  font-size: 0.9em;
+  font-weight: bold;
+  margin: 10px; }
+  .resource-view__date .keyword {
+    float: right; }
 
 .pane, .view {
   background-color: #dddddd; }
-
-.news-card, .place-card {
-  margin: 10px; }
 
 .keyword {
   background-color: #ffcb01;
@@ -7857,11 +7847,3 @@ a.item__cover {
 .cnt {
   background-color: #ffffff;
   margin: 10px; }
-
-.item__logo {
-  background-color: #ffffff;
-  padding: 16px; }
-  .item__logo > img {
-    max-width: 60%;
-    display: block;
-    margin: 0 auto; }

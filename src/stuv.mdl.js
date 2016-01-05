@@ -23,11 +23,12 @@
             'pi',
             'pi.core',
             'pi.core.app',
-            'pi.core.place'
+            'pi.core.place',
+            'pi.ionic'
 			])
 		.config(['piProvider', 'piHttpProvider', 'facebookMetaServiceProvider', '$stateProvider', '$cordovaFacebookProvider', function(piProvider, piHttpProvider, facebookMetaServiceProvider, $stateProvider, $cordovaFacebookProvider){
 
-			piHttpProvider.setBaseUrl('http://localhost/api');
+			piHttpProvider.setBaseUrl('https://viseu.ovh/api');
 	        facebookMetaServiceProvider.setAuthor('https://www.facebook.com/living.with.jesus');
 	        facebookMetaServiceProvider.setPublisher('https://www.facebook.com/viseu.ovh');
 	        facebookMetaServiceProvider.setSiteName('Viseu');
@@ -64,7 +65,7 @@
 					templateUrl: 'core/support.tpl.html'
 				});
 		}])
-		.run(['$ionicPlatform', '$cordovaGeolocation', '$state', 'stuv.core.setupSvc', 'pi.core.app.eventCategorySvc', 'pi.core.article.articleCategorySvc', '$rootScope', 'stuv', function($ionicPlatform, $cordovaGeolocation, $state, setupSvc, eventCategorySvc, articleCategorySvc, $rootScope, stuv){
+		.run(['$ionicPlatform', '$ionicLoading', '$cordovaGeolocation', '$state', 'stuv.core.setupSvc', 'pi.core.app.eventCategorySvc', 'pi.core.article.articleCategorySvc', '$rootScope', 'stuv', function($ionicPlatform, $ionicLoading, $cordovaGeolocation, $state, setupSvc, eventCategorySvc, articleCategorySvc, $rootScope, stuv){
 
 			function boot(){	
     			$rootScope.booted = true;
@@ -72,6 +73,19 @@
 			}
 
 			$rootScope.booted = false;
+
+			$rootScope.$on('http:start', function(){
+					$ionicLoading.show({
+					template: 'show'
+				});
+			});
+
+			$rootScope.$on('http:end', function(){
+				$ionicLoading.hide();
+			});
+
+			
+
 			articleCategorySvc.find({take: 100})
 		        .then(function(res){
 		          $rootScope.articleCategories = res.data.categories;

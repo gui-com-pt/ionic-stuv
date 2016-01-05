@@ -3,7 +3,7 @@
         <button class="button button-clear" ng-click="filter()"><i class="icon ion-android-search"></i></button>
     </ion-nav-buttons>
     <ion-content>
-        <div class="list">
+        <ion-list class="list">
             <div class="padding" ng-show="queryModel.noResult === true">
                 <p>Nao foram encontrados resultados.</p>
                 <p ng-show="query.model.text!==''">Tenta pesquisar com outras palavras sem ser "<b ng-bind="queryModel.text"></b>"</p>
@@ -15,6 +15,6 @@
                 </a>
             </div>
             <div ng-repeat-end=""></div>
-        </div>
+        </ion-list>
     </ion-content>
 </ion-view>
