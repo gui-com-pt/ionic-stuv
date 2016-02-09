@@ -1,10 +1,12 @@
 (function(){
     angular
         .module('stuv.core')
-        .controller('stuv.core.place.placeListFilterCtrl', ['stuv.common.responseUtilsSvc', 'pi.core.article.articleSvc', '$scope', '$stateParams', function(responseUtilsSvc, articleSvc, $scope, $stateParams){
+        .controller('stuv.core.place.placeListFilterCtrl', ['googlePlaceTypeEnum', 'stuv.common.responseUtilsSvc', 'pi.core.article.articleSvc', '$scope', '$stateParams', 
+        	function(googlePlaceTypeEnum, responseUtilsSvc, articleSvc, $scope, $stateParams){
             
             $scope.queryModel = {};
-
+            $scope.types = googlePlaceTypeEnum;
+            $scope.model = {};
             
         }]);
 })();

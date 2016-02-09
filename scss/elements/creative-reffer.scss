@@ -1,0 +1,21 @@
+.creative-reffer {
+	@extend .row;
+	margin: 10px;
+}
+
+.creative-reffer__info {
+	@extend .col-50;
+	padding: 10px;
+	box-sizing: border-box;
+}
+
+.creative-reffer__info-owner {
+	font-size: 1.2em;
+	font-weight: bold;
+	padding: 10px;
+}
+
+.creative-reffer__img {
+	@extend .col-50;	
+	box-sizing: border-box;
+}

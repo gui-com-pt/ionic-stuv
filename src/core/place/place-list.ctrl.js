@@ -1,59 +1,115 @@
 (function(){
     angular
         .module('stuv.core')
-        .controller('stuv.core.place.placeListCtrl', ['$ionicModal', 'stuv.common.responseUtilsSvc', 'pi.core.place.placeSvc', '$scope', '$stateParams', '$rootScope', '$q', function($ionicModal, responseUtilsSvc, placeSvc, $scope, $stateParams, $rootScope, $q){
-            
-            $scope.cachedArticles = [];
-                        
-            $scope.queryModel = {
-                busy: false,
-                noResult: false,
-                data: [],
-                currentCategory: 'Todas'
-            };
+        .factory('pi.core.googlePlaceUtils', [function(){
 
-            $scope.modalScope = $rootScope.$new();
-
-            $ionicModal.fromTemplateUrl('core/place/place-list-filter.tpl.html', {
-                scope: $scope.modalScope,
-                animation: 'slide-in-up',
-                controller: 'stuv.core.place.placeListFilterCtrl'
-            }).then(function(modal) {
-                $scope.modalScope.modal = modal;
-                $scope.modalScope.closeModal = closeModal;
-            });
-
-            var modalDefer,
-                openModal = function() {
-                    modalDefer = $q.defer();
-                    $scope.modalScope.modal.show();
-                    return modalDefer.promise;
-                },
-                closeModal = function(model) {
-                    var res = $scope.modalScope.modal.hide();
-                    modalDefer.resolve(model);
+            this.formatDetail = function(place) {
+                var obj = {
+                    name: place.name,
+                    id: place.place_id,
+                    types: place.types || [],
+                    opening_hours: place.opening_hours,
+                    rating: place.rating,
+                    ratingTotal: place.user_ratings_total,
+                    website: place.website,
+                    address: place.formatted_address
                 };
 
-            $scope.modalScope.queryModel = {};
+                if(!_.isUndefined(place['photos']) && place.photos.length > 0) {
+                    obj.image = place.photos[0].getUrl({maxWidth: 640});
+                } else {
+                    obj.image = '/img/place-default.png';
+                }
 
-            $scope.modalScope.filterByCategory = function(id){
-                $scope.modalScope.queryModel.text = null;
-                $scope.modalScope.queryModel.categoryId = id;
-                closeModal($scope.modalScope.queryModel);
-            }
+                if(!_.isUndefined(place['geometry']) && !_.isUndefined(place.geometry['location'])) {
+                    obj.postion = {
+                        latitude: place.geometry.location.lat,
+                        longitude: place.geometry.location.lng
+                    }
+                }
 
-            $scope.modalScope.filterByText = function(){
-                $scope.queryModel.categoryId = null;
-                closeModal($scope.modalScope.queryModel);
-            }
+                return obj;
+            };
+
+            return this;
+        }])
+        .controller('stuv.core.place.placeListCtrl', ['pi.core.googlePlaceUtils', '$ionicModal', 'stuv.common.responseUtilsSvc', 'pi.core.place.placeSvc', '$scope', '$stateParams', '$rootScope', '$q', 'ngGPlacesAPI', 
+            function(googlePlaceUtils, $ionicModal, responseUtilsSvc, placeSvc, $scope, $stateParams, $rootScope, $q, ngGPlacesAPI){
+            
+                var self = this;
+
+                $scope.places = [];
+
+                var find = function(model) {
+                        $scope.places = [];
+                        model = model || {};
+                        model.latitude = $rootScope.position.latitude;
+                        model.longitude = $rootScope.position.longitude;
+
+                        ngGPlacesAPI.nearbySearch(model).then(function(data){
+                            angular.forEach(data, function(val) {
+                                var obj = googlePlaceUtils.formatDetail(val);
+                                $scope.places.push(obj);
+                            });
+                        });      
+                    },
+                    reset = function() {
+                        $scope.places = [];
+                    }
+
+                find();
+                
+
+                $scope.modalScope = $rootScope.$new();
+
+                $ionicModal.fromTemplateUrl('core/place/place-list-filter.tpl.html', {
+                    scope: $scope.modalScope,
+                    animation: 'slide-in-up',
+                    controller: 'stuv.core.place.placeListFilterCtrl'
+                }).then(function(modal) {
+                    $scope.modalScope.modal = modal;
+                    $scope.modalScope.closeModal = closeModal;
+                });
+
+                var modalDefer,
+                    openModal = function() {
+                        modalDefer = $q.defer();
+                        $scope.modalScope.modal.show();
+                        return modalDefer.promise;
+                    },
+                    closeModal = function(model) {
+                        var res = $scope.modalScope.modal.hide();
+                        var query = {keyword: []};
+                        angular.forEach(model.types, function(v, k) {
+                            if(v === true) {
+                                query.keyword.push(k);
+                            }
+                        });
+                        if(_.isString(model.text)) {
+                            query.text = model.text;
+                        }
+                        modalDefer.resolve(query);
+                    };
+
+                $scope.modalScope.queryModel = {};
+
+                $scope.modalScope.filterByCategory = function(id){
+                    $scope.modalScope.queryModel.text = null;
+                    $scope.modalScope.queryModel.categoryId = id;
+                    closeModal($scope.modalScope.queryModel);
+                }
+
+                $scope.modalScope.filterByText = function(){
+                    closeModal($scope.modalScope.queryModel);
+                }
 
             var self = this,
-                queryKeys = ['name', 'categoryId'];
+                queryKeys = ['name', 'types'];
 
             $scope.$on('$destroy', function(){
                 $scope.queryModel.data = [];
                 $scope.cachedArticles = [];
-                resetModel();
+                //resetModel();
             });
 
             $scope.filter = function(){
@@ -63,55 +119,6 @@
                         find(model);
                     });
             }
-
-            $scope.findMore = function(){
-                var model = responseUtils.getQueryModel(queryKeys);
-                find(model);
-            }
-
-            $scope.reset = function(){
-                reset();
-                find({});
-            }
-
-            var resetModel = function(){
-                $scope.queryModel = {
-                    text: null,
-                    categoryId: null
-                };    
-            }
-
-
-            var find = function(model) {
-                    
-                    $scope.cachedArticles = $scope.queryModel.data;
-                    $scope.queryModel.busy = true;
-
-                    return placeSvc.find(model)
-                        .then(function(res){
-                            if(!_.isArray(res.data.places) || res.data.places.length === 0) {
-                                $scope.queryModel.noResult = true;
-                                $scope.queryModel.busy = false;
-                                return;
-                            }
-
-                            var data = responseUtilsSvc.orderByNewest(res.data.places, 'datePublished');
-                            angular.forEach(data, function(dto){
-                                $scope.queryModel.data.push(dto);
-                            });
-                            
-                            $scope.queryModel.busy = false;
-                            $scope.queryModel.noResult = false;
-                        },
-                        function(){
-                            $scope.queryModel.busy = false;
-                        });
-                },
-                reset = function(){
-                    $scope.queryModel.data = [];
-                };
-
-            find();
 
         }]);
 })();

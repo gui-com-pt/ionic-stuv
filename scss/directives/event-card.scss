@@ -1,0 +1,8 @@
+.item-event-card  {
+	@extend .col;
+	@extend .col-50;
+}
+
+.item-event-card__wrap {
+	background-color: #ffffff;
+}

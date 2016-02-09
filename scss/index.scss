@@ -1,0 +1,71 @@
+@charset "UTF-8";
+
+
+$ionicons-font-path: "../lib/ionic/fonts" !default;
+$light:                           #fff !default;
+$stable:                          #ea4e3c !default;
+$positive:                        #00a651 !default;
+$calm:                            #353535 !default;
+$balanced:                        #33cd5f !default;
+$energized:                       #ffc900 !default;
+$item-energized-text:             #353535 !default;
+$assertive:                       #ef473a !default;
+$royal:                           #886aea !default;
+$dark:                            #444 !default;
+
+
+$button-stable-text:              #fff !default;
+$button-stable-border:            #b2b2b2 !default;
+$button-stable-active-bg:         #e5e5e5 !default;
+$button-stable-active-border:     #a2a2a2 !default;
+
+@import "www/lib/ionic/scss/ionic";
+@import "www/lib/pi-sass-mixins/src/mixins";
+@import
+        "directives/angular.scss",
+        "directives/md-label.scss",
+        "directives/news-card.scss",
+        "directives/event-card.scss",
+        "directives/place-card.scss",
+        "directives/pi-card.scss",
+        "directives/side-menu.scss",
+        "directives/ionic-rating.scss",
+        "directives/viseu-intro.scss",
+
+        "elements/ion-modal-view.scss",
+        "elements/motion-elements.scss",
+        "elements/creative-reffer.scss",
+        "elements/keyword.scss",
+        "elements/home.scss",
+        "elements/item.scss";
+
+img {
+    max-width: 100%;
+}
+
+.pane, .view {
+    background-color: #b6b6b6;
+}
+
+
+
+.cnt {
+    @extend .padding;
+    background-color: #ffffff;
+    margin: 10px;
+}
+
+.item-padding {
+    padding: 10px;
+    > .item {
+        margin-bottom: 10px;
+
+        &:last-child {
+            margin-bottom: 0;
+        }
+    }
+}
+
+.col-right {
+    text-align: right;
+}

@@ -1,27 +1,37 @@
 <ion-view>
     <ion-nav-title>
         Evento
-    </ion-nav-title>
-    <ion-nav-buttons side="secondary">
-        <button class="button button-clear" ui-sref="event-update({id: event.id})">Editar</button>
-    </ion-nav-buttons>
+    </ion-nav-title>                
     <ion-content>
-        <div style="background-image:url(https://codigo.ovh/cdn/main_22srTAcHetCNrqadskVB.png)" class="cover__wrapper">
-            <div class="item__name-wrap item__name-wrap--pad">
-                <h3 class="item__name" ng-bind="event.title"></h3>
+        <div class="item__thumb">
+            <h3 class="item__name" ng-bind="event.title"></h3>
+            <img class="item__img" ng-src="{{event.image}}" />
+        </div>
+        <div class="padding">
+            <div class="item">
+                <div class="item-icon-left resource-view__date" href="#">
+                    <i class="icon ion-android-calendar"></i>
+                    <strong>Abertura</strong> <span ng-bind="event.doorTime | amDateFormat:'dddd, MMMM Do YYYY, h:mm:ss'"></span>
+                </div>
+            </div>
+            <div class="item">
+                <div class="item-icon-left resource-view__date" href="#">
+                    <i class="icon ion-android-calendar"></i>
+                    <strong>Encerro</strong> <span ng-bind="event.endDate | amDateFormat:'dddd, MMMM Do YYYY, h:mm:ss'"></span> - <span am-time-ago="event.endDate | amFromUnix"></span>
+                </div>
+            </div>
+            <div class="item">
+                <span ng-repeat="name in event.tags" class="keyword" ng-bind="name"></span>
             </div>
         </div>
-        <a class="item item-icon-left resource-view__date" href="#">
-            <i class="icon ion-android-calendar"></i>
-            <span am-time-ago="event.doorTime"></span> - <span am-time-ago="event.endDate"></span>
-            <span ng-repeat="name in event.tags" class="keyword" ng-bind="name"></span>
-        </a>
-        <div class="row">
-            <a ng-click="shareFacebook()" class="col"><i class="icon ion-social-facebook"></i></a>
-            <a ng-click="shareTwitter()" class="col"><i class="icon ion-social-twitter"></i></a>
-            <a ng-click="shareEmail()" class="col"><i class="icon ion-social-email"></i></a>
+        <div class="cnt">
+            <p ng-bind-html="event.content"></p>
         </div>
-        <div class="cnt" ng-bind-html="event.content"></div>
-        <div pi-facebook-comment page-href="{{event.url}}" numposts="5" colorscheme="light"></div>
+        <a class="creative-reffer" target="_blank" ng-ref="{{event.refferUrl">
+            <div class="creative-reffer__img">
+                <img ng-src="{{event.refferImage}}" />
+            </div>
+            
+        </a>
     </ion-content>
 </ion-view>

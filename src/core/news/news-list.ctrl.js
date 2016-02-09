@@ -1,13 +1,14 @@
 (function(){
     angular
         .module('stuv.core')
-        .controller('stuv.core.news.newsListCtrl', ['$ionicModal', 'stuv.common.responseUtilsSvc', 'pi.core.article.articleSvc', '$scope', '$stateParams', '$rootScope', '$q', function($ionicModal, responseUtilsSvc, articleSvc, $scope, $stateParams, $rootScope, $q){
+        .controller('stuv.core.news.newsListCtrl', ['$ionicModal', 'pi.core.responseUtilsSvc', 'pi.core.article.articleSvc', '$scope', '$stateParams', '$rootScope', '$q', function($ionicModal, responseUtilsSvc, articleSvc, $scope, $stateParams, $rootScope, $q){
             
             $scope.cachedArticles = [];
                         
             $scope.queryModel = {
                 busy: false,
                 noResult: false,
+                hasMoreData: false,
                 data: [],
                 currentCategory: 'Todas'
             };
@@ -42,6 +43,11 @@
                 closeModal($scope.modalScope.queryModel);
             }
 
+            $scope.clearText = function() {
+                $scope.modalScope.queryModel.text = null;
+                $scope.modalScope.queryModel.categoryId = null;
+            }
+
             $scope.modalScope.filterByText = function(){
                 $scope.queryModel.categoryId = null;
                 closeModal($scope.modalScope.queryModel);
@@ -65,8 +71,17 @@
             }
 
             $scope.findMore = function(){
-                var model = responseUtils.getQueryModel(queryKeys);
+                var model = responseUtilsSvc.getQueryModel(queryKeys);
                 find(model);
+            }
+
+            $scope.doRefresh = function() {
+                reset();
+                find({});
+            }
+
+            $scope.canFind = function() {
+                return $scope.queryModel.busy === false;
             }
 
             $scope.reset = function(){
@@ -91,16 +106,15 @@
                             if(!_.isArray(res.data.articles) || res.data.articles.length === 0) {
                                 $scope.queryModel.noResult = true;
                                 $scope.queryModel.busy = false;
+                                $scope.queryModel.hasMoreData = false;
                                 return;
                             }
 
                             var data = responseUtilsSvc.orderByNewest(res.data.articles, 'datePublished');
-                            angular.forEach(data, function(dto){
-                                $scope.queryModel.data.push(dto);
-                            });
-                            
+                            $scope.queryModel.data = $scope.queryModel.data.concat(data);
                             $scope.queryModel.busy = false;
                             $scope.queryModel.noResult = false;
+                            $scope.queryModel.hasMoreData = true;
                         },
                         function(){
                             $scope.queryModel.busy = false;
@@ -109,8 +123,6 @@
                 reset = function(){
                     $scope.queryModel.data = [];
                 };
-
-            find();
 
         }]);
 })();

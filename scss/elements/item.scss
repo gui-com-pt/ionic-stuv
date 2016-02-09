@@ -1,0 +1,144 @@
+
+/* Item
+==================================*/
+
+@mixin head-with-icon($color: null) {
+	> i.google-place-icon {
+		@if $color {
+    		color: $color;
+		}
+	    
+	    margin-bottom: 2px;
+	    margin-right: 4px;
+
+	    &:last-child {
+	    	margin-right: 0;
+	    }
+	}
+}
+.item {
+    /*font-size: 14px;*/
+    width: 100%;
+
+    h2 {
+    	@include head-with-icon(#666);
+    }
+
+}
+.item-icon-left .icon {
+    left: 16px;
+}
+.item-icon-right .icon {
+    right: 16px;
+}
+
+/*
+.list .item.item-icon-right {
+    padding-right: 60px;
+}
+*/
+
+.item-thumbnail-left > img:first-child, .item-thumbnail-left .item-image, .item-thumbnail-left .item-content > img:first-child, .item-thumbnail-left .item-content .item-image {
+	border-radius: 50%;
+}
+
+.tab-item.activated {
+	height: calc(100% + 3px); /* Stretch */
+}
+
+
+.item__logo {
+	background-color: #ffffff;
+	padding: $item-padding;	
+	> img {
+		max-width: 60%;
+		display: block;
+		margin: 0 auto;
+	}
+	
+}
+
+.item-button-right {
+	
+	.button.button-positive.button-clear {
+		color: #ffffff;
+	}
+}
+
+.item__content {
+	padding: $content-padding;
+}
+
+.item__thumb {
+
+	@include clearfix();
+
+    .item__img {
+    	max-width: 100%;
+    }
+
+	> .item__name {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		margin: 0;
+		padding: 10px;
+		background-color: rgba(0,0,0,0.6);
+		text-align: center;
+
+		@include head-with-icon(#fff);
+	}
+}
+
+a.item__cover {
+	display: block;
+}
+
+.item-meta {
+	font-size: 0.9em;
+	
+	button.button {
+		
+
+	}
+}
+
+.item-meta.item-button-right, .item-meta.item-button-left {
+
+	> .buttons > .button {
+		@extend .button-small;
+	}
+}
+
+.item__time {
+  font-size: 1.4em;
+  font-weight: 400;
+}
+
+.item p, .item h2, .item h3, .item p, .item h2, .item h4 {
+	white-space:normal;
+}
+
+.item__name-wrap {
+	background-color: rgba(0,0,0,0.5);
+	margin: 0;
+}
+
+.item__name-wrap--pad {
+	padding: 10px;	
+}
+h3.item__name {
+	padding: 3px 6px;
+	color: #ffffff;
+	text-transform: uppercase;
+	font-size: 1em;
+	line-height: 1.06em;
+    font-weight: bold;
+}
+
+.item-blocks {
+	padding: $item-padding;
+	@extend .item;
+	@include clearfix();
+}

@@ -1,0 +1,15 @@
+.item-news-card {
+	@extend .item;
+	@extend .item-thumbnail-left;
+}
+
+
+.item-news-h-card {
+	@extend .item;
+	display: inline-block;
+}
+
+.list-h > .item-news-h-card {
+	width: 45%;
+	vertical-align: top;
+}

@@ -1,0 +1,36 @@
+@import "angular";
+
+@import "event";
+@import "place";
+@import "bus";
+@import "item";
+@import "list";
+
+img {
+	max-width: 100%;
+}
+
+.row-height {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.cover__wrapper {
+	min-height: 90px; 
+	padding-top: 100px; 
+	background-size: cover;
+}
+
+
+
+.resource-view__date {
+	font-size: 0.9em;
+    font-weight: bold;
+    margin: 10px;
+
+    .keyword {
+    	float: right;
+    }
+}
+

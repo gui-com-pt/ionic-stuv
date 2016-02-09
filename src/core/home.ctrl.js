@@ -14,6 +14,9 @@
 
                     angular.forEach(res.data.articles, function(dto){
                         $scope.articles.push(dto);
+                        var a = angular.copy(dto);
+                        a.name = '123123';
+                        $scope.articles.push(a);
                     });
 
                 });

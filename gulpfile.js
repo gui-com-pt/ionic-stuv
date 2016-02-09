@@ -1,3 +1,5 @@
+
+
 var gulp = require('gulp');
 var gutil = require('gulp-util');
 var bower = require('bower');
@@ -41,7 +43,10 @@ coreDep: [
   './www/lib/angular-facebook/lib/angular-facebook-phonegap.js',
   './www/lib/angular-simple-logger/dist/angular-simple-logger.js',
   './www/lib/ng-file-upload-shim/ng-file-upload-shim.js',
-  './www/lib/ng-file-upload/ng-file-upload.js'
+  './www/lib/ng-file-upload/ng-file-upload.js',
+  './www/lib/angular-translate/angular-translate.js',
+  './www/lib/ionic-rating/ionic-rating.js',
+  './www/lib/angularjs-google-places/dist/angularjs-google-places.min.js'
 ]
 };
 
@@ -77,7 +82,7 @@ gulp.task('dependencies', function(){
 });
 
 gulp.task('sass', function(done) {
-  gulp.src('./scss/ionic.app.scss')
+  gulp.src('./scss/index.scss')
     .pipe(sass({
       errLogToConsole: true
     }))

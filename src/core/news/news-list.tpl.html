@@ -3,18 +3,25 @@
         <button class="button button-clear" ng-click="filter()"><i class="icon ion-android-search"></i></button>
     </ion-nav-buttons>
     <ion-content>
+        <ion-refresher
+            pulling-text="Pull to refresh..."
+            on-refresh="doRefresh()">
+        </ion-refresher>
         <ion-list class="list">
             <div class="padding" ng-show="queryModel.noResult === true">
                 <p>Nao foram encontrados resultados.</p>
                 <p ng-show="query.model.text!==''">Tenta pesquisar com outras palavras sem ser "<b ng-bind="queryModel.text"></b>"</p>
                 <button class="button button-block button-positive" ng-click="clearText()">limpa a pesquisa</button>
             </div>
-            <div ng-repeat-start="current in queryModel.data">
-                <a news-card article="article" ng-repeat="article in current.results" class="news-card" href="" ui-sref="news-view({id: article.id})" >
-                    
-                </a>
+            <div class="item-padding">
+                
+                <div ng-repeat-start="current in queryModel.data">
+                    <a news-card article="article" ng-repeat="article in current.results" class="item-news-card item-light" href="" ui-sref="news-view({id: article.id})" ></a>
+                </div>
+                <div ng-repeat-end=""></div>
             </div>
-            <div ng-repeat-end=""></div>
         </ion-list>
+        <ion-infinite-scroll on-infinite="findMore()"  ng-if="!queryModel.hasMoreData" icon="ion-loading-c">
+        </ion-infinite-scroll>
     </ion-content>
 </ion-view>

@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<widget id="com.ionicframework.stuv134424" version="0.0.1" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
-  <name>stuv</name>
+<widget id="com.guilhermecardoso.viseu" version="0.0.1" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
+  <name>Viseu App</name>
   <description>
-        An Ionic Framework and Cordova project.
+        Aplicacao para conhecer e viver em Viseu com noticias, horarios autocarros, eventos e mito mais!
     </description>
-  <author email="hi@ionicframework" href="http://ionicframework.com/">
-      Ionic Framework Team
+  <author email="contact@guilherme.ovh" href="https://guilherme.ovh/">
+      Guilherme Cardoso
     </author>
   <content src="index.html"/>
   <access origin="*"/>

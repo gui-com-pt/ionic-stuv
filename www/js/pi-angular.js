@@ -40,12 +40,15 @@
 
 	angular
 		.module('pi.gallery', []);
-	
+
 	angular
 		.module('pi.adsense', ['pi']);
 
 	angular
 		.module('pi.core.user', ['pi.core']);
+
+	angular
+		.module('pi.core.file', ['pi.core']);
 
 	angular
 		.module('pi.core.likes', ['pi.core']);
@@ -503,6 +506,152 @@ angular
 		.value('fbFlags', flags)
 
 })();
+(function(){
+  angular
+    .module('pi')
+    .factory('piNavigationBuilder', [function(){
+        function builder(idOrModel) {
+
+          var self = this,
+              cfg = {
+
+              };
+          if(_.isObject(idOrModel)) {
+            cfg['id'] = idOrModel.id;
+          } else if(_.isString(idOrModel)) {
+            cfg['id'] = idOrModel;
+          } else {
+            cfg['id'] = 'random-id';
+          }
+
+          self.highlighted = false;
+          self.hidden = true;
+          self.menu = [];
+          self.isChild = false;
+
+          this.dispose = function() {
+            this.hidden = true;
+            self.menu = [];
+          }
+
+          this.addState = function(name, model) {
+            self.menu.push({
+              'name': name,
+              'model': model,
+              'type': 'link'
+            });
+
+          };
+
+          this.remove = function(name) {
+            for (var i = 0; i < self.menu.length; i++) {
+              if(self.menu[i].name === name) {
+                self.menu.splice(i, 1);
+                break;
+              }
+            };
+          };
+
+          this.addAction = function(name, callback) {
+            self.menu.push({
+              'name': name,
+              'callback': callback,
+              'type': 'callback'
+            })
+          
+          };
+
+          this.hide = function() {
+            if(self.hidden) {
+              $log.info('The menu ' + cfg['id'] + ' is already hidden. Nothing to be done.');
+              return;
+            }
+            self.hidden = true;
+          }
+
+          this.highlight = function() {
+            if(self.highlighted) {
+              $log.info('The menu ' + cfg['id'] + ' is already highlighted. Nothing to be done.');
+              return;
+            }
+            self.highlighted = true;
+          }
+
+          this.show = function() {
+            if(!self.hidden) {
+              $log.info('The menu ' + cfg['id'] + ' is already visible. Nothing to be done.');
+              return;
+            }
+            self.hidden = false;
+          }
+
+          this.id = function() {
+            return cfg['id'];
+          }
+
+          return self;
+        }
+
+        return builder;
+      }])
+      .provider('piNavigation', [function(){
+
+        return {
+          $get: ['$rootScope','$log', 'piNavigationBuilder', 'piStack', '$log',
+            function($rootScope, $log, piNavigationBuilder, piStack, $log) {
+              var menus = piStack.create(),
+                cfg = {
+                  icons: {
+                    remove: 'icon ion-android-delete',
+                    save: 'icon ion-android-delete',
+                    add: 'icon ion-android-delete',
+                    info: 'icon ion-android-delete'  
+                  }
+                };
+
+              this.setIcon = function(type, value) {
+                if(_.isArray(type)) {
+                  if(_.isUndefined(type['type']) || _.isUndefined(type['type'])) {
+                    $log.error('Cant add ' + type);
+                  }
+                  for (var i = 0; i < type.length; i++) {
+                    cfg.icons[type[i].type] = type[i].value;
+                  };
+                }
+                cfg.icons[type] = value;
+              }
+
+              return {
+                create: function(id) {
+                  var menu = piNavigationBuilder(id);
+                  menus.add(id, menu);
+                  return menu;
+                },
+                close: function(id) {
+                  menus.remove(id);
+                }
+              }
+            }]
+
+        }
+      }])
+      .directive('piNavigationTemplate', ['piNavigationProvider',
+        function(piNavigationProvider) {
+          return {
+            scope: {
+              'menu': '@'
+            },
+            link: function(scope, elem, attrs, ngModel) {
+              scope.menu = piNavigationProvider.create();
+
+              scope.close = function() {
+                piNavigationProvider.close(scope.menu.id());
+              }
+            }
+          }
+        }
+      ]);
+})();
 /**
  * Pi Provider
  *
@@ -843,6 +992,33 @@ angular
 		.module('pi.chat')
 		.directive
 })();
+(function(){
+	angular
+		.module('pi.core.file')
+		.factory('pi.core.file.fileSvc', ['piHttp', '$log', function(piHttp, $log){
+
+			var self = this;
+
+			this.remove = function(id) {
+				return piHttp.post('/files/' + id);
+			}
+
+			this.put = function(id, model) {
+				return piHttp.post('/files/' + id, model);
+			}
+
+			this.get = function(id, model) {
+				return piHttp.get('/files/' + id, model);
+			}
+
+      this.find = function(model) {
+				return piHttp.get('/files', {params: model});
+			}
+
+			return this;
+		}]);
+})();
+
 (function(){
 	angular
 		.module('pi.gallery')
@@ -3414,46 +3590,173 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 
 	    }]);
 })();
-/**
-(function(){
+(function() {
+    var svcFn = function($modal, $q) {
 
-	var fn = function($q){
-		var modals = [];
+        var modalSvc = {};
 
-		var add = function(modalObj) {
-			
-		};
+        modalSvc.configuration = {
+            internalErrorTitle: 'Erro Interno',
+            internalErrorContent: 'Ocorreu um erro interno na nossa Plataforma que foi registado. Pedimos desculpa pelo incómodo.'
+        };
 
-		var templatePath, 
-			setTemplatePath = function(path) {
+        this.$get = function(){
 
-		};
+            return modalSvc;
+        };
 
-		var getFn = function(){
-			return {
-				getTemplatePath: function(){
-					return templatePath;
-				}
-			}
-		};
-		getFn.$inject = [];
+        modalSvc.success = function(title, message) {
+            addModal(title, message);
+        };
 
+        modalSvc.internalError = function(response) {
+            addModal(modalSvc.configuration.internalErrorTitle, modalSvc.configuration.internalErrorContent);
+        };
 
-		return {
-			setTemplatePath: setTemplatePath,
-			$get: getFn
-		}
+        var addModal = function(title, message, errors, statusCode) {
+            var deferred = $q.defer();
+            var instance = $modal.open({
+                templateUrl: 'modalDisplay.html',
+                controller: 'modalDisplayCtrl',
+                resolve: {
+                    modalObj: function() {
+                        var res =  {
+                            title: title,
+                            body: message,
+                            errors: _.isArray(errors) && errors.length > 0 ? errors : []
+                        };
+                        if(!_.isUndefined(statusCode)) {
+                            res.sucess = statusCode < 300;
+                            res.warning = statusCode >= 300 && statusCode < 400;
+                            res.error = statusCode >= 400 && statusCode < 600;
+                        } else if(res.errors.length > 0) {
+                            res.sucess = false;
+                            res.warning = false;
+                            res.error = true;
+                        } else {
+                            res.sucess = true;
+                            res.warning = false;
+                            res.error = false;
+                        }
+                        return res;
+                    }
+                }
+            });
 
-		
-	};
+            instance.result.then(function(res) {
+                deferred.resolve(res);
+            }, function(res) {
+                deferred.reject(res);
+            });
 
-	fn.$inject = ['$q'];
+            return deferred.promise;
+        };
 
-	angular
-		.module('pi')
-		.provider('ModalService', fn);
+        var confirmModal = function(title, content, btnConfirm, btnDismiss) {
+            var deferred = $q.defer();
+
+            var instance = $modal.open({
+                templateUrl: 'modalConfirm.html',
+                controller: 'modalConfirmCtrl',
+                resolve: {
+                    model: function(){
+                        return {
+                            title: title,
+                            content: content,
+                            btnDismiss: _.isUndefined(btnDismiss) ? 'Cancelar' : btnDismiss,
+                            btnConfirm: _.isUndefined(btnConfirm) ? 'Ok' : btnConfirm
+                        }
+                    }
+                }
+            });
+
+            instance.result.then(function(res) {
+                deferred.resolve(res);
+            }, function(res) {
+                deferred.reject(res);
+            });
+
+            return deferred.promise;
+        };
+        /**
+         * Modal Confirmation
+         *
+         * @return $q promise to handle the user behaviour: ok or cancel
+         */
+        modalSvc.confirm = confirmModal;
+
+        modalSvc.display = function(res) {
+            var response = _.isUndefined(res.data) ? res : res.data;
+            var title = '';
+            switch (response.statusCode) {
+                case 400:
+                    title = 'Erro de validação';
+                    break;
+                case 500:
+                    title = 'Erro interno';
+                    break;
+            }
+            var errors = _.isArray(response.validationErrors) ?
+                    response.validationErrors :
+                        !_.isUndefined(response.errors)  && _.isArray(response.errors) ? response.errors : [];
+            var message = !_.isEmpty(response.errorDescription) ?
+                    response.errorDescription :
+                !_.isEmpty(response.errorMessage) ? response.errorMessage :
+                !_.isEmpty(response.message) ? response.message :
+                '';
+
+            return addModal(title, message, errors, response.statusCode);
+        };
+
+        return modalSvc;
+    };
+
+    var confirmCtrl = function($scope, $modalInstance, model, $sce) {
+        $scope.title = model.title;
+        $scope.content = model.content;
+        $scope.btnConfirm = model.btnConfirm;
+        $scope.btnDismiss = model.btnDismiss;
+
+        $scope.submit = function(){
+             $modalInstance.close();
+
+        };
+
+        $scope.cancel = function(){
+           $modalInstance.dismiss();
+        };
+    };
+
+    var displayCtrl = function($scope, $modalInstance, modalObj, $sce) {
+        $scope.title = modalObj.title;
+        $scope.instance = $modalInstance;
+        var body = !_.isEmpty(modalObj.body) ? modalObj.body :
+            modalObj.errors.length > 0 ? null : 'Pedimos desculpa, ocorreu um erro interno.';
+
+        $scope.status = {
+            warning: modalObj.warning,
+            error: modalObj.error,
+            success: modalObj.success
+        };
+
+        $scope.body = $sce.trustAsHtml(body);
+        $scope.errors = modalObj.errors;
+
+        $scope.ok = function() {
+            $modalInstance.close();
+        };
+        $scope.cancel = function() {
+            $modalInstance.dismiss('cancel');
+
+        };
+    };
+
+    angular
+        .module('pi')
+        .service('piModal', ['$modal', '$q', svcFn])
+        .controller('modalConfirmCtrl', ['$scope', '$modalInstance', 'model', '$sce', confirmCtrl])
+        .controller('modalDisplayCtrl', ['$scope', '$modalInstance', 'modalObj', '$sce', displayCtrl]);
 })();
-*/
 (function(){
 	'use strict';
 
@@ -3472,6 +3775,7 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 					return self.baseUrl + url;
 				};
 				var self = this;
+				this.persist = false;
 
 				return  {
 					$get: function($http) {
@@ -3510,7 +3814,45 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 							return self.baseUrl;
 						}
 
-						// Return the service object
+						this.isPersist = function() {
+							return self.persist;
+						}
+
+
+						function insertQuery(tblName, columns, data) {
+							if(!_.isArray(columns) || columns.length === 0) 
+								return null;
+
+							var query = 'INSERT INTO ' + tblName + ' (';
+
+							for (var i = 0; i < columns.length; i++) {
+								query = query + (i === 0)
+									? columns[i] // first column, no comma
+									: ',' + columns[i];
+							};
+							query = query + ') VALUES(';
+
+							for (var i = 0; i < columns.length; i++) {
+								for(var j = 0; j < data.length; j++) {
+									if(!_.isUndefined(data[columns[i]]) &&
+										!_.isUndefined(data[columns[i]['name']]) &&
+										!_.isString(data[columns[i]['name']])) {
+										
+									}
+								}
+								query = query + (i === 0)
+									? '?'
+									: ',?';
+							};
+							query = query + ');';
+
+							return query;
+						};
+
+						this.persist = function(schema, data) {
+							var query = insertQuery(sch)
+						}
+
 						return this;
 					},
 					baseUrl: '',
@@ -3520,6 +3862,9 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 					},
 					setAuth: function(token) {
 						self.token = token;
+					},
+					setPersist: function(persist) {
+						self.persist = persist;
 					}
 				};
 			}
@@ -3582,12 +3927,19 @@ var INTEGER_REGEXP = /^\-?\d*$/;
           };
 
       piPromptConfirmationStack.open(instance, config);
+      
     };
 
     return this;
   };
 
   promtConfirmation.$inject = ['piPromptConfirmationStack'];
+
+  angular
+    .module('pi')
+    .factory('piPromptConfirmation', promtConfirmation)
+    .factory('piPromptConfirmationStack', piPromptConfirmationStack);
+    
 })();
 
 (function(){
@@ -4005,10 +4357,135 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 (function(){
 	angular
 		.module('pi.core.article')
-		.factory('pi.core.article.articleSvc', ['piHttp', function(piHttp){
+		.factory('pi.core.article.articleSvc', ['piHttp', '$log', function(piHttp, $log){
+
+			var self = this;
+
+			this.schema = [
+			{
+				name: 'id',
+				type: 'objectId',
+				required: true
+			},
+			{
+				name: 'name',
+				type: 'shortString',
+				required: true
+			},
+			{
+				name: 'headline',
+				type: 'shortString',
+				required: false
+			},
+			{
+				name: 'articleBody',
+				type: 'string',
+				required: true
+			},
+			{
+				name: 'keywords',
+				type: 'string',
+				required: false
+			},
+			{
+				name: 'datePublished',
+				type: 'string',
+				required: false
+			},
+			{
+				name: 'dateCreated',
+				type: 'string',
+				required: false
+			},
+			{
+				name: 'image',
+				type: 'string',
+				required: false
+			},
+			{
+				name: 'categoryPath',
+				type: 'string',
+				required: false
+			},
+			{
+				name: 'category',
+				type: 'string',
+				required: false
+			},
+			{
+				name: 'viewsCounter',
+				type: 'int',
+				required: false
+			},
+			{
+				name: 'state',
+				type: 'int',
+				required: true
+			},
+			{
+				name: 'author',
+				type: 'string',
+				required: false
+			},
+			{
+				name: 'refferName',
+				type: 'string',
+				required: false
+			},
+			{
+				name: 'refferUrl',
+				type: 'string',
+				required: false
+			},
+			{
+				name: 'refferImage',
+				type: 'string',
+				required: false
+			}];
+
 
 			this.post = function(model){
 				return piHttp.post('/article', model);
+			}
+
+			this.postPublisheDate = function(id, date){
+				return piHttp.post('/article-publish/' + id, {
+					id: id,
+					date: date
+				});
+			}
+
+			this.postState = function(id, state){
+				return piHttp.post('/article-state/' + id, {
+					id: id,
+					state: state
+				});
+			}
+
+			this.postKeywords = function(id, keywords) {
+				return piHttp.post('/article-keywords/' + id, {
+					id: id,
+					keywords: _.isArray(keywords) ? keywords : [keywords]
+				});	
+			}
+
+			this.removeKeywords = function(id, keywords) {
+				return piHttp.delete('/article-keywords/' + id, {
+					id: id,
+					keywords: _.isArray(keywords) ? keywords : [keywords]
+				});	
+			}
+
+			this.postReffer = function(id, name, url, image){
+				return piHttp.post('/article-reffer/' + id, {
+					refferName: name,
+					refferImage: image,
+					refferUrl: url
+				});
+			}
+
+			this.removeReffer = function(id, name, url, image){
+				return piHttp.delete('/article-reffer/' + id);
 			}
 
 			this.remove = function(id) {
@@ -4022,9 +4499,43 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 			this.get = function(id, model) {
 				return piHttp.get('/article/' + id, model);
 			}
+			
+			this.config = {};
+
+			this.reset = function() {
+				self.config = {
+					lc: 'pt_PT',
+					sortOrder: null,
+					sortBy: null,
+					size: 10
+				};
+			}
+
+			this.withLanguage = function(lc) {
+				self.config.lc = lc;
+			}
+
+			this.sortOrder = function(sort){
+				self.config.sortOrder = sort;
+			}
+
+			this.sortBy = function(sort){
+				self.config.sortBy = sort;
+			}
+
+			this.size = function(size){
+				self.config.size = size;
+			}
 
 			this.find = function(model) {
-				return piHttp.get('/article', {params: model});
+				var promise = piHttp.get('/article', {params: model});
+				self.reset();
+				promise.then(function(res) {
+					if(piHttp.isPersist()) {
+						piHttp.persist(self.schema, res.data.articles);
+					}
+				});
+				return promise;
 			};
 			return this;
 		}]);
@@ -4150,6 +4661,34 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 			this.put = function(id, model) {
 				return piHttp.post('/event/' + id, model);
 			};
+
+			this.postPublisheDate = function(id, date){
+				return piHttp.post('/event-publish/' + id, {
+					id: id,
+					date: date
+				});
+			}
+
+			this.postState = function(id, state){
+				return piHttp.post('/event-state/' + id, {
+					id: id,
+					state: state
+				});
+			}
+
+			this.postKeywords = function(id, keywords) {
+				return piHttp.post('/event-keywords/' + id, {
+					id: id,
+					keywords: _.isArray(keywords) ? keywords : [keywords]
+				});	
+			}
+
+			this.removeKeywords = function(id, keywords) {
+				return piHttp.delete('/event-keywords/' + id, {
+					id: id,
+					keywords: _.isArray(keywords) ? keywords : [keywords]
+				});	
+			}
 
 			return this;
 		}]);
@@ -4572,6 +5111,82 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 		}]);
 })();
 
+/*
+window.sqlitePlugin = {};
+window.sqlitePlugin.openDatabase = function() {
+	return window.openDatabase('pi', '1.0', 'pidb', 10000000);
+}
+
+(function(){
+	
+	angular
+		.module('pi.ionic.article')
+		.factory('pi.ionic.db', ['$log', function($log) {
+
+			this.processQueries = function(db, queries, dbName) {
+				db.transaction(function(tx) {
+					for (var i = 0; i < queries.length; i++) {
+						tx.executeSql(queries[i], [], 
+							function() {
+								$log.debug(queries.length + ' queries processed.');
+							}, function(tx, err) {
+								$log.debug('failed to process queries');
+							});
+					};
+				})
+			}
+
+			return this;
+		}])
+		.factory('pi.ionic.article.articleSvc', ['piHttp', '$ionicPlatform', '$cordovaSQLite', function(piHttp, $ionicPlatform, $cordovaSQLite){
+
+			var db;
+
+			window.document.addEventListener('deviceready', function(){
+				db = $cordovaSQLite.openDB({
+					name: 'pi',
+					bgType: 1
+				});
+			}, false);
+
+
+			this.post = function(id, name, headline, articleBody, dateCreated, datePublished, state){
+				var query = 'INSERT INTO article (id, name, headline, articleBody, dateCreated, datePublished, state) VALUES (?, ?, ?, ?, ?, ?, ?)',
+					args = [id, name, headline, articleBody, dateCreated, datePublished, state],
+					promise = $cordovaSQLite.execute(db, query, args)
+						.then(function(res){
+							return res;
+						});
+				
+				return promise;
+			}
+
+			this.remove = function(id) {
+				return piHttp.post('/article-remove/' + id);
+			}
+
+			this.put = function(id, model) {
+				return piHttp.post('/article/' + id, model);
+			}
+
+			this.get = function(id, model) {
+				return piHttp.get('/article/' + id, model);
+			}
+
+			this.find = function(model) {
+				var query = 'SELECT * FROM article',
+					promise = $cordovaSQLite.execute(db, query, [])
+						.then(function(res){
+							return res.rows;
+						});
+
+				return promise;
+			};
+			return this;
+		}]);
+})();
+
+*/
 (function(){
 	
 	var apiFn = function(){

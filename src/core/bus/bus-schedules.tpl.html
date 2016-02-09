@@ -2,7 +2,7 @@
     <ion-content class="padding">
         <div class="list">
             <div ng-repeat-start="route in lines[line].schedules[viewSchedule].routes">
-                <a class="item item-icon-right item-positive" href="#" ng-click="openModalRoute($index)">
+                <a class="item item-icon-right" href="#" ng-click="openModalRoute($index)" ng-class="isAvailable(route.departure) ? 'item-positive' : 'item-light'">
                     <span class="item__time">{{route.departure}} - {{route.arrive}}</span>
                     <i ng-class="isAvailable(route.departure) ? 'ion-android-checkmark-circle' : 'ion-android-more-vertical'" class="icon"></i>
                 </a>
@@ -11,7 +11,7 @@
         </div>
     </ion-content>
 </ion-view>
-<div class="tabs">
+<div class="tabs tabs-positive">
   <a class="tab-item" ng-click="viewSchedule = 0">
     Dias Úteis
   </a>

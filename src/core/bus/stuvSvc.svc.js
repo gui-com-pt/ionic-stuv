@@ -1,6 +1,44 @@
 (function(){
     angular
         .module('stuv.core.bus')
+        .provider('stuv.core.schedulesSvc', [function(){
+            
+            return {
+                $get: ['$q', '$rootScope', '$ionicModal', '$http', function($q, $rootScope, $ionicModal, $http) {
+                     function getNearest(dto) {
+                        var defer = $q.defer();
+                        $http.get('/routes-nearest')
+                            .then(function(res) {
+                                defer.resolve(promise.data);
+                            }, function(err) {
+                                defer.reject(err);
+                            });
+
+                        return defer.promise;
+                    }
+
+                    function getStations(dto) {
+                        var defer = $q.defer();
+                        $http.get('/stations')
+                            .then(function(res) {
+                                defer.resolve(promise.data);
+                            }, function(err) {
+                                defer.reject(err);
+                            });
+
+                        return defer.promise;
+                    }
+                    return {
+                        getStations: function(dto){
+                            return getStations(dto);
+                        },
+                        getNearest: function(dto) {
+                            return getNearest(dto);
+                        }
+                    }
+                }]
+            }
+        }])
         .factory('stuv.core.stuvSvc', ['$cordovaGeolocation', '$q', '$rootScope', '$ionicModal', function($cordovaGeolocation, $q, $rootScope, $ionicModal){
 
             var getFormatedCords = function() {

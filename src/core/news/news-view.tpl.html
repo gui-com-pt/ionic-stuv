@@ -3,23 +3,34 @@
         Noticia
     </ion-nav-title>
     <ion-content>
-        <div ng-style="{'background':'url(' + article.image + ')'}" class="cover__wrapper">
-            <div class="item__name-wrap item__name-wrap--pad">
-                <h3 class="item__name" ng-bind="article.name"></h3>
+        <div class="item__thumb">
+            <h3 class="item__name" ng-bind="article.name"></h3>
+            <img class="item__img" ng-src="{{article.image}}" />
+        </div>
+        <div class="padding">
+            
+            <div class="item row">
+                <div class="col">
+                    <div class="item-icon-left resource-view__date" href="#">
+                        <i class="icon ion-android-calendar"></i>
+                        <span ng-bind="article.datePublished | amDateFormat:'dddd, MMMM Do YYYY, h:mm:ss'"></span>
+                    </div>
+                </div>
+                <div class="col col-right">
+                    <div class="">
+                        <span ng-repeat="name in article.keywords" class="keyword" ng-bind="name"></span>
+                    </div>
+                </div>
             </div>
         </div>
-        <a class="item item-icon-left resource-view__date" href="#">
-            <i class="icon ion-android-calendar"></i>
-            <span am-time-ago="article.datePublished"></span>
-            <span ng-repeat="name in article.keywords" class="keyword" ng-bind="name"></span>
-        </a>
-        <div class="cnt" ng-bind-html="article.articleBody"></div>
+        <div class="cnt">
+            <p ng-bind-html="article.articleBody"></p>
+        </div>
         <a class="creative-reffer" target="_blank" ng-ref="{{article.refferUrl">
             <div class="creative-reffer__img">
                 <img ng-src="{{article.refferImage}}" />
             </div>
             
         </a>
-        <div pi-facebook-comment page-href="{{article.url}}" numposts="5" colorscheme="light"></div>
     </ion-content>
 </ion-view>

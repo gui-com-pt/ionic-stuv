@@ -1,30 +1,50 @@
 <ion-view view-title="Viseu">
+
     <ion-content>
+        <!--<ion-scroll direction="x" class="wide-as-needed">
+            <ul class="list list-h">
+            <li class="item-news-h-card" news-card-h article="item" ng-repeat="item in articles"></li>
+            </ul>
+        </ion-scroll>-->
+        <div viseu-intro></div>
         <div class="list">
-        <div class="item__logo">
-            <img src="/img/logo.jpg" />
-        </div>
-        <a class="item item-positive item-button-right" ui-sref="news-list">
-        	Noticias
-            <button class="button button-positive button-clear"><i class="icon ion-android-search"></i></button>
-        </a>
-        <a class="item item-positive item-button-right" ui-sref="event-list">
-            Eventos
-            <button class="button button-positive button-clear"><i class="icon ion-android-search"></i></button>
-        </a>
         <div class="row home-tiles">
-        <div class="col">
-        <a ui-sref="bus-schedules({id: nearest.id})" class="item item-positive item-icon-left">
-            <i class="icon ion-android-bus"></i>
-            Estaçoes
-        </a>
+            <div class="col">
+                <a ui-sref="bus-home" class="item item-positive">
+                    <i class="icon ion-android-bus"></i>
+                    <div>Autocarros</div>
+                </a>
+            </div>
+            <div class="col">
+                <a ui-sref="news-list" class="item item-positive">
+                    <i class="icon ion-document-text"></i>
+                    Noticias
+                </a>
+            </div>
+            <div class="col">
+                <a ui-sref="event-list" class="item item-positive">
+                    <i class="icon ion-calendar"></i>
+                    Eventos
+                </a>
+            </div>
         </div>
-        <div class="col">
-        <a ui-sref="bus-schedules({id: nearest.id})" class="item item-energized item-icon-left">
-            <i class="icon ion-ios-partlysunny"></i>
-            12º 
-        </a>
-        </div>
+        <div class="row home-tiles">
+            <div class="col">
+                <a ui-sref="place-list" class="item item-positive">
+                    <i class="icon ion-map"></i>
+                    Sitios
+                </a>
+            </div>
+            <div class="col">
+                <a ui-sref="tourism" class="item item-positive">
+                    <i class="icon ion-location"></i>
+                    Turismo
+                </a>
+            </div>
+            
+            <div class="col">
+                <a ui-sref="weather" class="item item-weather item-positive" viseu-item-temp day="0"></a>
+            </div>
         </div>
     </ion-content>
 </ion-view>

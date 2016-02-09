@@ -3,24 +3,41 @@
         Sitio
     </ion-nav-title>
     <ion-content>
-        <div ng-style="{'background':'url(' + place.image + ')'}" class="cover__wrapper">
-            <div class="item__name-wrap item__name-wrap--pad">
-                <h3 class="item__name" ng-bind="place.name"></h3>
+        <div class="item__thumb">
+            <h3 class="item__name">{{place.name}} <span google-place-icon ng-repeat="type in place.types" type="type"></span></h3>
+            <img class="item__img" ng-src="{{place.image}}" />
+        </div>
+        <div class="item">
+        {{place.openingHours | json}}
+            <div ng-repeat="detail in place.opening_hours.weekday_text">
+                <span ng-bind="detail"></span>
             </div>
         </div>
-        <a class="item item-icon-left resource-view__date" href="#">
-            <i class="icon ion-android-calendar"></i>
-            <span am-time-ago="place.datePublished"></span>
-            <span ng-repeat="name in place.keywords" class="keyword" ng-bind="name"></span>
-        </a>
-        <leaflet defaults="defaults" markers="markers" center="center" height="200" width="640px"></leaflet>
+        <div class="item item-icon-left">
+            <i class="icon ion-map"></i>
+            {{place.address}}
+        </div>
+        <div class="row">
+            <div class="col">
+                <div class="item item-icon-left">
+                    <i class="icon ion-android-star"></i>
+                    {{place.rating}}
+                </div>
+            </div>
+            <div class="col">
+                <div class="item item-icon-left">
+                    <i class="icon ion-android-star-outline"></i>
+                    {{place.ratingTotal}}
+                </div>
+            </div>
+        </div>
+        <!--<leaflet defaults="defaults" markers="markers" center="place.position" height="200" width="640px"></leaflet>
         <div class="cnt" ng-bind-html="place.placeBody"></div>
         <a class="creative-reffer" target="_blank" ng-ref="{{place.refferUrl">
             <div class="creative-reffer__img">
                 <img ng-src="{{place.refferImage}}" />
             </div>
-            
         </a>
-        <div pi-facebook-comment page-href="{{place.url}}" numposts="5" colorscheme="light"></div>
+        <div pi-facebook-comment page-href="{{place.url}}" numposts="5" colorscheme="light"></div>-->
     </ion-content>
 </ion-view>

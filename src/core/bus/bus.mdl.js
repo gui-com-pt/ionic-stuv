@@ -1,6 +1,6 @@
 (function(){
 	angular
-		.module('stuv.core.bus', ['ngCordova', 'stuv.core']);
+		.module('stuv.core.bus', ['ngCordova', 'ngCordova.plugins.geolocation', 'ionic', 'stuv.core']);
 	angular
 		.module('stuv.core.bus')
 		.config(['$stateProvider', function($stateProvider){

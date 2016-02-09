@@ -1,0 +1,15 @@
+.item-place-card {
+	@extend .item;
+	@extend .item-thumbnail-left;
+}
+
+
+.item-place-h-card {
+	@extend .item;
+	display: inline-block;
+}
+
+.list-h > .item-place-h-card {
+	width: 45%;
+	vertical-align: top;
+}

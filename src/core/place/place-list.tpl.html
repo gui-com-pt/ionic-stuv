@@ -1,21 +1,16 @@
 <ion-view view-title="Sitios">
     <ion-nav-buttons side="secondary">
-        <button class="button button-clear" ui-sref="place-list-map"><i class="icon ion-map"></i></button>
+        <!--<button class="button button-clear" ui-sref="place-list-map"><i class="icon ion-map"></i></button>-->
         <button class="button button-clear" ng-click="filter()"><i class="icon ion-android-search"></i></button>
     </ion-nav-buttons>
     <ion-content>
-        <div class="list">
+        <div class="list padding">
             <div class="padding" ng-show="queryModel.noResult === true">
                 <p>Nao foram encontrados resultados.</p>
                 <p ng-show="query.model.text!==''">Tenta pesquisar com outras palavras sem ser "<b ng-bind="queryModel.text"></b>"</p>
                 <button class="button button-block button-positive" ng-click="clearText()">limpa a pesquisa</button>
             </div>
-            <div ng-repeat-start="current in queryModel.data">
-                <a place-card place="place" ng-repeat="place in current.results" class="place-card" href="" ui-sref="place-view({id: place.id})" >
-                    
-                </a>
-            </div>
-            <div ng-repeat-end=""></div>
+            <a place-card place="place" ng-repeat="place in places" class="item-place-card" ui-sref="place-view({id: place.id})" ></a>
         </div>
     </ion-content>
 </ion-view>
