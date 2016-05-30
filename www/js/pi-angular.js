@@ -2,15 +2,15 @@
 	var settings = {
 
 	};
-	var configFn = function(FacebookProvider, $httpProvider){
+	var configFn = function($httpProvider){
 
 		$httpProvider.defaults.headers.post["Content-Type"] = "application/x-www-form-urlencoded";
 	};
 
-	configFn.$inject = ['FacebookProvider', '$httpProvider'];
+	configFn.$inject = ['$httpProvider'];
 
 	angular
-		.module('pi', ['ngResource', 'facebook', 'pi.core', 'pi.core.app', 'pi.core.place', 'pi.core.question', 'pi.core.article', 'pi.core.payment', 'pi.core.chat', 'pi.core.likes', 'pi.core.product'])
+		.module('pi', ['ngResource', 'pi.core', 'pi.core.app', 'pi.core.place', 'pi.core.question', 'pi.core.article', 'pi.core.payment', 'pi.core.chat', 'pi.core.likes', 'pi.core.product'])
 		.config(configFn)
 		.provider('pi', [function(){
 			var appId,
@@ -24,6 +24,9 @@
 				return {
 					getAppId: function() {
 						return appId;
+					},
+					setAppId: function(value) {
+						appId = value;
 					}
 				}
 			}];
@@ -324,6 +327,18 @@ angular
 })();
 
 (function(){
+	angular
+		.module('pi.facebook', ['pi', 'facebook']);
+
+	angular
+		.module('pi.facebook')
+		.run(['$rootScope',])
+		.config(['$httpProvider',
+			function($httpProvider) {
+				$httpProvider.defaults.headers.post["Content-Type"] = "application/x-www-form-urlencoded";
+			}]);
+})();
+(function(){
 	
 	angular
 		.module('pi.ionic')
@@ -341,6 +356,10 @@ angular
 		    }
 		  });
 		}]);
+})();
+(function(){
+	angular
+		.module('pi.nav', ['pi']);
 })();
 (function(){
 	'use strict';
@@ -368,290 +387,6 @@ angular
 
 })();
 
-/**
- *
- */
-(function(){
-	var settings = {};
-
-	var flags = {
-		sdk: false,
-		ready: false
-	};
-
-	var provider = function(){
-		
-      this.setAppId = function(appId){
-      	settings.appId = appId;
-      };
-
-      this.getAppId = function(){
-      	return appId;
-      };
-
-      settings.locale = 'pt_PT';
-
-      this.setLocale = function(locale) {
-      	settings.locale = locale;
-      };
-
-      this.getLocal = function(){
-      	return settings.locale;
-      };
-    
-		settings.status = true;
-
-		this.setStatus = function(status) {
-		  settings.status = status;
-		};
-
-		this.getStatus = function() {
-		  return settings.status;
-		};
-
-	settings.version = '2.0';
-	this.setSdkVersion = function(version) {
-		settings.version = version;
-	};
-
-	this.getSdkVersion = function(){
-		return settings.version;
-	};
-
-	      /*
-         * load SDK
-         */
-        settings.loadSDK = true;
-
-        this.setLoadSDK = function(a) {
-          settings.loadSDK = !!a;
-        };
-
-        this.getLoadSDK = function() {
-          return settings.loadSDK;
-        };
-
-        /**
-         * Custom option setting
-         * key @type {String}
-         * value @type {*}
-         * @return {*}
-         */
-        this.setInitCustomOption = function(key, value) {
-          if (!angular.isString(key)) {
-            return false;
-          }
-
-          settings[key] = value;
-          return settings[key];
-        };
-
-        /**
-         * get init option
-         * @param  {String} key
-         * @return {*}
-         */
-        this.getInitOption = function(key) {
-          // If key is not String or If non existing key return null
-          if (!angular.isString(key) || !settings.hasOwnProperty(key)) {
-            return false;
-          }
-
-          return settings[key];
-        };
-
-      this.shareDialog = function(title, content, url) {
-
-      };
-
-      this.like = function(postId) {
-      	FB.ui(
-		 {
-		  method: 'share',
-		  href: 'https://developers.facebook.com/docs/'
-		}, function(response){});
-      };
-
-      this.getComments = function(url) {
-
-      };
-
-      var getFn = function($q, $rootScope, $timeout, $window){
-
-      		/**
-      		 * The NgFacebook class is retrieved from Facebook Service request
-      		 */
-      		function NgFacebook(){
-      			this.appId = settings.appId;
-      		}
-
-      		NgFacebook.prototype.isReady = function(){
-      			return flags.ready;
-      		};
-
-      		
-      };
-
-      this.$get = [
-      	'$q',
-      	'$rootScope',
-      	'$timeout',
-      	'$window', getFn];
-
-	};
-
-	angular
-		.module('pi')
-		.value('fbSettings', settings)
-		.value('fbFlags', flags)
-
-})();
-(function(){
-  angular
-    .module('pi')
-    .factory('piNavigationBuilder', [function(){
-        function builder(idOrModel) {
-
-          var self = this,
-              cfg = {
-
-              };
-          if(_.isObject(idOrModel)) {
-            cfg['id'] = idOrModel.id;
-          } else if(_.isString(idOrModel)) {
-            cfg['id'] = idOrModel;
-          } else {
-            cfg['id'] = 'random-id';
-          }
-
-          self.highlighted = false;
-          self.hidden = true;
-          self.menu = [];
-          self.isChild = false;
-
-          this.dispose = function() {
-            this.hidden = true;
-            self.menu = [];
-          }
-
-          this.addState = function(name, model) {
-            self.menu.push({
-              'name': name,
-              'model': model,
-              'type': 'link'
-            });
-
-          };
-
-          this.remove = function(name) {
-            for (var i = 0; i < self.menu.length; i++) {
-              if(self.menu[i].name === name) {
-                self.menu.splice(i, 1);
-                break;
-              }
-            };
-          };
-
-          this.addAction = function(name, callback) {
-            self.menu.push({
-              'name': name,
-              'callback': callback,
-              'type': 'callback'
-            })
-          
-          };
-
-          this.hide = function() {
-            if(self.hidden) {
-              $log.info('The menu ' + cfg['id'] + ' is already hidden. Nothing to be done.');
-              return;
-            }
-            self.hidden = true;
-          }
-
-          this.highlight = function() {
-            if(self.highlighted) {
-              $log.info('The menu ' + cfg['id'] + ' is already highlighted. Nothing to be done.');
-              return;
-            }
-            self.highlighted = true;
-          }
-
-          this.show = function() {
-            if(!self.hidden) {
-              $log.info('The menu ' + cfg['id'] + ' is already visible. Nothing to be done.');
-              return;
-            }
-            self.hidden = false;
-          }
-
-          this.id = function() {
-            return cfg['id'];
-          }
-
-          return self;
-        }
-
-        return builder;
-      }])
-      .provider('piNavigation', [function(){
-
-        return {
-          $get: ['$rootScope','$log', 'piNavigationBuilder', 'piStack', '$log',
-            function($rootScope, $log, piNavigationBuilder, piStack, $log) {
-              var menus = piStack.create(),
-                cfg = {
-                  icons: {
-                    remove: 'icon ion-android-delete',
-                    save: 'icon ion-android-delete',
-                    add: 'icon ion-android-delete',
-                    info: 'icon ion-android-delete'  
-                  }
-                };
-
-              this.setIcon = function(type, value) {
-                if(_.isArray(type)) {
-                  if(_.isUndefined(type['type']) || _.isUndefined(type['type'])) {
-                    $log.error('Cant add ' + type);
-                  }
-                  for (var i = 0; i < type.length; i++) {
-                    cfg.icons[type[i].type] = type[i].value;
-                  };
-                }
-                cfg.icons[type] = value;
-              }
-
-              return {
-                create: function(id) {
-                  var menu = piNavigationBuilder(id);
-                  menus.add(id, menu);
-                  return menu;
-                },
-                close: function(id) {
-                  menus.remove(id);
-                }
-              }
-            }]
-
-        }
-      }])
-      .directive('piNavigationTemplate', ['piNavigationProvider',
-        function(piNavigationProvider) {
-          return {
-            scope: {
-              'menu': '@'
-            },
-            link: function(scope, elem, attrs, ngModel) {
-              scope.menu = piNavigationProvider.create();
-
-              scope.close = function() {
-                piNavigationProvider.close(scope.menu.id());
-              }
-            }
-          }
-        }
-      ]);
-})();
 /**
  * Pi Provider
  *
@@ -770,7 +505,6 @@ angular
         .value('piSettings', settings)
 		.provider('piApp', providerFn);
 })();
-
 (function(){
   angular
     .module('pi.admin')
@@ -2005,6 +1739,304 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 
 })();
 (function(){
+	
+	angular
+		.module('pi')
+		.factory('wizardService', ['$q', '$log',
+			function($q, $log) {
+
+				var svc = {
+					defaultName: 'defaultWizard'
+				};
+				var wizards = {};
+
+				svc.addWizard = function(name, wizard) {
+					wizards[name] = wizard;
+				};
+
+				svc.removeWizard = function(name) {
+					delete wizards[name];
+				};
+
+				svc.getWizard = function(name) {
+					var nameToUse = name;
+					if(!name) {
+						nameToUse = svc.defaultName;
+					}
+
+					return wizards[nameToUse];
+				}
+
+				return service;
+			}])
+		.directive('piWizard', [function(){
+
+			var firstRun = true;
+
+
+			return {
+				scope: {
+					'currentStep': '=',
+					'onFinish': '&',
+					'hideIndicators': '=',
+					'editMode': '=',
+					'name': '@'
+				},
+				templateUrl: function(elem, attrs) {
+					return attrs.template || 'pi/wizard.tpl.html';
+				},
+				controller: ['$scope', '$element', 'wizardService', '$q',
+					function($scope, $element, wizardService, $q) {
+						var wizardName = $scope.name || wizardService.defaultName;
+
+						wizardService.addWizard(wizardName, this);
+
+						$scope.$on('$destroy', function(){
+							wizardService.remove(wizardName);
+						});
+
+						$scope.steps = [];
+						$scope.context = {};
+						this.context = $scope.context;
+
+						var getStepByTitle = function(title) {
+							var found = null;
+							angular.forEach($scope.getEnabledSteps(), function(step) {
+								if(step.wizardTitle === title) {
+									found = step;
+								}
+							});
+
+							return found;
+						}
+
+						var unselectAll = function() {
+							 angular.forEach($scope.getEnabledSteps(), function (step) {
+			                    step.selected = false;
+			                });
+			                
+			                $scope.selectedStep = null;
+						}	
+
+						$scope.getEnabledSteps = function() {
+
+						}
+
+						$scope.$watch('currentStep', function(step) {
+							if(!step) return;
+							var stepTitle = $scope.selectedStep.wizardTitle;
+							if($scope.selectedStep && stepTitle !== $scope.currentStep) {
+								$scope.goToStep(getStepByTitle($scope.currentStep));
+							}
+						});
+
+						this.addStep = function(step) {
+							$scope.steps.push(step);
+
+							if($scope.getEnabledSteps().length === 1) {
+								$scope.goToStep($scope.getEnabledSteps()[0]);
+							}
+						}
+
+						$scope.getEnabledSteps = function() {
+			                return $scope.steps.filter(function(step){
+			                    return step.disabled !== 'true';
+			                });
+			            };
+						
+						$scope.goToStep = function(step) {
+							if(firstRun) { // bi-passes validation
+								unselectAll();
+								$scope.selectedStep = step;
+
+								if(!_.isUndefined($scope.currentStep)) {
+									$scope.currentStep = step.wizardTitle;
+								}
+								step.selected = true;
+								$scope.$emit('wizard:stepChanged', {step: step});
+								firstRun = false;
+							} else { 
+								var thisStep = $scope.currentStepNumber() > 0
+									? $scope.currentStepNumber() - 1
+									: 0;
+							}
+						}
+					}]
+			}
+		}])
+		.directive('piWizardStep', [function(){
+
+			return {
+				templateUrl: 'pi/wizard-step.tpl.html',
+				controller: ['$scope', '$rootScope',
+					function($scope, $rootScope) {
+
+						
+					}]
+			}
+		}])
+		.directive('piWizardBack', [function(){
+
+			return {
+				templateUrl: 'pi/wizard-step.tpl.html',
+				controller: ['$scope', '$rootScope',
+					function($scope, $rootScope) {
+
+						
+					}]
+			}
+		}])
+		.directive('piWizardButton', [function(){
+
+			return {
+				templateUrl: 'pi/wizard-step.tpl.html',
+				controller: ['$scope', '$rootScope',
+					function($scope, $rootScope) {
+
+						
+					}]
+			}
+		}]);
+})();
+/**
+ *
+ */
+(function(){
+	var settings = {};
+
+	var flags = {
+		sdk: false,
+		ready: false
+	};
+
+	var provider = function(){
+		
+      this.setAppId = function(appId){
+      	settings.appId = appId;
+      };
+
+      this.getAppId = function(){
+      	return appId;
+      };
+
+      settings.locale = 'pt_PT';
+
+      this.setLocale = function(locale) {
+      	settings.locale = locale;
+      };
+
+      this.getLocal = function(){
+      	return settings.locale;
+      };
+    
+		settings.status = true;
+
+		this.setStatus = function(status) {
+		  settings.status = status;
+		};
+
+		this.getStatus = function() {
+		  return settings.status;
+		};
+
+	settings.version = '2.0';
+	this.setSdkVersion = function(version) {
+		settings.version = version;
+	};
+
+	this.getSdkVersion = function(){
+		return settings.version;
+	};
+
+	      /*
+         * load SDK
+         */
+        settings.loadSDK = true;
+
+        this.setLoadSDK = function(a) {
+          settings.loadSDK = !!a;
+        };
+
+        this.getLoadSDK = function() {
+          return settings.loadSDK;
+        };
+
+        /**
+         * Custom option setting
+         * key @type {String}
+         * value @type {*}
+         * @return {*}
+         */
+        this.setInitCustomOption = function(key, value) {
+          if (!angular.isString(key)) {
+            return false;
+          }
+
+          settings[key] = value;
+          return settings[key];
+        };
+
+        /**
+         * get init option
+         * @param  {String} key
+         * @return {*}
+         */
+        this.getInitOption = function(key) {
+          // If key is not String or If non existing key return null
+          if (!angular.isString(key) || !settings.hasOwnProperty(key)) {
+            return false;
+          }
+
+          return settings[key];
+        };
+
+      this.shareDialog = function(title, content, url) {
+
+      };
+
+      this.like = function(postId) {
+      	FB.ui(
+		 {
+		  method: 'share',
+		  href: 'https://developers.facebook.com/docs/'
+		}, function(response){});
+      };
+
+      this.getComments = function(url) {
+
+      };
+
+      var getFn = function($q, $rootScope, $timeout, $window){
+
+      		/**
+      		 * The NgFacebook class is retrieved from Facebook Service request
+      		 */
+      		function NgFacebook(){
+      			this.appId = settings.appId;
+      		}
+
+      		NgFacebook.prototype.isReady = function(){
+      			return flags.ready;
+      		};
+
+      		
+      };
+
+      this.$get = [
+      	'$q',
+      	'$rootScope',
+      	'$timeout',
+      	'$window', getFn];
+
+	};
+
+	angular
+		.module('pi')
+		.value('fbSettings', settings)
+		.value('fbFlags', flags)
+
+})();
+(function(){
 
 	var piFileManager = function(){
 
@@ -2818,6 +2850,152 @@ var INTEGER_REGEXP = /^\-?\d*$/;
   piModalBack.$inject = ['$compile'];
 })();
 
+(function(){
+  angular
+    .module('pi.nav')
+    .factory('piNavigationBuilder', [function(){
+        function builder(idOrModel) {
+
+          var self = this,
+              cfg = {
+
+              };
+          if(_.isObject(idOrModel)) {
+            cfg['id'] = idOrModel.id;
+          } else if(_.isString(idOrModel)) {
+            cfg['id'] = idOrModel;
+          } else {
+            cfg['id'] = 'random-id';
+          }
+
+          self.highlighted = false;
+          self.hidden = true;
+          self.menu = [];
+          self.isChild = false;
+
+          this.dispose = function() {
+            this.hidden = true;
+            self.menu = [];
+          }
+
+          this.addState = function(name, model) {
+            self.menu.push({
+              'name': name,
+              'model': model,
+              'type': 'link'
+            });
+
+          };
+
+          this.remove = function(name) {
+            for (var i = 0; i < self.menu.length; i++) {
+              if(self.menu[i].name === name) {
+                self.menu.splice(i, 1);
+                break;
+              }
+            };
+          };
+
+          this.addAction = function(name, callback) {
+            self.menu.push({
+              'name': name,
+              'callback': callback,
+              'type': 'callback'
+            })
+          
+          };
+
+          this.hide = function() {
+            if(self.hidden) {
+              $log.info('The menu ' + cfg['id'] + ' is already hidden. Nothing to be done.');
+              return;
+            }
+            self.hidden = true;
+          }
+
+          this.highlight = function() {
+            if(self.highlighted) {
+              $log.info('The menu ' + cfg['id'] + ' is already highlighted. Nothing to be done.');
+              return;
+            }
+            self.highlighted = true;
+          }
+
+          this.show = function() {
+            if(!self.hidden) {
+              $log.info('The menu ' + cfg['id'] + ' is already visible. Nothing to be done.');
+              return;
+            }
+            self.hidden = false;
+          }
+
+          this.id = function() {
+            return cfg['id'];
+          }
+
+          return self;
+        }
+
+        return builder;
+      }])
+      .provider('piNavigation', [function(){
+
+        return {
+          $get: ['$rootScope','$log', 'piNavigationBuilder', 'piStack', '$log',
+            function($rootScope, $log, piNavigationBuilder, piStack, $log) {
+              var menus = piStack.create(),
+                cfg = {
+                  icons: {
+                    remove: 'icon ion-android-delete',
+                    save: 'icon ion-android-delete',
+                    add: 'icon ion-android-delete',
+                    info: 'icon ion-android-delete'  
+                  }
+                };
+
+              this.setIcon = function(type, value) {
+                if(_.isArray(type)) {
+                  if(_.isUndefined(type['type']) || _.isUndefined(type['type'])) {
+                    $log.error('Cant add ' + type);
+                  }
+                  for (var i = 0; i < type.length; i++) {
+                    cfg.icons[type[i].type] = type[i].value;
+                  };
+                }
+                cfg.icons[type] = value;
+              }
+
+              return {
+                create: function(id) {
+                  var menu = piNavigationBuilder(id);
+                  menus.add(id, menu);
+                  return menu;
+                },
+                close: function(id) {
+                  menus.remove(id);
+                }
+              }
+            }]
+
+        }
+      }])
+      .directive('piNavigationTemplate', ['piNavigationProvider',
+        function(piNavigationProvider) {
+          return {
+            scope: {
+              'menu': '@'
+            },
+            link: function(scope, elem, attrs, ngModel) {
+              scope.menu = piNavigationProvider.create();
+
+              scope.close = function() {
+                piNavigationProvider.close(scope.menu.id());
+              }
+            }
+          }
+        }
+      ]);
+})();
 /**
  * @ng-doc service
  * @name ApiIsAuthorService
@@ -3778,7 +3956,7 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 				this.persist = false;
 
 				return  {
-					$get: function($http) {
+					$get: function($http, pi) {
 
 						var s = this;
 
@@ -3787,6 +3965,9 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 						function getAugmentedConfig(cfg) {
 							var config  = cfg || {};
 							config.headers = config.headers || {};
+							if(!_.isUndefined(pi.getAppId())) {
+								config.headers['X-Pi-Application'] = pi.getAppId();
+							}
 							//config.headers.someHeaderName = 'some-header-value';
 							return config;
 						}
@@ -3955,6 +4136,9 @@ var INTEGER_REGEXP = /^\-?\d*$/;
               key: key,
               value: value
             });
+          },
+          addAll: function(arr) {
+            stack = stack.concat(arr);
           },
           get: function (key) {
             for (var i = 0; i < stack.length; i++) {
@@ -4357,6 +4541,18 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 (function(){
 	angular
 		.module('pi.core.article')
+		.factory('$piArticleStateEnum', function(){
+			return {
+				Draft: 1,
+				Published: 2,
+				Censored: 3,
+				Removed: 99
+			};
+		});
+})();
+(function(){
+	angular
+		.module('pi.core.article')
 		.factory('pi.core.article.articleSvc', ['piHttp', '$log', function(piHttp, $log){
 
 			var self = this;
@@ -4452,6 +4648,13 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 				return piHttp.post('/article-publish/' + id, {
 					id: id,
 					date: date
+				});
+			}
+
+			this.postCategory = function(id, catId){
+				return piHttp.post('/article-save-category/' + id, {
+					id: id,
+					categoryId: catId
 				});
 			}
 
@@ -4614,6 +4817,18 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 (function(){
 	angular
 		.module('pi.core.app')
+		.factory('$piEventStateEnum', function(){
+			return {
+				Draft: 1,
+				Published: 2,
+				Censored: 3,
+				Removed: 99
+			};
+		});
+})();
+(function(){
+	angular
+		.module('pi.core.app')
 		.factory('pi.core.app.eventSubSvc', ['piHttp', function(piHttp){
 			
 			this.post = function(model) {
@@ -4666,6 +4881,13 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 				return piHttp.post('/event-publish/' + id, {
 					id: id,
 					date: date
+				});
+			}
+
+			this.postCategory = function(id, catId){
+				return piHttp.post('/event-save-category/' + id, {
+					id: id,
+					categoryId: catId
 				});
 			}
 

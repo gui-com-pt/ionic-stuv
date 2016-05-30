@@ -1,16 +1,19 @@
-
-
 var gulp = require('gulp');
 var gutil = require('gulp-util');
 var bower = require('bower');
+var changed = require("gulp-changed");
+var rename = require("gulp-rename");
 var concat = require('gulp-concat');
-var sass = require('gulp-sass');
+var concurrent = require('concurrent-transform');
+//var sass = require('gulp-sass');
+var imageResize = require('gulp-image-resize');
 var minifyCss = require('gulp-minify-css');
 var rename = require('gulp-rename');
 var sh = require('shelljs');
 var templateCache = require('gulp-angular-templatecache');
 var watch = require('gulp-watch');
 
+var imgSizes = [100, 250, 680, 1200];
 var paths = {
   sass: ['./scss/**/*.scss'],
   appModules: [
@@ -81,6 +84,7 @@ gulp.task('dependencies', function(){
        .pipe(gulp.dest('./www/js'));
 });
 
+/*
 gulp.task('sass', function(done) {
   gulp.src('./scss/index.scss')
     .pipe(sass({
@@ -93,9 +97,23 @@ gulp.task('sass', function(done) {
     .pipe(rename({ extname: '.min.css' }))
     .pipe(gulp.dest('./www/css/'))
     .on('end', done);
+});*/
+
+gulp.task('images', function() {
+  for(var i = 0; i < imgSizes.length; i++) {
+    var size = imgSizes[i];
+    gulp.src('www/img/*.{png,jpg,jpeg}')
+      .pipe(changed('www/img'))
+      .pipe(concurrent(imageResize({ 
+        width : size,
+        crop : true
+      })))
+      .pipe(rename(function(path) { path.basename += '_'+size; }))
+      .pipe(gulp.dest('www/img'));
+  }
 });
 
-gulp.task('watch', function(){
+gulp.task('dev', function(){
   
   gulp.watch(paths.templates, ['templates']);
   gulp.watch(paths.appModules, ['scripts']);
@@ -124,4 +142,4 @@ gulp.task('git-check', function(done) {
   done();
 });
 
-gulp.task('default', ['scripts', 'dependencies', 'templates', 'sass']);
+gulp.task('default', ['scripts', 'dependencies', 'templates']);

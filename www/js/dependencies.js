@@ -1,1242 +1,6 @@
-/*! geolib 2.0.18 by Manuel Bieh
-* Library to provide geo functions like distance calculation,
-* conversion of decimal coordinates to sexagesimal and vice versa, etc.
-* WGS 84 (World Geodetic System 1984)
-* 
-* @author Manuel Bieh
-* @url http://www.manuelbieh.com/
-* @version 2.0.18
-* @license MIT 
-**/;(function(global, undefined) {
-
-    "use strict";
-
-    function Geolib() {}
-
-    // Constants
-    Geolib.TO_RAD = Math.PI / 180;
-    Geolib.TO_DEG = 180 / Math.PI;
-    Geolib.PI_X2 = Math.PI * 2;
-    Geolib.PI_DIV4 = Math.PI / 4;
-
-    // Setting readonly defaults
-    var geolib = Object.create(Geolib.prototype, {
-        version: {
-            value: "2.0.18"
-        },
-        radius: {
-            value: 6378137
-        },
-        minLat: {
-            value: -90
-        },
-        maxLat: {
-            value: 90
-        },
-        minLon: {
-            value: -180
-        },
-        maxLon: {
-            value: 180
-        },
-        sexagesimalPattern: {
-            value: /^([0-9]{1,3})°\s*([0-9]{1,3}(?:\.(?:[0-9]{1,2}))?)'\s*(([0-9]{1,3}(\.([0-9]{1,2}))?)"\s*)?([NEOSW]?)$/
-        },
-        measures: {
-            value: Object.create(Object.prototype, {
-                "m" : {value: 1},
-                "km": {value: 0.001},
-                "cm": {value: 100},
-                "mm": {value: 1000},
-                "mi": {value: (1 / 1609.344)},
-                "sm": {value: (1 / 1852.216)},
-                "ft": {value: (100 / 30.48)},
-                "in": {value: (100 / 2.54)},
-                "yd": {value: (1 / 0.9144)}
-            })
-        },
-        prototype: {
-            value: Geolib.prototype
-        },
-        extend: {
-            value: function(methods, overwrite) {
-                for(var prop in methods) {
-                    if(typeof geolib.prototype[prop] === 'undefined' || overwrite === true) {
-                        if(typeof methods[prop] === 'function' && typeof methods[prop].bind === 'function') {
-                            geolib.prototype[prop] = methods[prop].bind(geolib);
-                        } else {
-                            geolib.prototype[prop] = methods[prop];
-                        }
-                    }
-                }
-            }
-        }
-    });
-
-    if (typeof(Number.prototype.toRad) === 'undefined') {
-        Number.prototype.toRad = function() {
-            return this * Geolib.TO_RAD;
-        };
-    }
-
-    if (typeof(Number.prototype.toDeg) === 'undefined') {
-        Number.prototype.toDeg = function() {
-            return this * Geolib.TO_DEG;
-        };
-    }
-
-    // Here comes the magic
-    geolib.extend({
-
-        decimal: {},
-
-        sexagesimal: {},
-
-        distance: null,
-
-        getKeys: function(point) {
-
-            // GeoJSON Array [longitude, latitude(, elevation)]
-            if(Object.prototype.toString.call(point) == '[object Array]') {
-
-                return {
-                    longitude: point.length >= 1 ? 0 : undefined,
-                    latitude: point.length >= 2 ? 1 : undefined,
-                    elevation: point.length >= 3 ? 2 : undefined
-                };
-
-            }
-
-            var getKey = function(possibleValues) {
-
-                var key;
-
-                possibleValues.every(function(val) {
-                    // TODO: check if point is an object
-                    if(typeof point != 'object') {
-                        return true;
-                    }
-                    return point.hasOwnProperty(val) ? (function() { key = val; return false; }()) : true;
-                });
-
-                return key;
-
-            };
-
-            var longitude = getKey(['lng', 'lon', 'longitude']);
-            var latitude = getKey(['lat', 'latitude']);
-            var elevation = getKey(['alt', 'altitude', 'elevation', 'elev']);
-
-            // return undefined if not at least one valid property was found
-            if(typeof latitude == 'undefined' &&
-                typeof longitude == 'undefined' &&
-                typeof elevation == 'undefined') {
-                return undefined;
-            }
-
-            return {
-                latitude: latitude,
-                longitude: longitude,
-                elevation: elevation
-            };
-
-        },
-
-        // returns latitude of a given point, converted to decimal
-        // set raw to true to avoid conversion
-        getLat: function(point, raw) {
-            return raw === true ? point[this.getKeys(point).latitude] : this.useDecimal(point[this.getKeys(point).latitude]);
-        },
-
-        // Alias for getLat
-        latitude: function(point) {
-            return this.getLat.call(this, point);
-        },
-
-        // returns longitude of a given point, converted to decimal
-        // set raw to true to avoid conversion
-        getLon: function(point, raw) {
-            return raw === true ? point[this.getKeys(point).longitude] : this.useDecimal(point[this.getKeys(point).longitude]);
-        },
-
-        // Alias for getLon
-        longitude: function(point) {
-            return this.getLon.call(this, point);
-        },
-
-        getElev: function(point) {
-            return point[this.getKeys(point).elevation];
-        },
-
-        // Alias for getElev
-        elevation: function(point) {
-            return this.getElev.call(this, point);
-        },
-
-        coords: function(point, raw) {
-
-            var retval = {
-                latitude: raw === true ? point[this.getKeys(point).latitude] : this.useDecimal(point[this.getKeys(point).latitude]),
-                longitude: raw === true ? point[this.getKeys(point).longitude] : this.useDecimal(point[this.getKeys(point).longitude])
-            };
-
-            var elev = point[this.getKeys(point).elevation];
-
-            if(typeof elev !== 'undefined') {
-                retval['elevation'] = elev;
-            }
-
-            return retval;
-
-        },
-
-        // Alias for coords
-        ll: function(point, raw) {
-            return this.coords.call(this, point, raw);
-        },
-
-
-        // checks if a variable contains a valid latlong object
-        validate: function(point) {
-
-            var keys = this.getKeys(point);
-
-            if(typeof keys === 'undefined' || typeof keys.latitude === 'undefined' || keys.longitude === 'undefined') {
-                return false;
-            }
-
-            var lat = point[keys.latitude];
-            var lng = point[keys.longitude];
-
-            if(typeof lat === 'undefined' || !this.isDecimal(lat) && !this.isSexagesimal(lat)) {
-                return false;
-            }
-
-            if(typeof lng === 'undefined' || !this.isDecimal(lng) && !this.isSexagesimal(lng)) {
-                return false;
-            }
-
-            lat = this.useDecimal(lat);
-            lng = this.useDecimal(lng);
-
-            if(lat < this.minLat || lat > this.maxLat || lng < this.minLon || lng > this.maxLon) {
-                return false;
-            }
-
-            return true;
-
-        },
-
-        /**
-        * Calculates geodetic distance between two points specified by latitude/longitude using
-        * Vincenty inverse formula for ellipsoids
-        * Vincenty Inverse Solution of Geodesics on the Ellipsoid (c) Chris Veness 2002-2010
-        * (Licensed under CC BY 3.0)
-        *
-        * @param    object    Start position {latitude: 123, longitude: 123}
-        * @param    object    End position {latitude: 123, longitude: 123}
-        * @param    integer   Accuracy (in meters)
-        * @return   integer   Distance (in meters)
-        */
-        getDistance: function(start, end, accuracy) {
-
-            accuracy = Math.floor(accuracy) || 1;
-
-            var s = this.coords(start);
-            var e = this.coords(end);
-
-            var a = 6378137, b = 6356752.314245,  f = 1/298.257223563;  // WGS-84 ellipsoid params
-            var L = (e['longitude']-s['longitude']).toRad();
-
-            var cosSigma, sigma, sinAlpha, cosSqAlpha, cos2SigmaM, sinSigma;
-
-            var U1 = Math.atan((1-f) * Math.tan(parseFloat(s['latitude']).toRad()));
-            var U2 = Math.atan((1-f) * Math.tan(parseFloat(e['latitude']).toRad()));
-            var sinU1 = Math.sin(U1), cosU1 = Math.cos(U1);
-            var sinU2 = Math.sin(U2), cosU2 = Math.cos(U2);
-
-            var lambda = L, lambdaP, iterLimit = 100;
-            do {
-                var sinLambda = Math.sin(lambda), cosLambda = Math.cos(lambda);
-                sinSigma = (
-                    Math.sqrt(
-                        (
-                            cosU2 * sinLambda
-                        ) * (
-                            cosU2 * sinLambda
-                        ) + (
-                            cosU1 * sinU2 - sinU1 * cosU2 * cosLambda
-                        ) * (
-                            cosU1 * sinU2 - sinU1 * cosU2 * cosLambda
-                        )
-                    )
-                );
-                if (sinSigma === 0) {
-                    return geolib.distance = 0;  // co-incident points
-                }
-
-                cosSigma = sinU1 * sinU2 + cosU1 * cosU2 * cosLambda;
-                sigma = Math.atan2(sinSigma, cosSigma);
-                sinAlpha = cosU1 * cosU2 * sinLambda / sinSigma;
-                cosSqAlpha = 1 - sinAlpha * sinAlpha;
-                cos2SigmaM = cosSigma - 2 * sinU1 * sinU2 / cosSqAlpha;
-
-                if (isNaN(cos2SigmaM)) {
-                    cos2SigmaM = 0;  // equatorial line: cosSqAlpha=0 (§6)
-                }
-                var C = (
-                    f / 16 * cosSqAlpha * (
-                        4 + f * (
-                            4 - 3 * cosSqAlpha
-                        )
-                    )
-                );
-                lambdaP = lambda;
-                lambda = (
-                    L + (
-                        1 - C
-                    ) * f * sinAlpha * (
-                        sigma + C * sinSigma * (
-                            cos2SigmaM + C * cosSigma * (
-                                -1 + 2 * cos2SigmaM * cos2SigmaM
-                            )
-                        )
-                    )
-                );
-
-            } while (Math.abs(lambda-lambdaP) > 1e-12 && --iterLimit>0);
-
-            if (iterLimit === 0) {
-                return NaN;  // formula failed to converge
-            }
-
-            var uSq = (
-                cosSqAlpha * (
-                    a * a - b * b
-                ) / (
-                    b*b
-                )
-            );
-
-            var A = (
-                1 + uSq / 16384 * (
-                    4096 + uSq * (
-                        -768 + uSq * (
-                            320 - 175 * uSq
-                        )
-                    )
-                )
-            );
-
-            var B = (
-                uSq / 1024 * (
-                    256 + uSq * (
-                        -128 + uSq * (
-                            74-47 * uSq
-                        )
-                    )
-                )
-            );
-
-            var deltaSigma = (
-                B * sinSigma * (
-                    cos2SigmaM + B / 4 * (
-                        cosSigma * (
-                            -1 + 2 * cos2SigmaM * cos2SigmaM
-                        ) -B / 6 * cos2SigmaM * (
-                            -3 + 4 * sinSigma * sinSigma
-                        ) * (
-                            -3 + 4 * cos2SigmaM * cos2SigmaM
-                        )
-                    )
-                )
-            );
-
-            var distance = b * A * (sigma - deltaSigma);
-
-            distance = distance.toFixed(3); // round to 1mm precision
-
-            //if (start.hasOwnProperty(elevation) && end.hasOwnProperty(elevation)) {
-            if (typeof this.elevation(start) !== 'undefined' && typeof this.elevation(end) !== 'undefined') {
-                var climb = Math.abs(this.elevation(start) - this.elevation(end));
-                distance = Math.sqrt(distance * distance + climb * climb);
-            }
-
-            return this.distance = Math.floor(
-                Math.round(distance / accuracy) * accuracy
-            );
-
-            /*
-            // note: to return initial/final bearings in addition to distance, use something like:
-            var fwdAz = Math.atan2(cosU2*sinLambda,  cosU1*sinU2-sinU1*cosU2*cosLambda);
-            var revAz = Math.atan2(cosU1*sinLambda, -sinU1*cosU2+cosU1*sinU2*cosLambda);
-
-            return { distance: s, initialBearing: fwdAz.toDeg(), finalBearing: revAz.toDeg() };
-            */
-
-        },
-
-
-        /**
-        * Calculates the distance between two spots.
-        * This method is more simple but also far more inaccurate
-        *
-        * @param    object    Start position {latitude: 123, longitude: 123}
-        * @param    object    End position {latitude: 123, longitude: 123}
-        * @param    integer   Accuracy (in meters)
-        * @return   integer   Distance (in meters)
-        */
-        getDistanceSimple: function(start, end, accuracy) {
-
-            accuracy = Math.floor(accuracy) || 1;
-
-            var distance =
-                Math.round(
-                    Math.acos(
-                        Math.sin(
-                            this.latitude(end).toRad()
-                        ) *
-                        Math.sin(
-                            this.latitude(start).toRad()
-                        ) +
-                        Math.cos(
-                            this.latitude(end).toRad()
-                        ) *
-                        Math.cos(
-                            this.latitude(start).toRad()
-                        ) *
-                        Math.cos(
-                            this.longitude(start).toRad() - this.longitude(end).toRad()
-                        )
-                    ) * this.radius
-                );
-
-            return geolib.distance = Math.floor(Math.round(distance/accuracy)*accuracy);
-
-        },
-
-
-    /**
-        * Calculates the center of a collection of geo coordinates
-        *
-        * @param        array       Collection of coords [{latitude: 51.510, longitude: 7.1321}, {latitude: 49.1238, longitude: "8° 30' W"}, ...]
-        * @return       object      {latitude: centerLat, longitude: centerLng}
-        */
-        getCenter: function(coords) {
-
-            if (!coords.length) {
-                return false;
-            }
-
-            var X = 0.0;
-            var Y = 0.0;
-            var Z = 0.0;
-            var lat, lon, hyp;
-
-            coords.forEach(function(coord) {
-
-                lat = coord.latitude * Geolib.TO_RAD;
-                lon = coord.longitude * Geolib.TO_RAD;
-
-                X += Math.cos(lat) * Math.cos(lon);
-                Y += Math.cos(lat) * Math.sin(lon);
-                Z += Math.sin(lat);
-
-            });
-
-            var nb_coords = coords.length;
-            X = X / nb_coords;
-            Y = Y / nb_coords;
-            Z = Z / nb_coords;
-
-            lon = Math.atan2(Y, X);
-            hyp = Math.sqrt(X * X + Y * Y);
-            lat = Math.atan2(Z, hyp);
-
-            return {
-                latitude: (lat * Geolib.TO_DEG).toFixed(6),
-                longitude: (lon * Geolib.TO_DEG).toFixed(6)
-            };
-
-        },
-
-
-        /**
-        * Gets the max and min, latitude, longitude, and elevation (if provided).
-        * @param        array       array with coords e.g. [{latitude: 51.5143, longitude: 7.4138}, {latitude: 123, longitude: 123}, ...]
-        * @return   object      {maxLat: maxLat,
-        *                     minLat: minLat
-        *                     maxLng: maxLng,
-        *                     minLng: minLng,
-        *                     maxElev: maxElev,
-        *                     minElev: minElev}
-        */
-        getBounds: function(coords) {
-
-            if (!coords.length) {
-                return false;
-            }
-
-            var useElevation = this.elevation(coords[0]);
-
-            var stats = {
-                maxLat: -Infinity,
-                minLat: Infinity,
-                maxLng: -Infinity,
-                minLng: Infinity
-            };
-
-            if (typeof useElevation != 'undefined') {
-                stats.maxElev = 0;
-                stats.minElev = Infinity;
-            }
-
-            for (var i = 0, l = coords.length; i < l; ++i) {
-
-                stats.maxLat = Math.max(this.latitude(coords[i]), stats.maxLat);
-                stats.minLat = Math.min(this.latitude(coords[i]), stats.minLat);
-                stats.maxLng = Math.max(this.longitude(coords[i]), stats.maxLng);
-                stats.minLng = Math.min(this.longitude(coords[i]), stats.minLng);
-
-                if (useElevation) {
-                    stats.maxElev = Math.max(this.elevation(coords[i]), stats.maxElev);
-                    stats.minElev = Math.min(this.elevation(coords[i]), stats.minElev);
-                }
-
-            }
-
-            return stats;
-
-        },
-
-
-        /**
-        * Computes the bounding coordinates of all points on the surface
-        * of the earth less than or equal to the specified great circle
-        * distance.
-        *
-        * @param object Point position {latitude: 123, longitude: 123}
-        * @param number Distance (in meters).
-        * @return array Collection of two points defining the SW and NE corners.
-        */
-        getBoundsOfDistance: function(point, distance) {
-
-            var latitude = this.latitude(point);
-            var longitude = this.longitude(point);
-
-            var radLat = latitude.toRad();
-            var radLon = longitude.toRad();
-
-            var radDist = distance / this.radius;
-            var minLat = radLat - radDist;
-            var maxLat = radLat + radDist;
-
-            var MAX_LAT_RAD = this.maxLat.toRad();
-            var MIN_LAT_RAD = this.minLat.toRad();
-            var MAX_LON_RAD = this.maxLon.toRad();
-            var MIN_LON_RAD = this.minLon.toRad();
-
-            var minLon;
-            var maxLon;
-
-            if (minLat > MIN_LAT_RAD && maxLat < MAX_LAT_RAD) {
-
-                var deltaLon = Math.asin(Math.sin(radDist) / Math.cos(radLat));
-                minLon = radLon - deltaLon;
-
-                if (minLon < MIN_LON_RAD) {
-                    minLon += Geolib.PI_X2;
-                }
-
-                maxLon = radLon + deltaLon;
-
-                if (maxLon > MAX_LON_RAD) {
-                    maxLon -= Geolib.PI_X2;
-                }
-
-            } else {
-                // A pole is within the distance.
-                minLat = Math.max(minLat, MIN_LAT_RAD);
-                maxLat = Math.min(maxLat, MAX_LAT_RAD);
-                minLon = MIN_LON_RAD;
-                maxLon = MAX_LON_RAD;
-            }
-
-            return [
-                // Southwest
-                {
-                    latitude: minLat.toDeg(),
-                    longitude: minLon.toDeg()
-                },
-                // Northeast
-                {
-                    latitude: maxLat.toDeg(),
-                    longitude: maxLon.toDeg()
-                }
-            ];
-
-        },
-
-
-        /**
-        * Checks whether a point is inside of a polygon or not.
-        * Note that the polygon coords must be in correct order!
-        *
-        * @param        object      coordinate to check e.g. {latitude: 51.5023, longitude: 7.3815}
-        * @param        array       array with coords e.g. [{latitude: 51.5143, longitude: 7.4138}, {latitude: 123, longitude: 123}, ...]
-        * @return       bool        true if the coordinate is inside the given polygon
-        */
-        isPointInside: function(latlng, coords) {
-
-            for(var c = false, i = -1, l = coords.length, j = l - 1; ++i < l; j = i) {
-
-                if(
-                    (
-                        (this.longitude(coords[i]) <= this.longitude(latlng) && this.longitude(latlng) < this.longitude(coords[j])) ||
-                        (this.longitude(coords[j]) <= this.longitude(latlng) && this.longitude(latlng) < this.longitude(coords[i]))
-                    ) &&
-                    (
-                        this.latitude(latlng) < (this.latitude(coords[j]) - this.latitude(coords[i])) *
-                        (this.longitude(latlng) - this.longitude(coords[i])) /
-                        (this.longitude(coords[j]) - this.longitude(coords[i])) +
-                        this.latitude(coords[i])
-                    )
-                ) {
-                    c = !c;
-                }
-
-            }
-
-            return c;
-
-        },
-
-       /**
-        * Pre calculate the polygon coords, to speed up the point inside check.
-        * Use this function before calling isPointInsideWithPreparedPolygon()
-        * @see          Algorythm from http://alienryderflex.com/polygon/
-        * @param        array       array with coords e.g. [{latitude: 51.5143, longitude: 7.4138}, {latitude: 123, longitude: 123}, ...]
-        */
-        preparePolygonForIsPointInsideOptimized: function(coords) {
-
-            for(var i = 0, j = coords.length-1; i < coords.length; i++) {
-
-            if(this.longitude(coords[j]) === this.longitude(coords[i])) {
-
-                    coords[i].constant = this.latitude(coords[i]);
-                    coords[i].multiple = 0;
-
-                } else {
-
-                    coords[i].constant = this.latitude(coords[i]) - (
-                        this.longitude(coords[i]) * this.latitude(coords[j])
-                    ) / (
-                        this.longitude(coords[j]) - this.longitude(coords[i])
-                    ) + (
-                        this.longitude(coords[i])*this.latitude(coords[i])
-                    ) / (
-                        this.longitude(coords[j])-this.longitude(coords[i])
-                    );
-
-                    coords[i].multiple = (
-                        this.latitude(coords[j])-this.latitude(coords[i])
-                    ) / (
-                        this.longitude(coords[j])-this.longitude(coords[i])
-                    );
-
-                }
-
-                j=i;
-
-            }
-
-        },
-
-      /**
-       * Checks whether a point is inside of a polygon or not.
-       * "This is useful if you have many points that need to be tested against the same (static) polygon."
-       * Please call the function preparePolygonForIsPointInsideOptimized() with the same coords object before using this function.
-       * Note that the polygon coords must be in correct order!
-       *
-       * @see          Algorythm from http://alienryderflex.com/polygon/
-       *
-       * @param     object      coordinate to check e.g. {latitude: 51.5023, longitude: 7.3815}
-       * @param     array       array with coords e.g. [{latitude: 51.5143, longitude: 7.4138}, {latitude: 123, longitude: 123}, ...]
-       * @return        bool        true if the coordinate is inside the given polygon
-       */
-        isPointInsideWithPreparedPolygon: function(point, coords) {
-
-            var flgPointInside = false,
-            y = this.longitude(point),
-            x = this.latitude(point);
-
-            for(var i = 0, j = coords.length-1; i < coords.length; i++) {
-
-                if ((this.longitude(coords[i]) < y && this.longitude(coords[j]) >=y ||
-                    this.longitude(coords[j]) < y && this.longitude(coords[i]) >= y)) {
-
-                    flgPointInside^=(y*coords[i].multiple+coords[i].constant < x);
-
-                }
-
-                j=i;
-
-            }
-
-            return flgPointInside;
-
-        },
-
-
-        /**
-        * Shortcut for geolib.isPointInside()
-        */
-        isInside: function() {
-            return this.isPointInside.apply(this, arguments);
-        },
-
-
-        /**
-        * Checks whether a point is inside of a circle or not.
-        *
-        * @param        object      coordinate to check (e.g. {latitude: 51.5023, longitude: 7.3815})
-        * @param        object      coordinate of the circle's center (e.g. {latitude: 51.4812, longitude: 7.4025})
-        * @param        integer     maximum radius in meters
-        * @return       bool        true if the coordinate is within the given radius
-        */
-        isPointInCircle: function(latlng, center, radius) {
-            return this.getDistance(latlng, center) < radius;
-        },
-
-
-        /**
-        * Shortcut for geolib.isPointInCircle()
-        */
-        withinRadius: function() {
-            return this.isPointInCircle.apply(this, arguments);
-        },
-
-
-        /**
-        * Gets rhumb line bearing of two points. Find out about the difference between rhumb line and
-        * great circle bearing on Wikipedia. It's quite complicated. Rhumb line should be fine in most cases:
-        *
-        * http://en.wikipedia.org/wiki/Rhumb_line#General_and_mathematical_description
-        *
-        * Function heavily based on Doug Vanderweide's great PHP version (licensed under GPL 3.0)
-        * http://www.dougv.com/2009/07/13/calculating-the-bearing-and-compass-rose-direction-between-two-latitude-longitude-coordinates-in-php/
-        *
-        * @param        object      origin coordinate (e.g. {latitude: 51.5023, longitude: 7.3815})
-        * @param        object      destination coordinate
-        * @return       integer     calculated bearing
-        */
-        getRhumbLineBearing: function(originLL, destLL) {
-
-            // difference of longitude coords
-            var diffLon = this.longitude(destLL).toRad() - this.longitude(originLL).toRad();
-
-            // difference latitude coords phi
-            var diffPhi = Math.log(
-                Math.tan(
-                    this.latitude(destLL).toRad() / 2 + Geolib.PI_DIV4
-                ) /
-                Math.tan(
-                    this.latitude(originLL).toRad() / 2 + Geolib.PI_DIV4
-                )
-            );
-
-            // recalculate diffLon if it is greater than pi
-            if(Math.abs(diffLon) > Math.PI) {
-                if(diffLon > 0) {
-                    diffLon = (Geolib.PI_X2 - diffLon) * -1;
-                }
-                else {
-                    diffLon = Geolib.PI_X2 + diffLon;
-                }
-            }
-
-            //return the angle, normalized
-            return (Math.atan2(diffLon, diffPhi).toDeg() + 360) % 360;
-
-        },
-
-
-        /**
-        * Gets great circle bearing of two points. See description of getRhumbLineBearing for more information
-        *
-        * @param        object      origin coordinate (e.g. {latitude: 51.5023, longitude: 7.3815})
-        * @param        object      destination coordinate
-        * @return       integer     calculated bearing
-        */
-        getBearing: function(originLL, destLL) {
-
-            destLL['latitude'] = this.latitude(destLL);
-            destLL['longitude'] = this.longitude(destLL);
-            originLL['latitude'] = this.latitude(originLL);
-            originLL['longitude'] = this.longitude(originLL);
-
-            var bearing = (
-                (
-                    Math.atan2(
-                        Math.sin(
-                            destLL['longitude'].toRad() -
-                            originLL['longitude'].toRad()
-                        ) *
-                        Math.cos(
-                            destLL['latitude'].toRad()
-                        ),
-                        Math.cos(
-                            originLL['latitude'].toRad()
-                        ) *
-                        Math.sin(
-                            destLL['latitude'].toRad()
-                        ) -
-                        Math.sin(
-                            originLL['latitude'].toRad()
-                        ) *
-                        Math.cos(
-                            destLL['latitude'].toRad()
-                        ) *
-                        Math.cos(
-                            destLL['longitude'].toRad() - originLL['longitude'].toRad()
-                        )
-                    )
-                ).toDeg() + 360
-            ) % 360;
-
-            return bearing;
-
-        },
-
-
-        /**
-        * Gets the compass direction from an origin coordinate to a destination coordinate.
-        *
-        * @param        object      origin coordinate (e.g. {latitude: 51.5023, longitude: 7.3815})
-        * @param        object      destination coordinate
-        * @param        string      Bearing mode. Can be either circle or rhumbline
-        * @return       object      Returns an object with a rough (NESW) and an exact direction (NNE, NE, ENE, E, ESE, etc).
-        */
-        getCompassDirection: function(originLL, destLL, bearingMode) {
-
-            var direction;
-            var bearing;
-
-            if(bearingMode == 'circle') {
-                // use great circle bearing
-                bearing = this.getBearing(originLL, destLL);
-            } else {
-                // default is rhumb line bearing
-                bearing = this.getRhumbLineBearing(originLL, destLL);
-            }
-
-            switch(Math.round(bearing/22.5)) {
-                case 1:
-                    direction = {exact: "NNE", rough: "N"};
-                    break;
-                case 2:
-                    direction = {exact: "NE", rough: "N"};
-                    break;
-                case 3:
-                    direction = {exact: "ENE", rough: "E"};
-                    break;
-                case 4:
-                    direction = {exact: "E", rough: "E"};
-                    break;
-                case 5:
-                    direction = {exact: "ESE", rough: "E"};
-                    break;
-                case 6:
-                    direction = {exact: "SE", rough: "E"};
-                    break;
-                case 7:
-                    direction = {exact: "SSE", rough: "S"};
-                    break;
-                case 8:
-                    direction = {exact: "S", rough: "S"};
-                    break;
-                case 9:
-                    direction = {exact: "SSW", rough: "S"};
-                    break;
-                case 10:
-                    direction = {exact: "SW", rough: "S"};
-                    break;
-                case 11:
-                    direction = {exact: "WSW", rough: "W"};
-                    break;
-                case 12:
-                    direction = {exact: "W", rough: "W"};
-                    break;
-                case 13:
-                    direction = {exact: "WNW", rough: "W"};
-                    break;
-                case 14:
-                    direction = {exact: "NW", rough: "W"};
-                    break;
-                case 15:
-                    direction = {exact: "NNW", rough: "N"};
-                    break;
-                default:
-                    direction = {exact: "N", rough: "N"};
-            }
-
-            direction['bearing'] = bearing;
-            return direction;
-
-        },
-
-
-        /**
-        * Shortcut for getCompassDirection
-        */
-        getDirection: function(originLL, destLL, bearingMode) {
-            return this.getCompassDirection.apply(this, arguments);
-        },
-
-
-        /**
-        * Sorts an array of coords by distance from a reference coordinate
-        *
-        * @param        object      reference coordinate e.g. {latitude: 51.5023, longitude: 7.3815}
-        * @param        mixed       array or object with coords [{latitude: 51.5143, longitude: 7.4138}, {latitude: 123, longitude: 123}, ...]
-        * @return       array       ordered array
-        */
-        orderByDistance: function(latlng, coords) {
-
-            var coordsArray = [];
-
-            for(var coord in coords) {
-
-                var d = this.getDistance(latlng, coords[coord]);
-
-                coordsArray.push({
-                    key: coord,
-                    latitude: this.latitude(coords[coord]),
-                    longitude: this.longitude(coords[coord]),
-                    distance: d
-                });
-
-            }
-
-            return coordsArray.sort(function(a, b) { return a.distance - b.distance; });
-
-        },
-
-
-        /**
-        * Finds the nearest coordinate to a reference coordinate
-        *
-        * @param        object      reference coordinate e.g. {latitude: 51.5023, longitude: 7.3815}
-        * @param        mixed       array or object with coords [{latitude: 51.5143, longitude: 7.4138}, {latitude: 123, longitude: 123}, ...]
-        * @return       array       ordered array
-        */
-        findNearest: function(latlng, coords, offset, limit) {
-
-            offset = offset || 0;
-            limit = limit || 1;
-            var ordered = this.orderByDistance(latlng, coords);
-
-            if(limit === 1) {
-                return ordered[offset];
-            } else {
-                return ordered.splice(offset, limit);
-            }
-
-        },
-
-
-        /**
-        * Calculates the length of a given path
-        *
-        * @param        mixed       array or object with coords [{latitude: 51.5143, longitude: 7.4138}, {latitude: 123, longitude: 123}, ...]
-        * @return       integer     length of the path (in meters)
-        */
-        getPathLength: function(coords) {
-
-            var dist = 0;
-            var last;
-
-            for (var i = 0, l = coords.length; i < l; ++i) {
-                if(last) {
-                    //console.log(coords[i], last, this.getDistance(coords[i], last));
-                    dist += this.getDistance(this.coords(coords[i]), last);
-                }
-                last = this.coords(coords[i]);
-            }
-
-            return dist;
-
-        },
-
-
-        /**
-        * Calculates the speed between to points within a given time span.
-        *
-        * @param        object      coords with javascript timestamp {latitude: 51.5143, longitude: 7.4138, time: 1360231200880}
-        * @param        object      coords with javascript timestamp {latitude: 51.5502, longitude: 7.4323, time: 1360245600460}
-        * @param        object      options (currently "unit" is the only option. Default: km(h));
-        * @return       float       speed in unit per hour
-        */
-        getSpeed: function(start, end, options) {
-
-            var unit = options && options.unit || 'km';
-
-            if(unit == 'mph') {
-                unit = 'mi';
-            } else if(unit == 'kmh') {
-                unit = 'km';
-            }
-
-            var distance = geolib.getDistance(start, end);
-            var time = ((end.time*1)/1000) - ((start.time*1)/1000);
-            var mPerHr = (distance/time)*3600;
-            var speed = Math.round(mPerHr * this.measures[unit] * 10000)/10000;
-            return speed;
-
-        },
-
-
-        /**
-        * Converts a distance from meters to km, mm, cm, mi, ft, in or yd
-        *
-        * @param        string      Format to be converted in
-        * @param        float       Distance in meters
-        * @param        float       Decimal places for rounding (default: 4)
-        * @return       float       Converted distance
-        */
-        convertUnit: function(unit, distance, round) {
-
-            if(distance === 0) {
-
-                return 0;
-
-            } else if(typeof distance === 'undefined') {
-
-                if(this.distance === null) {
-                    throw new Error('No distance was given');
-                } else if(this.distance === 0) {
-                    return 0;
-                } else {
-                    distance = this.distance;
-                }
-
-            }
-
-            unit = unit || 'm';
-            round = (null == round ? 4 : round);
-
-            if(typeof this.measures[unit] !== 'undefined') {
-                return this.round(distance * this.measures[unit], round);
-            } else {
-                throw new Error('Unknown unit for conversion.');
-            }
-
-        },
-
-
-        /**
-        * Checks if a value is in decimal format or, if neccessary, converts to decimal
-        *
-        * @param        mixed       Value(s) to be checked/converted (array of latlng objects, latlng object, sexagesimal string, float)
-        * @return       float       Input data in decimal format
-        */
-        useDecimal: function(value) {
-
-            if(Object.prototype.toString.call(value) === '[object Array]') {
-
-                var geolib = this;
-
-                value = value.map(function(val) {
-
-                    //if(!isNaN(parseFloat(val))) {
-                    if(geolib.isDecimal(val)) {
-
-                        return geolib.useDecimal(val);
-
-                    } else if(typeof val == 'object') {
-
-                        if(geolib.validate(val)) {
-
-                            return geolib.coords(val);
-
-                        } else {
-
-                            for(var prop in val) {
-                                val[prop] = geolib.useDecimal(val[prop]);
-                            }
-
-                            return val;
-
-                        }
-
-                    } else if(geolib.isSexagesimal(val)) {
-
-                        return geolib.sexagesimal2decimal(val);
-
-                    } else {
-
-                        return val;
-
-                    }
-
-                });
-
-                return value;
-
-            } else if(typeof value === 'object' && this.validate(value)) {
-
-                return this.coords(value);
-
-            } else if(typeof value === 'object') {
-
-                for(var prop in value) {
-                    value[prop] = this.useDecimal(value[prop]);
-                }
-
-                return value;
-
-            }
-
-
-            if (this.isDecimal(value)) {
-
-                return parseFloat(value);
-
-            } else if(this.isSexagesimal(value) === true) {
-
-                return parseFloat(this.sexagesimal2decimal(value));
-
-            }
-
-            throw new Error('Unknown format.');
-
-        },
-
-        /**
-        * Converts a decimal coordinate value to sexagesimal format
-        *
-        * @param        float       decimal
-        * @return       string      Sexagesimal value (XX° YY' ZZ")
-        */
-        decimal2sexagesimal: function(dec) {
-
-            if (dec in this.sexagesimal) {
-                return this.sexagesimal[dec];
-            }
-
-            var tmp = dec.toString().split('.');
-
-            var deg = Math.abs(tmp[0]);
-            var min = ('0.' + (tmp[1] || 0))*60;
-            var sec = min.toString().split('.');
-
-            min = Math.floor(min);
-            sec = (('0.' + (sec[1] || 0)) * 60).toFixed(2);
-
-            this.sexagesimal[dec] = (deg + '° ' + min + "' " + sec + '"');
-
-            return this.sexagesimal[dec];
-
-        },
-
-
-        /**
-        * Converts a sexagesimal coordinate to decimal format
-        *
-        * @param        float       Sexagesimal coordinate
-        * @return       string      Decimal value (XX.XXXXXXXX)
-        */
-        sexagesimal2decimal: function(sexagesimal) {
-
-            if (sexagesimal in this.decimal) {
-                return this.decimal[sexagesimal];
-            }
-
-            var regEx = new RegExp(this.sexagesimalPattern);
-            var data = regEx.exec(sexagesimal);
-            var min = 0, sec = 0;
-
-            if(data) {
-                min = parseFloat(data[2]/60);
-                sec = parseFloat(data[4]/3600) || 0;
-            }
-
-            var dec = ((parseFloat(data[1]) + min + sec)).toFixed(8);
-            //var   dec = ((parseFloat(data[1]) + min + sec));
-
-                // South and West are negative decimals
-                dec = (data[7] == 'S' || data[7] == 'W') ? parseFloat(-dec) : parseFloat(dec);
-                //dec = (data[7] == 'S' || data[7] == 'W') ? -dec : dec;
-
-            this.decimal[sexagesimal] = dec;
-
-            return dec;
-
-        },
-
-
-        /**
-        * Checks if a value is in decimal format
-        *
-        * @param        string      Value to be checked
-        * @return       bool        True if in sexagesimal format
-        */
-        isDecimal: function(value) {
-
-            value = value.toString().replace(/\s*/, '');
-
-            // looks silly but works as expected
-            // checks if value is in decimal format
-            return (!isNaN(parseFloat(value)) && parseFloat(value) == value);
-
-        },
-
-
-        /**
-        * Checks if a value is in sexagesimal format
-        *
-        * @param        string      Value to be checked
-        * @return       bool        True if in sexagesimal format
-        */
-        isSexagesimal: function(value) {
-
-            value = value.toString().replace(/\s*/, '');
-
-            return this.sexagesimalPattern.test(value);
-
-        },
-
-        round: function(value, n) {
-            var decPlace = Math.pow(10, n);
-            return Math.round(value * decPlace)/decPlace;
-        }
-
-    });
-
-    // Node module
-    if (typeof module !== 'undefined' && typeof module.exports !== 'undefined') {
-
-        global.geolib = module.exports = geolib;
-
-    // AMD module
-    } else if (typeof define === "function" && define.amd) {
-
-        define("geolib", [], function () {
-            return geolib;
-        });
-
-    // we're in a browser
-    } else {
-
-        global.geolib = geolib;
-
-    }
-
-}(this));
-
-//     Underscore.js 1.6.0
+//     Underscore.js 1.8.3
 //     http://underscorejs.org
-//     (c) 2009-2014 Jeremy Ashkenas, DocumentCloud and Investigative Reporters & Editors
+//     (c) 2009-2015 Jeremy Ashkenas, DocumentCloud and Investigative Reporters & Editors
 //     Underscore may be freely distributed under the MIT license.
 
 (function() {
@@ -1250,9 +14,6 @@
   // Save the previous value of the `_` variable.
   var previousUnderscore = root._;
 
-  // Establish the object that gets returned to break out of a loop iteration.
-  var breaker = {};
-
   // Save bytes in the minified (but not gzipped) version:
   var ArrayProto = Array.prototype, ObjProto = Object.prototype, FuncProto = Function.prototype;
 
@@ -1260,25 +21,19 @@
   var
     push             = ArrayProto.push,
     slice            = ArrayProto.slice,
-    concat           = ArrayProto.concat,
     toString         = ObjProto.toString,
     hasOwnProperty   = ObjProto.hasOwnProperty;
 
   // All **ECMAScript 5** native function implementations that we hope to use
   // are declared here.
   var
-    nativeForEach      = ArrayProto.forEach,
-    nativeMap          = ArrayProto.map,
-    nativeReduce       = ArrayProto.reduce,
-    nativeReduceRight  = ArrayProto.reduceRight,
-    nativeFilter       = ArrayProto.filter,
-    nativeEvery        = ArrayProto.every,
-    nativeSome         = ArrayProto.some,
-    nativeIndexOf      = ArrayProto.indexOf,
-    nativeLastIndexOf  = ArrayProto.lastIndexOf,
     nativeIsArray      = Array.isArray,
     nativeKeys         = Object.keys,
-    nativeBind         = FuncProto.bind;
+    nativeBind         = FuncProto.bind,
+    nativeCreate       = Object.create;
+
+  // Naked function reference for surrogate-prototype-swapping.
+  var Ctor = function(){};
 
   // Create a safe reference to the Underscore object for use below.
   var _ = function(obj) {
@@ -1289,8 +44,7 @@
 
   // Export the Underscore object for **Node.js**, with
   // backwards-compatibility for the old `require()` API. If we're in
-  // the browser, add `_` as a global object via a string identifier,
-  // for Closure Compiler "advanced" mode.
+  // the browser, add `_` as a global object.
   if (typeof exports !== 'undefined') {
     if (typeof module !== 'undefined' && module.exports) {
       exports = module.exports = _;
@@ -1301,161 +55,217 @@
   }
 
   // Current version.
-  _.VERSION = '1.6.0';
+  _.VERSION = '1.8.3';
+
+  // Internal function that returns an efficient (for current engines) version
+  // of the passed-in callback, to be repeatedly applied in other Underscore
+  // functions.
+  var optimizeCb = function(func, context, argCount) {
+    if (context === void 0) return func;
+    switch (argCount == null ? 3 : argCount) {
+      case 1: return function(value) {
+        return func.call(context, value);
+      };
+      case 2: return function(value, other) {
+        return func.call(context, value, other);
+      };
+      case 3: return function(value, index, collection) {
+        return func.call(context, value, index, collection);
+      };
+      case 4: return function(accumulator, value, index, collection) {
+        return func.call(context, accumulator, value, index, collection);
+      };
+    }
+    return function() {
+      return func.apply(context, arguments);
+    };
+  };
+
+  // A mostly-internal function to generate callbacks that can be applied
+  // to each element in a collection, returning the desired result — either
+  // identity, an arbitrary callback, a property matcher, or a property accessor.
+  var cb = function(value, context, argCount) {
+    if (value == null) return _.identity;
+    if (_.isFunction(value)) return optimizeCb(value, context, argCount);
+    if (_.isObject(value)) return _.matcher(value);
+    return _.property(value);
+  };
+  _.iteratee = function(value, context) {
+    return cb(value, context, Infinity);
+  };
+
+  // An internal function for creating assigner functions.
+  var createAssigner = function(keysFunc, undefinedOnly) {
+    return function(obj) {
+      var length = arguments.length;
+      if (length < 2 || obj == null) return obj;
+      for (var index = 1; index < length; index++) {
+        var source = arguments[index],
+            keys = keysFunc(source),
+            l = keys.length;
+        for (var i = 0; i < l; i++) {
+          var key = keys[i];
+          if (!undefinedOnly || obj[key] === void 0) obj[key] = source[key];
+        }
+      }
+      return obj;
+    };
+  };
+
+  // An internal function for creating a new object that inherits from another.
+  var baseCreate = function(prototype) {
+    if (!_.isObject(prototype)) return {};
+    if (nativeCreate) return nativeCreate(prototype);
+    Ctor.prototype = prototype;
+    var result = new Ctor;
+    Ctor.prototype = null;
+    return result;
+  };
+
+  var property = function(key) {
+    return function(obj) {
+      return obj == null ? void 0 : obj[key];
+    };
+  };
+
+  // Helper for collection methods to determine whether a collection
+  // should be iterated as an array or as an object
+  // Related: http://people.mozilla.org/~jorendorff/es6-draft.html#sec-tolength
+  // Avoids a very nasty iOS 8 JIT bug on ARM-64. #2094
+  var MAX_ARRAY_INDEX = Math.pow(2, 53) - 1;
+  var getLength = property('length');
+  var isArrayLike = function(collection) {
+    var length = getLength(collection);
+    return typeof length == 'number' && length >= 0 && length <= MAX_ARRAY_INDEX;
+  };
 
   // Collection Functions
   // --------------------
 
   // The cornerstone, an `each` implementation, aka `forEach`.
-  // Handles objects with the built-in `forEach`, arrays, and raw objects.
-  // Delegates to **ECMAScript 5**'s native `forEach` if available.
-  var each = _.each = _.forEach = function(obj, iterator, context) {
-    if (obj == null) return obj;
-    if (nativeForEach && obj.forEach === nativeForEach) {
-      obj.forEach(iterator, context);
-    } else if (obj.length === +obj.length) {
-      for (var i = 0, length = obj.length; i < length; i++) {
-        if (iterator.call(context, obj[i], i, obj) === breaker) return;
+  // Handles raw objects in addition to array-likes. Treats all
+  // sparse array-likes as if they were dense.
+  _.each = _.forEach = function(obj, iteratee, context) {
+    iteratee = optimizeCb(iteratee, context);
+    var i, length;
+    if (isArrayLike(obj)) {
+      for (i = 0, length = obj.length; i < length; i++) {
+        iteratee(obj[i], i, obj);
       }
     } else {
       var keys = _.keys(obj);
-      for (var i = 0, length = keys.length; i < length; i++) {
-        if (iterator.call(context, obj[keys[i]], keys[i], obj) === breaker) return;
+      for (i = 0, length = keys.length; i < length; i++) {
+        iteratee(obj[keys[i]], keys[i], obj);
       }
     }
     return obj;
   };
 
-  // Return the results of applying the iterator to each element.
-  // Delegates to **ECMAScript 5**'s native `map` if available.
-  _.map = _.collect = function(obj, iterator, context) {
-    var results = [];
-    if (obj == null) return results;
-    if (nativeMap && obj.map === nativeMap) return obj.map(iterator, context);
-    each(obj, function(value, index, list) {
-      results.push(iterator.call(context, value, index, list));
-    });
+  // Return the results of applying the iteratee to each element.
+  _.map = _.collect = function(obj, iteratee, context) {
+    iteratee = cb(iteratee, context);
+    var keys = !isArrayLike(obj) && _.keys(obj),
+        length = (keys || obj).length,
+        results = Array(length);
+    for (var index = 0; index < length; index++) {
+      var currentKey = keys ? keys[index] : index;
+      results[index] = iteratee(obj[currentKey], currentKey, obj);
+    }
     return results;
   };
 
-  var reduceError = 'Reduce of empty array with no initial value';
+  // Create a reducing function iterating left or right.
+  function createReduce(dir) {
+    // Optimized iterator function as using arguments.length
+    // in the main function will deoptimize the, see #1991.
+    function iterator(obj, iteratee, memo, keys, index, length) {
+      for (; index >= 0 && index < length; index += dir) {
+        var currentKey = keys ? keys[index] : index;
+        memo = iteratee(memo, obj[currentKey], currentKey, obj);
+      }
+      return memo;
+    }
+
+    return function(obj, iteratee, memo, context) {
+      iteratee = optimizeCb(iteratee, context, 4);
+      var keys = !isArrayLike(obj) && _.keys(obj),
+          length = (keys || obj).length,
+          index = dir > 0 ? 0 : length - 1;
+      // Determine the initial value if none is provided.
+      if (arguments.length < 3) {
+        memo = obj[keys ? keys[index] : index];
+        index += dir;
+      }
+      return iterator(obj, iteratee, memo, keys, index, length);
+    };
+  }
 
   // **Reduce** builds up a single result from a list of values, aka `inject`,
-  // or `foldl`. Delegates to **ECMAScript 5**'s native `reduce` if available.
-  _.reduce = _.foldl = _.inject = function(obj, iterator, memo, context) {
-    var initial = arguments.length > 2;
-    if (obj == null) obj = [];
-    if (nativeReduce && obj.reduce === nativeReduce) {
-      if (context) iterator = _.bind(iterator, context);
-      return initial ? obj.reduce(iterator, memo) : obj.reduce(iterator);
-    }
-    each(obj, function(value, index, list) {
-      if (!initial) {
-        memo = value;
-        initial = true;
-      } else {
-        memo = iterator.call(context, memo, value, index, list);
-      }
-    });
-    if (!initial) throw new TypeError(reduceError);
-    return memo;
-  };
+  // or `foldl`.
+  _.reduce = _.foldl = _.inject = createReduce(1);
 
   // The right-associative version of reduce, also known as `foldr`.
-  // Delegates to **ECMAScript 5**'s native `reduceRight` if available.
-  _.reduceRight = _.foldr = function(obj, iterator, memo, context) {
-    var initial = arguments.length > 2;
-    if (obj == null) obj = [];
-    if (nativeReduceRight && obj.reduceRight === nativeReduceRight) {
-      if (context) iterator = _.bind(iterator, context);
-      return initial ? obj.reduceRight(iterator, memo) : obj.reduceRight(iterator);
-    }
-    var length = obj.length;
-    if (length !== +length) {
-      var keys = _.keys(obj);
-      length = keys.length;
-    }
-    each(obj, function(value, index, list) {
-      index = keys ? keys[--length] : --length;
-      if (!initial) {
-        memo = obj[index];
-        initial = true;
-      } else {
-        memo = iterator.call(context, memo, obj[index], index, list);
-      }
-    });
-    if (!initial) throw new TypeError(reduceError);
-    return memo;
-  };
+  _.reduceRight = _.foldr = createReduce(-1);
 
   // Return the first value which passes a truth test. Aliased as `detect`.
   _.find = _.detect = function(obj, predicate, context) {
-    var result;
-    any(obj, function(value, index, list) {
-      if (predicate.call(context, value, index, list)) {
-        result = value;
-        return true;
-      }
-    });
-    return result;
+    var key;
+    if (isArrayLike(obj)) {
+      key = _.findIndex(obj, predicate, context);
+    } else {
+      key = _.findKey(obj, predicate, context);
+    }
+    if (key !== void 0 && key !== -1) return obj[key];
   };
 
   // Return all the elements that pass a truth test.
-  // Delegates to **ECMAScript 5**'s native `filter` if available.
   // Aliased as `select`.
   _.filter = _.select = function(obj, predicate, context) {
     var results = [];
-    if (obj == null) return results;
-    if (nativeFilter && obj.filter === nativeFilter) return obj.filter(predicate, context);
-    each(obj, function(value, index, list) {
-      if (predicate.call(context, value, index, list)) results.push(value);
+    predicate = cb(predicate, context);
+    _.each(obj, function(value, index, list) {
+      if (predicate(value, index, list)) results.push(value);
     });
     return results;
   };
 
   // Return all the elements for which a truth test fails.
   _.reject = function(obj, predicate, context) {
-    return _.filter(obj, function(value, index, list) {
-      return !predicate.call(context, value, index, list);
-    }, context);
+    return _.filter(obj, _.negate(cb(predicate)), context);
   };
 
   // Determine whether all of the elements match a truth test.
-  // Delegates to **ECMAScript 5**'s native `every` if available.
   // Aliased as `all`.
   _.every = _.all = function(obj, predicate, context) {
-    predicate || (predicate = _.identity);
-    var result = true;
-    if (obj == null) return result;
-    if (nativeEvery && obj.every === nativeEvery) return obj.every(predicate, context);
-    each(obj, function(value, index, list) {
-      if (!(result = result && predicate.call(context, value, index, list))) return breaker;
-    });
-    return !!result;
+    predicate = cb(predicate, context);
+    var keys = !isArrayLike(obj) && _.keys(obj),
+        length = (keys || obj).length;
+    for (var index = 0; index < length; index++) {
+      var currentKey = keys ? keys[index] : index;
+      if (!predicate(obj[currentKey], currentKey, obj)) return false;
+    }
+    return true;
   };
 
   // Determine if at least one element in the object matches a truth test.
-  // Delegates to **ECMAScript 5**'s native `some` if available.
   // Aliased as `any`.
-  var any = _.some = _.any = function(obj, predicate, context) {
-    predicate || (predicate = _.identity);
-    var result = false;
-    if (obj == null) return result;
-    if (nativeSome && obj.some === nativeSome) return obj.some(predicate, context);
-    each(obj, function(value, index, list) {
-      if (result || (result = predicate.call(context, value, index, list))) return breaker;
-    });
-    return !!result;
+  _.some = _.any = function(obj, predicate, context) {
+    predicate = cb(predicate, context);
+    var keys = !isArrayLike(obj) && _.keys(obj),
+        length = (keys || obj).length;
+    for (var index = 0; index < length; index++) {
+      var currentKey = keys ? keys[index] : index;
+      if (predicate(obj[currentKey], currentKey, obj)) return true;
+    }
+    return false;
   };
 
-  // Determine if the array or object contains a given value (using `===`).
-  // Aliased as `include`.
-  _.contains = _.include = function(obj, target) {
-    if (obj == null) return false;
-    if (nativeIndexOf && obj.indexOf === nativeIndexOf) return obj.indexOf(target) != -1;
-    return any(obj, function(value) {
-      return value === target;
-    });
+  // Determine if the array or object contains a given item (using `===`).
+  // Aliased as `includes` and `include`.
+  _.contains = _.includes = _.include = function(obj, item, fromIndex, guard) {
+    if (!isArrayLike(obj)) obj = _.values(obj);
+    if (typeof fromIndex != 'number' || guard) fromIndex = 0;
+    return _.indexOf(obj, item, fromIndex) >= 0;
   };
 
   // Invoke a method (with arguments) on every item in a collection.
@@ -1463,7 +273,8 @@
     var args = slice.call(arguments, 2);
     var isFunc = _.isFunction(method);
     return _.map(obj, function(value) {
-      return (isFunc ? method : value[method]).apply(value, args);
+      var func = isFunc ? method : value[method];
+      return func == null ? func : func.apply(value, args);
     });
   };
 
@@ -1475,60 +286,76 @@
   // Convenience version of a common use case of `filter`: selecting only objects
   // containing specific `key:value` pairs.
   _.where = function(obj, attrs) {
-    return _.filter(obj, _.matches(attrs));
+    return _.filter(obj, _.matcher(attrs));
   };
 
   // Convenience version of a common use case of `find`: getting the first object
   // containing specific `key:value` pairs.
   _.findWhere = function(obj, attrs) {
-    return _.find(obj, _.matches(attrs));
+    return _.find(obj, _.matcher(attrs));
   };
 
-  // Return the maximum element or (element-based computation).
-  // Can't optimize arrays of integers longer than 65,535 elements.
-  // See [WebKit Bug 80797](https://bugs.webkit.org/show_bug.cgi?id=80797)
-  _.max = function(obj, iterator, context) {
-    if (!iterator && _.isArray(obj) && obj[0] === +obj[0] && obj.length < 65535) {
-      return Math.max.apply(Math, obj);
-    }
-    var result = -Infinity, lastComputed = -Infinity;
-    each(obj, function(value, index, list) {
-      var computed = iterator ? iterator.call(context, value, index, list) : value;
-      if (computed > lastComputed) {
-        result = value;
-        lastComputed = computed;
+  // Return the maximum element (or element-based computation).
+  _.max = function(obj, iteratee, context) {
+    var result = -Infinity, lastComputed = -Infinity,
+        value, computed;
+    if (iteratee == null && obj != null) {
+      obj = isArrayLike(obj) ? obj : _.values(obj);
+      for (var i = 0, length = obj.length; i < length; i++) {
+        value = obj[i];
+        if (value > result) {
+          result = value;
+        }
       }
-    });
+    } else {
+      iteratee = cb(iteratee, context);
+      _.each(obj, function(value, index, list) {
+        computed = iteratee(value, index, list);
+        if (computed > lastComputed || computed === -Infinity && result === -Infinity) {
+          result = value;
+          lastComputed = computed;
+        }
+      });
+    }
     return result;
   };
 
   // Return the minimum element (or element-based computation).
-  _.min = function(obj, iterator, context) {
-    if (!iterator && _.isArray(obj) && obj[0] === +obj[0] && obj.length < 65535) {
-      return Math.min.apply(Math, obj);
-    }
-    var result = Infinity, lastComputed = Infinity;
-    each(obj, function(value, index, list) {
-      var computed = iterator ? iterator.call(context, value, index, list) : value;
-      if (computed < lastComputed) {
-        result = value;
-        lastComputed = computed;
+  _.min = function(obj, iteratee, context) {
+    var result = Infinity, lastComputed = Infinity,
+        value, computed;
+    if (iteratee == null && obj != null) {
+      obj = isArrayLike(obj) ? obj : _.values(obj);
+      for (var i = 0, length = obj.length; i < length; i++) {
+        value = obj[i];
+        if (value < result) {
+          result = value;
+        }
       }
-    });
+    } else {
+      iteratee = cb(iteratee, context);
+      _.each(obj, function(value, index, list) {
+        computed = iteratee(value, index, list);
+        if (computed < lastComputed || computed === Infinity && result === Infinity) {
+          result = value;
+          lastComputed = computed;
+        }
+      });
+    }
     return result;
   };
 
-  // Shuffle an array, using the modern version of the
+  // Shuffle a collection, using the modern version of the
   // [Fisher-Yates shuffle](http://en.wikipedia.org/wiki/Fisher–Yates_shuffle).
   _.shuffle = function(obj) {
-    var rand;
-    var index = 0;
-    var shuffled = [];
-    each(obj, function(value) {
-      rand = _.random(index++);
-      shuffled[index - 1] = shuffled[rand];
-      shuffled[rand] = value;
-    });
+    var set = isArrayLike(obj) ? obj : _.values(obj);
+    var length = set.length;
+    var shuffled = Array(length);
+    for (var index = 0, rand; index < length; index++) {
+      rand = _.random(0, index);
+      if (rand !== index) shuffled[index] = shuffled[rand];
+      shuffled[rand] = set[index];
+    }
     return shuffled;
   };
 
@@ -1537,27 +364,20 @@
   // The internal `guard` argument allows it to work with `map`.
   _.sample = function(obj, n, guard) {
     if (n == null || guard) {
-      if (obj.length !== +obj.length) obj = _.values(obj);
+      if (!isArrayLike(obj)) obj = _.values(obj);
       return obj[_.random(obj.length - 1)];
     }
     return _.shuffle(obj).slice(0, Math.max(0, n));
   };
 
-  // An internal function to generate lookup iterators.
-  var lookupIterator = function(value) {
-    if (value == null) return _.identity;
-    if (_.isFunction(value)) return value;
-    return _.property(value);
-  };
-
-  // Sort the object's values by a criterion produced by an iterator.
-  _.sortBy = function(obj, iterator, context) {
-    iterator = lookupIterator(iterator);
+  // Sort the object's values by a criterion produced by an iteratee.
+  _.sortBy = function(obj, iteratee, context) {
+    iteratee = cb(iteratee, context);
     return _.pluck(_.map(obj, function(value, index, list) {
       return {
         value: value,
         index: index,
-        criteria: iterator.call(context, value, index, list)
+        criteria: iteratee(value, index, list)
       };
     }).sort(function(left, right) {
       var a = left.criteria;
@@ -1572,12 +392,12 @@
 
   // An internal function used for aggregate "group by" operations.
   var group = function(behavior) {
-    return function(obj, iterator, context) {
+    return function(obj, iteratee, context) {
       var result = {};
-      iterator = lookupIterator(iterator);
-      each(obj, function(value, index) {
-        var key = iterator.call(context, value, index, obj);
-        behavior(result, key, value);
+      iteratee = cb(iteratee, context);
+      _.each(obj, function(value, index) {
+        var key = iteratee(value, index, obj);
+        behavior(result, value, key);
       });
       return result;
     };
@@ -1585,48 +405,46 @@
 
   // Groups the object's values by a criterion. Pass either a string attribute
   // to group by, or a function that returns the criterion.
-  _.groupBy = group(function(result, key, value) {
-    _.has(result, key) ? result[key].push(value) : result[key] = [value];
+  _.groupBy = group(function(result, value, key) {
+    if (_.has(result, key)) result[key].push(value); else result[key] = [value];
   });
 
   // Indexes the object's values by a criterion, similar to `groupBy`, but for
   // when you know that your index values will be unique.
-  _.indexBy = group(function(result, key, value) {
+  _.indexBy = group(function(result, value, key) {
     result[key] = value;
   });
 
   // Counts instances of an object that group by a certain criterion. Pass
   // either a string attribute to count by, or a function that returns the
   // criterion.
-  _.countBy = group(function(result, key) {
-    _.has(result, key) ? result[key]++ : result[key] = 1;
+  _.countBy = group(function(result, value, key) {
+    if (_.has(result, key)) result[key]++; else result[key] = 1;
   });
-
-  // Use a comparator function to figure out the smallest index at which
-  // an object should be inserted so as to maintain order. Uses binary search.
-  _.sortedIndex = function(array, obj, iterator, context) {
-    iterator = lookupIterator(iterator);
-    var value = iterator.call(context, obj);
-    var low = 0, high = array.length;
-    while (low < high) {
-      var mid = (low + high) >>> 1;
-      iterator.call(context, array[mid]) < value ? low = mid + 1 : high = mid;
-    }
-    return low;
-  };
 
   // Safely create a real, live array from anything iterable.
   _.toArray = function(obj) {
     if (!obj) return [];
     if (_.isArray(obj)) return slice.call(obj);
-    if (obj.length === +obj.length) return _.map(obj, _.identity);
+    if (isArrayLike(obj)) return _.map(obj, _.identity);
     return _.values(obj);
   };
 
   // Return the number of elements in an object.
   _.size = function(obj) {
     if (obj == null) return 0;
-    return (obj.length === +obj.length) ? obj.length : _.keys(obj).length;
+    return isArrayLike(obj) ? obj.length : _.keys(obj).length;
+  };
+
+  // Split a collection into two arrays: one whose elements all satisfy the given
+  // predicate, and one whose elements all do not satisfy the predicate.
+  _.partition = function(obj, predicate, context) {
+    predicate = cb(predicate, context);
+    var pass = [], fail = [];
+    _.each(obj, function(value, key, obj) {
+      (predicate(value, key, obj) ? pass : fail).push(value);
+    });
+    return [pass, fail];
   };
 
   // Array Functions
@@ -1637,33 +455,30 @@
   // allows it to work with `_.map`.
   _.first = _.head = _.take = function(array, n, guard) {
     if (array == null) return void 0;
-    if ((n == null) || guard) return array[0];
-    if (n < 0) return [];
-    return slice.call(array, 0, n);
+    if (n == null || guard) return array[0];
+    return _.initial(array, array.length - n);
   };
 
   // Returns everything but the last entry of the array. Especially useful on
   // the arguments object. Passing **n** will return all the values in
-  // the array, excluding the last N. The **guard** check allows it to work with
-  // `_.map`.
+  // the array, excluding the last N.
   _.initial = function(array, n, guard) {
-    return slice.call(array, 0, array.length - ((n == null) || guard ? 1 : n));
+    return slice.call(array, 0, Math.max(0, array.length - (n == null || guard ? 1 : n)));
   };
 
   // Get the last element of an array. Passing **n** will return the last N
-  // values in the array. The **guard** check allows it to work with `_.map`.
+  // values in the array.
   _.last = function(array, n, guard) {
     if (array == null) return void 0;
-    if ((n == null) || guard) return array[array.length - 1];
-    return slice.call(array, Math.max(array.length - n, 0));
+    if (n == null || guard) return array[array.length - 1];
+    return _.rest(array, Math.max(0, array.length - n));
   };
 
   // Returns everything but the first entry of the array. Aliased as `tail` and `drop`.
   // Especially useful on the arguments object. Passing an **n** will return
-  // the rest N values in the array. The **guard**
-  // check allows it to work with `_.map`.
+  // the rest N values in the array.
   _.rest = _.tail = _.drop = function(array, n, guard) {
-    return slice.call(array, (n == null) || guard ? 1 : n);
+    return slice.call(array, n == null || guard ? 1 : n);
   };
 
   // Trim out all falsy values from an array.
@@ -1672,23 +487,28 @@
   };
 
   // Internal implementation of a recursive `flatten` function.
-  var flatten = function(input, shallow, output) {
-    if (shallow && _.every(input, _.isArray)) {
-      return concat.apply(output, input);
-    }
-    each(input, function(value) {
-      if (_.isArray(value) || _.isArguments(value)) {
-        shallow ? push.apply(output, value) : flatten(value, shallow, output);
-      } else {
-        output.push(value);
+  var flatten = function(input, shallow, strict, startIndex) {
+    var output = [], idx = 0;
+    for (var i = startIndex || 0, length = getLength(input); i < length; i++) {
+      var value = input[i];
+      if (isArrayLike(value) && (_.isArray(value) || _.isArguments(value))) {
+        //flatten current level of array or arguments object
+        if (!shallow) value = flatten(value, shallow, strict);
+        var j = 0, len = value.length;
+        output.length += len;
+        while (j < len) {
+          output[idx++] = value[j++];
+        }
+      } else if (!strict) {
+        output[idx++] = value;
       }
-    });
+    }
     return output;
   };
 
   // Flatten out an array, either recursively (by default), or just one level.
   _.flatten = function(array, shallow) {
-    return flatten(array, shallow, []);
+    return flatten(array, shallow, false);
   };
 
   // Return a version of the array that does not contain the specified value(s).
@@ -1696,79 +516,91 @@
     return _.difference(array, slice.call(arguments, 1));
   };
 
-  // Split an array into two arrays: one whose elements all satisfy the given
-  // predicate, and one whose elements all do not satisfy the predicate.
-  _.partition = function(array, predicate) {
-    var pass = [], fail = [];
-    each(array, function(elem) {
-      (predicate(elem) ? pass : fail).push(elem);
-    });
-    return [pass, fail];
-  };
-
   // Produce a duplicate-free version of the array. If the array has already
   // been sorted, you have the option of using a faster algorithm.
   // Aliased as `unique`.
-  _.uniq = _.unique = function(array, isSorted, iterator, context) {
-    if (_.isFunction(isSorted)) {
-      context = iterator;
-      iterator = isSorted;
+  _.uniq = _.unique = function(array, isSorted, iteratee, context) {
+    if (!_.isBoolean(isSorted)) {
+      context = iteratee;
+      iteratee = isSorted;
       isSorted = false;
     }
-    var initial = iterator ? _.map(array, iterator, context) : array;
-    var results = [];
+    if (iteratee != null) iteratee = cb(iteratee, context);
+    var result = [];
     var seen = [];
-    each(initial, function(value, index) {
-      if (isSorted ? (!index || seen[seen.length - 1] !== value) : !_.contains(seen, value)) {
-        seen.push(value);
-        results.push(array[index]);
+    for (var i = 0, length = getLength(array); i < length; i++) {
+      var value = array[i],
+          computed = iteratee ? iteratee(value, i, array) : value;
+      if (isSorted) {
+        if (!i || seen !== computed) result.push(value);
+        seen = computed;
+      } else if (iteratee) {
+        if (!_.contains(seen, computed)) {
+          seen.push(computed);
+          result.push(value);
+        }
+      } else if (!_.contains(result, value)) {
+        result.push(value);
       }
-    });
-    return results;
+    }
+    return result;
   };
 
   // Produce an array that contains the union: each distinct element from all of
   // the passed-in arrays.
   _.union = function() {
-    return _.uniq(_.flatten(arguments, true));
+    return _.uniq(flatten(arguments, true, true));
   };
 
   // Produce an array that contains every item shared between all the
   // passed-in arrays.
   _.intersection = function(array) {
-    var rest = slice.call(arguments, 1);
-    return _.filter(_.uniq(array), function(item) {
-      return _.every(rest, function(other) {
-        return _.contains(other, item);
-      });
-    });
+    var result = [];
+    var argsLength = arguments.length;
+    for (var i = 0, length = getLength(array); i < length; i++) {
+      var item = array[i];
+      if (_.contains(result, item)) continue;
+      for (var j = 1; j < argsLength; j++) {
+        if (!_.contains(arguments[j], item)) break;
+      }
+      if (j === argsLength) result.push(item);
+    }
+    return result;
   };
 
   // Take the difference between one array and a number of other arrays.
   // Only the elements present in just the first array will remain.
   _.difference = function(array) {
-    var rest = concat.apply(ArrayProto, slice.call(arguments, 1));
-    return _.filter(array, function(value){ return !_.contains(rest, value); });
+    var rest = flatten(arguments, true, true, 1);
+    return _.filter(array, function(value){
+      return !_.contains(rest, value);
+    });
   };
 
   // Zip together multiple lists into a single array -- elements that share
   // an index go together.
   _.zip = function() {
-    var length = _.max(_.pluck(arguments, 'length').concat(0));
-    var results = new Array(length);
-    for (var i = 0; i < length; i++) {
-      results[i] = _.pluck(arguments, '' + i);
+    return _.unzip(arguments);
+  };
+
+  // Complement of _.zip. Unzip accepts an array of arrays and groups
+  // each array's elements on shared indices
+  _.unzip = function(array) {
+    var length = array && _.max(array, getLength).length || 0;
+    var result = Array(length);
+
+    for (var index = 0; index < length; index++) {
+      result[index] = _.pluck(array, index);
     }
-    return results;
+    return result;
   };
 
   // Converts lists into objects. Pass either a single array of `[key, value]`
   // pairs, or two parallel arrays of the same length -- one of keys, and one of
   // the corresponding values.
   _.object = function(list, values) {
-    if (list == null) return {};
     var result = {};
-    for (var i = 0, length = list.length; i < length; i++) {
+    for (var i = 0, length = getLength(list); i < length; i++) {
       if (values) {
         result[list[i]] = values[i];
       } else {
@@ -1778,57 +610,83 @@
     return result;
   };
 
-  // If the browser doesn't supply us with indexOf (I'm looking at you, **MSIE**),
-  // we need this function. Return the position of the first occurrence of an
-  // item in an array, or -1 if the item is not included in the array.
-  // Delegates to **ECMAScript 5**'s native `indexOf` if available.
-  // If the array is large and already in sort order, pass `true`
-  // for **isSorted** to use binary search.
-  _.indexOf = function(array, item, isSorted) {
-    if (array == null) return -1;
-    var i = 0, length = array.length;
-    if (isSorted) {
-      if (typeof isSorted == 'number') {
-        i = (isSorted < 0 ? Math.max(0, length + isSorted) : isSorted);
-      } else {
-        i = _.sortedIndex(array, item);
-        return array[i] === item ? i : -1;
+  // Generator function to create the findIndex and findLastIndex functions
+  function createPredicateIndexFinder(dir) {
+    return function(array, predicate, context) {
+      predicate = cb(predicate, context);
+      var length = getLength(array);
+      var index = dir > 0 ? 0 : length - 1;
+      for (; index >= 0 && index < length; index += dir) {
+        if (predicate(array[index], index, array)) return index;
       }
+      return -1;
+    };
+  }
+
+  // Returns the first index on an array-like that passes a predicate test
+  _.findIndex = createPredicateIndexFinder(1);
+  _.findLastIndex = createPredicateIndexFinder(-1);
+
+  // Use a comparator function to figure out the smallest index at which
+  // an object should be inserted so as to maintain order. Uses binary search.
+  _.sortedIndex = function(array, obj, iteratee, context) {
+    iteratee = cb(iteratee, context, 1);
+    var value = iteratee(obj);
+    var low = 0, high = getLength(array);
+    while (low < high) {
+      var mid = Math.floor((low + high) / 2);
+      if (iteratee(array[mid]) < value) low = mid + 1; else high = mid;
     }
-    if (nativeIndexOf && array.indexOf === nativeIndexOf) return array.indexOf(item, isSorted);
-    for (; i < length; i++) if (array[i] === item) return i;
-    return -1;
+    return low;
   };
 
-  // Delegates to **ECMAScript 5**'s native `lastIndexOf` if available.
-  _.lastIndexOf = function(array, item, from) {
-    if (array == null) return -1;
-    var hasIndex = from != null;
-    if (nativeLastIndexOf && array.lastIndexOf === nativeLastIndexOf) {
-      return hasIndex ? array.lastIndexOf(item, from) : array.lastIndexOf(item);
-    }
-    var i = (hasIndex ? from : array.length);
-    while (i--) if (array[i] === item) return i;
-    return -1;
-  };
+  // Generator function to create the indexOf and lastIndexOf functions
+  function createIndexFinder(dir, predicateFind, sortedIndex) {
+    return function(array, item, idx) {
+      var i = 0, length = getLength(array);
+      if (typeof idx == 'number') {
+        if (dir > 0) {
+            i = idx >= 0 ? idx : Math.max(idx + length, i);
+        } else {
+            length = idx >= 0 ? Math.min(idx + 1, length) : idx + length + 1;
+        }
+      } else if (sortedIndex && idx && length) {
+        idx = sortedIndex(array, item);
+        return array[idx] === item ? idx : -1;
+      }
+      if (item !== item) {
+        idx = predicateFind(slice.call(array, i, length), _.isNaN);
+        return idx >= 0 ? idx + i : -1;
+      }
+      for (idx = dir > 0 ? i : length - 1; idx >= 0 && idx < length; idx += dir) {
+        if (array[idx] === item) return idx;
+      }
+      return -1;
+    };
+  }
+
+  // Return the position of the first occurrence of an item in an array,
+  // or -1 if the item is not included in the array.
+  // If the array is large and already in sort order, pass `true`
+  // for **isSorted** to use binary search.
+  _.indexOf = createIndexFinder(1, _.findIndex, _.sortedIndex);
+  _.lastIndexOf = createIndexFinder(-1, _.findLastIndex);
 
   // Generate an integer Array containing an arithmetic progression. A port of
   // the native Python `range()` function. See
   // [the Python documentation](http://docs.python.org/library/functions.html#range).
   _.range = function(start, stop, step) {
-    if (arguments.length <= 1) {
+    if (stop == null) {
       stop = start || 0;
       start = 0;
     }
-    step = arguments[2] || 1;
+    step = step || 1;
 
     var length = Math.max(Math.ceil((stop - start) / step), 0);
-    var idx = 0;
-    var range = new Array(length);
+    var range = Array(length);
 
-    while(idx < length) {
-      range[idx++] = start;
-      start += step;
+    for (var idx = 0; idx < length; idx++, start += step) {
+      range[idx] = start;
     }
 
     return range;
@@ -1837,26 +695,27 @@
   // Function (ahem) Functions
   // ------------------
 
-  // Reusable constructor function for prototype setting.
-  var ctor = function(){};
+  // Determines whether to execute a function as a constructor
+  // or a normal function with the provided arguments
+  var executeBound = function(sourceFunc, boundFunc, context, callingContext, args) {
+    if (!(callingContext instanceof boundFunc)) return sourceFunc.apply(context, args);
+    var self = baseCreate(sourceFunc.prototype);
+    var result = sourceFunc.apply(self, args);
+    if (_.isObject(result)) return result;
+    return self;
+  };
 
   // Create a function bound to a given object (assigning `this`, and arguments,
   // optionally). Delegates to **ECMAScript 5**'s native `Function.bind` if
   // available.
   _.bind = function(func, context) {
-    var args, bound;
     if (nativeBind && func.bind === nativeBind) return nativeBind.apply(func, slice.call(arguments, 1));
-    if (!_.isFunction(func)) throw new TypeError;
-    args = slice.call(arguments, 2);
-    return bound = function() {
-      if (!(this instanceof bound)) return func.apply(context, args.concat(slice.call(arguments)));
-      ctor.prototype = func.prototype;
-      var self = new ctor;
-      ctor.prototype = null;
-      var result = func.apply(self, args.concat(slice.call(arguments)));
-      if (Object(result) === result) return result;
-      return self;
+    if (!_.isFunction(func)) throw new TypeError('Bind must be called on a function');
+    var args = slice.call(arguments, 2);
+    var bound = function() {
+      return executeBound(func, bound, context, this, args.concat(slice.call(arguments)));
     };
+    return bound;
   };
 
   // Partially apply a function by creating a version that has had some of its
@@ -1864,49 +723,55 @@
   // as a placeholder, allowing any combination of arguments to be pre-filled.
   _.partial = function(func) {
     var boundArgs = slice.call(arguments, 1);
-    return function() {
-      var position = 0;
-      var args = boundArgs.slice();
-      for (var i = 0, length = args.length; i < length; i++) {
-        if (args[i] === _) args[i] = arguments[position++];
+    var bound = function() {
+      var position = 0, length = boundArgs.length;
+      var args = Array(length);
+      for (var i = 0; i < length; i++) {
+        args[i] = boundArgs[i] === _ ? arguments[position++] : boundArgs[i];
       }
       while (position < arguments.length) args.push(arguments[position++]);
-      return func.apply(this, args);
+      return executeBound(func, bound, this, this, args);
     };
+    return bound;
   };
 
   // Bind a number of an object's methods to that object. Remaining arguments
   // are the method names to be bound. Useful for ensuring that all callbacks
   // defined on an object belong to it.
   _.bindAll = function(obj) {
-    var funcs = slice.call(arguments, 1);
-    if (funcs.length === 0) throw new Error('bindAll must be passed function names');
-    each(funcs, function(f) { obj[f] = _.bind(obj[f], obj); });
+    var i, length = arguments.length, key;
+    if (length <= 1) throw new Error('bindAll must be passed function names');
+    for (i = 1; i < length; i++) {
+      key = arguments[i];
+      obj[key] = _.bind(obj[key], obj);
+    }
     return obj;
   };
 
   // Memoize an expensive function by storing its results.
   _.memoize = function(func, hasher) {
-    var memo = {};
-    hasher || (hasher = _.identity);
-    return function() {
-      var key = hasher.apply(this, arguments);
-      return _.has(memo, key) ? memo[key] : (memo[key] = func.apply(this, arguments));
+    var memoize = function(key) {
+      var cache = memoize.cache;
+      var address = '' + (hasher ? hasher.apply(this, arguments) : key);
+      if (!_.has(cache, address)) cache[address] = func.apply(this, arguments);
+      return cache[address];
     };
+    memoize.cache = {};
+    return memoize;
   };
 
   // Delays a function for the given number of milliseconds, and then calls
   // it with the arguments supplied.
   _.delay = function(func, wait) {
     var args = slice.call(arguments, 2);
-    return setTimeout(function(){ return func.apply(null, args); }, wait);
+    return setTimeout(function(){
+      return func.apply(null, args);
+    }, wait);
   };
 
   // Defers a function, scheduling it to run after the current call stack has
   // cleared.
-  _.defer = function(func) {
-    return _.delay.apply(_, [func, 1].concat(slice.call(arguments, 1)));
-  };
+  _.defer = _.partial(_.delay, _, 1);
 
   // Returns a function, that, when invoked, will only be triggered at most once
   // during a given window of time. Normally, the throttled function will run
@@ -1917,12 +782,12 @@
     var context, args, result;
     var timeout = null;
     var previous = 0;
-    options || (options = {});
+    if (!options) options = {};
     var later = function() {
       previous = options.leading === false ? 0 : _.now();
       timeout = null;
       result = func.apply(context, args);
-      context = args = null;
+      if (!timeout) context = args = null;
     };
     return function() {
       var now = _.now();
@@ -1930,12 +795,14 @@
       var remaining = wait - (now - previous);
       context = this;
       args = arguments;
-      if (remaining <= 0) {
-        clearTimeout(timeout);
-        timeout = null;
+      if (remaining <= 0 || remaining > wait) {
+        if (timeout) {
+          clearTimeout(timeout);
+          timeout = null;
+        }
         previous = now;
         result = func.apply(context, args);
-        context = args = null;
+        if (!timeout) context = args = null;
       } else if (!timeout && options.trailing !== false) {
         timeout = setTimeout(later, remaining);
       }
@@ -1952,13 +819,14 @@
 
     var later = function() {
       var last = _.now() - timestamp;
-      if (last < wait) {
+
+      if (last < wait && last >= 0) {
         timeout = setTimeout(later, wait - last);
       } else {
         timeout = null;
         if (!immediate) {
           result = func.apply(context, args);
-          context = args = null;
+          if (!timeout) context = args = null;
         }
       }
     };
@@ -1968,28 +836,13 @@
       args = arguments;
       timestamp = _.now();
       var callNow = immediate && !timeout;
-      if (!timeout) {
-        timeout = setTimeout(later, wait);
-      }
+      if (!timeout) timeout = setTimeout(later, wait);
       if (callNow) {
         result = func.apply(context, args);
         context = args = null;
       }
 
       return result;
-    };
-  };
-
-  // Returns a function that will be executed at most one time, no matter how
-  // often you call it. Useful for lazy initialization.
-  _.once = function(func) {
-    var ran = false, memo;
-    return function() {
-      if (ran) return memo;
-      ran = true;
-      memo = func.apply(this, arguments);
-      func = null;
-      return memo;
     };
   };
 
@@ -2000,20 +853,27 @@
     return _.partial(wrapper, func);
   };
 
-  // Returns a function that is the composition of a list of functions, each
-  // consuming the return value of the function that follows.
-  _.compose = function() {
-    var funcs = arguments;
+  // Returns a negated version of the passed-in predicate.
+  _.negate = function(predicate) {
     return function() {
-      var args = arguments;
-      for (var i = funcs.length - 1; i >= 0; i--) {
-        args = [funcs[i].apply(this, args)];
-      }
-      return args[0];
+      return !predicate.apply(this, arguments);
     };
   };
 
-  // Returns a function that will only be executed after being called N times.
+  // Returns a function that is the composition of a list of functions, each
+  // consuming the return value of the function that follows.
+  _.compose = function() {
+    var args = arguments;
+    var start = args.length - 1;
+    return function() {
+      var i = start;
+      var result = args[start].apply(this, arguments);
+      while (i--) result = args[i].call(this, result);
+      return result;
+    };
+  };
+
+  // Returns a function that will only be executed on and after the Nth call.
   _.after = function(times, func) {
     return function() {
       if (--times < 1) {
@@ -2022,16 +882,66 @@
     };
   };
 
+  // Returns a function that will only be executed up to (but not including) the Nth call.
+  _.before = function(times, func) {
+    var memo;
+    return function() {
+      if (--times > 0) {
+        memo = func.apply(this, arguments);
+      }
+      if (times <= 1) func = null;
+      return memo;
+    };
+  };
+
+  // Returns a function that will be executed at most one time, no matter how
+  // often you call it. Useful for lazy initialization.
+  _.once = _.partial(_.before, 2);
+
   // Object Functions
   // ----------------
 
-  // Retrieve the names of an object's properties.
+  // Keys in IE < 9 that won't be iterated by `for key in ...` and thus missed.
+  var hasEnumBug = !{toString: null}.propertyIsEnumerable('toString');
+  var nonEnumerableProps = ['valueOf', 'isPrototypeOf', 'toString',
+                      'propertyIsEnumerable', 'hasOwnProperty', 'toLocaleString'];
+
+  function collectNonEnumProps(obj, keys) {
+    var nonEnumIdx = nonEnumerableProps.length;
+    var constructor = obj.constructor;
+    var proto = (_.isFunction(constructor) && constructor.prototype) || ObjProto;
+
+    // Constructor is a special case.
+    var prop = 'constructor';
+    if (_.has(obj, prop) && !_.contains(keys, prop)) keys.push(prop);
+
+    while (nonEnumIdx--) {
+      prop = nonEnumerableProps[nonEnumIdx];
+      if (prop in obj && obj[prop] !== proto[prop] && !_.contains(keys, prop)) {
+        keys.push(prop);
+      }
+    }
+  }
+
+  // Retrieve the names of an object's own properties.
   // Delegates to **ECMAScript 5**'s native `Object.keys`
   _.keys = function(obj) {
     if (!_.isObject(obj)) return [];
     if (nativeKeys) return nativeKeys(obj);
     var keys = [];
     for (var key in obj) if (_.has(obj, key)) keys.push(key);
+    // Ahem, IE < 9.
+    if (hasEnumBug) collectNonEnumProps(obj, keys);
+    return keys;
+  };
+
+  // Retrieve all the property names of an object.
+  _.allKeys = function(obj) {
+    if (!_.isObject(obj)) return [];
+    var keys = [];
+    for (var key in obj) keys.push(key);
+    // Ahem, IE < 9.
+    if (hasEnumBug) collectNonEnumProps(obj, keys);
     return keys;
   };
 
@@ -2039,18 +949,33 @@
   _.values = function(obj) {
     var keys = _.keys(obj);
     var length = keys.length;
-    var values = new Array(length);
+    var values = Array(length);
     for (var i = 0; i < length; i++) {
       values[i] = obj[keys[i]];
     }
     return values;
   };
 
+  // Returns the results of applying the iteratee to each element of the object
+  // In contrast to _.map it returns an object
+  _.mapObject = function(obj, iteratee, context) {
+    iteratee = cb(iteratee, context);
+    var keys =  _.keys(obj),
+          length = keys.length,
+          results = {},
+          currentKey;
+      for (var index = 0; index < length; index++) {
+        currentKey = keys[index];
+        results[currentKey] = iteratee(obj[currentKey], currentKey, obj);
+      }
+      return results;
+  };
+
   // Convert an object into a list of `[key, value]` pairs.
   _.pairs = function(obj) {
     var keys = _.keys(obj);
     var length = keys.length;
-    var pairs = new Array(length);
+    var pairs = Array(length);
     for (var i = 0; i < length; i++) {
       pairs[i] = [keys[i], obj[keys[i]]];
     }
@@ -2078,47 +1003,65 @@
   };
 
   // Extend a given object with all the properties in passed-in object(s).
-  _.extend = function(obj) {
-    each(slice.call(arguments, 1), function(source) {
-      if (source) {
-        for (var prop in source) {
-          obj[prop] = source[prop];
-        }
-      }
-    });
-    return obj;
+  _.extend = createAssigner(_.allKeys);
+
+  // Assigns a given object with all the own properties in the passed-in object(s)
+  // (https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/Object/assign)
+  _.extendOwn = _.assign = createAssigner(_.keys);
+
+  // Returns the first key on an object that passes a predicate test
+  _.findKey = function(obj, predicate, context) {
+    predicate = cb(predicate, context);
+    var keys = _.keys(obj), key;
+    for (var i = 0, length = keys.length; i < length; i++) {
+      key = keys[i];
+      if (predicate(obj[key], key, obj)) return key;
+    }
   };
 
   // Return a copy of the object only containing the whitelisted properties.
-  _.pick = function(obj) {
-    var copy = {};
-    var keys = concat.apply(ArrayProto, slice.call(arguments, 1));
-    each(keys, function(key) {
-      if (key in obj) copy[key] = obj[key];
-    });
-    return copy;
+  _.pick = function(object, oiteratee, context) {
+    var result = {}, obj = object, iteratee, keys;
+    if (obj == null) return result;
+    if (_.isFunction(oiteratee)) {
+      keys = _.allKeys(obj);
+      iteratee = optimizeCb(oiteratee, context);
+    } else {
+      keys = flatten(arguments, false, false, 1);
+      iteratee = function(value, key, obj) { return key in obj; };
+      obj = Object(obj);
+    }
+    for (var i = 0, length = keys.length; i < length; i++) {
+      var key = keys[i];
+      var value = obj[key];
+      if (iteratee(value, key, obj)) result[key] = value;
+    }
+    return result;
   };
 
    // Return a copy of the object without the blacklisted properties.
-  _.omit = function(obj) {
-    var copy = {};
-    var keys = concat.apply(ArrayProto, slice.call(arguments, 1));
-    for (var key in obj) {
-      if (!_.contains(keys, key)) copy[key] = obj[key];
+  _.omit = function(obj, iteratee, context) {
+    if (_.isFunction(iteratee)) {
+      iteratee = _.negate(iteratee);
+    } else {
+      var keys = _.map(flatten(arguments, false, false, 1), String);
+      iteratee = function(value, key) {
+        return !_.contains(keys, key);
+      };
     }
-    return copy;
+    return _.pick(obj, iteratee, context);
   };
 
   // Fill in a given object with default properties.
-  _.defaults = function(obj) {
-    each(slice.call(arguments, 1), function(source) {
-      if (source) {
-        for (var prop in source) {
-          if (obj[prop] === void 0) obj[prop] = source[prop];
-        }
-      }
-    });
-    return obj;
+  _.defaults = createAssigner(_.allKeys, true);
+
+  // Creates an object that inherits from the given prototype object.
+  // If additional properties are provided then they will be added to the
+  // created object.
+  _.create = function(prototype, props) {
+    var result = baseCreate(prototype);
+    if (props) _.extendOwn(result, props);
+    return result;
   };
 
   // Create a (shallow-cloned) duplicate of an object.
@@ -2135,11 +1078,24 @@
     return obj;
   };
 
+  // Returns whether an object has a given set of `key:value` pairs.
+  _.isMatch = function(object, attrs) {
+    var keys = _.keys(attrs), length = keys.length;
+    if (object == null) return !length;
+    var obj = Object(object);
+    for (var i = 0; i < length; i++) {
+      var key = keys[i];
+      if (attrs[key] !== obj[key] || !(key in obj)) return false;
+    }
+    return true;
+  };
+
+
   // Internal recursive comparison function for `isEqual`.
   var eq = function(a, b, aStack, bStack) {
     // Identical objects are equal. `0 === -0`, but they aren't identical.
     // See the [Harmony `egal` proposal](http://wiki.ecmascript.org/doku.php?id=harmony:egal).
-    if (a === b) return a !== 0 || 1 / a == 1 / b;
+    if (a === b) return a !== 0 || 1 / a === 1 / b;
     // A strict comparison is necessary because `null == undefined`.
     if (a == null || b == null) return a === b;
     // Unwrap any wrapped objects.
@@ -2147,98 +1103,98 @@
     if (b instanceof _) b = b._wrapped;
     // Compare `[[Class]]` names.
     var className = toString.call(a);
-    if (className != toString.call(b)) return false;
+    if (className !== toString.call(b)) return false;
     switch (className) {
-      // Strings, numbers, dates, and booleans are compared by value.
+      // Strings, numbers, regular expressions, dates, and booleans are compared by value.
+      case '[object RegExp]':
+      // RegExps are coerced to strings for comparison (Note: '' + /a/i === '/a/i')
       case '[object String]':
         // Primitives and their corresponding object wrappers are equivalent; thus, `"5"` is
         // equivalent to `new String("5")`.
-        return a == String(b);
+        return '' + a === '' + b;
       case '[object Number]':
-        // `NaN`s are equivalent, but non-reflexive. An `egal` comparison is performed for
-        // other numeric values.
-        return a != +a ? b != +b : (a == 0 ? 1 / a == 1 / b : a == +b);
+        // `NaN`s are equivalent, but non-reflexive.
+        // Object(NaN) is equivalent to NaN
+        if (+a !== +a) return +b !== +b;
+        // An `egal` comparison is performed for other numeric values.
+        return +a === 0 ? 1 / +a === 1 / b : +a === +b;
       case '[object Date]':
       case '[object Boolean]':
         // Coerce dates and booleans to numeric primitive values. Dates are compared by their
         // millisecond representations. Note that invalid dates with millisecond representations
         // of `NaN` are not equivalent.
-        return +a == +b;
-      // RegExps are compared by their source patterns and flags.
-      case '[object RegExp]':
-        return a.source == b.source &&
-               a.global == b.global &&
-               a.multiline == b.multiline &&
-               a.ignoreCase == b.ignoreCase;
+        return +a === +b;
     }
-    if (typeof a != 'object' || typeof b != 'object') return false;
+
+    var areArrays = className === '[object Array]';
+    if (!areArrays) {
+      if (typeof a != 'object' || typeof b != 'object') return false;
+
+      // Objects with different constructors are not equivalent, but `Object`s or `Array`s
+      // from different frames are.
+      var aCtor = a.constructor, bCtor = b.constructor;
+      if (aCtor !== bCtor && !(_.isFunction(aCtor) && aCtor instanceof aCtor &&
+                               _.isFunction(bCtor) && bCtor instanceof bCtor)
+                          && ('constructor' in a && 'constructor' in b)) {
+        return false;
+      }
+    }
     // Assume equality for cyclic structures. The algorithm for detecting cyclic
     // structures is adapted from ES 5.1 section 15.12.3, abstract operation `JO`.
+
+    // Initializing stack of traversed objects.
+    // It's done here since we only need them for objects and arrays comparison.
+    aStack = aStack || [];
+    bStack = bStack || [];
     var length = aStack.length;
     while (length--) {
       // Linear search. Performance is inversely proportional to the number of
       // unique nested structures.
-      if (aStack[length] == a) return bStack[length] == b;
+      if (aStack[length] === a) return bStack[length] === b;
     }
-    // Objects with different constructors are not equivalent, but `Object`s
-    // from different frames are.
-    var aCtor = a.constructor, bCtor = b.constructor;
-    if (aCtor !== bCtor && !(_.isFunction(aCtor) && (aCtor instanceof aCtor) &&
-                             _.isFunction(bCtor) && (bCtor instanceof bCtor))
-                        && ('constructor' in a && 'constructor' in b)) {
-      return false;
-    }
+
     // Add the first object to the stack of traversed objects.
     aStack.push(a);
     bStack.push(b);
-    var size = 0, result = true;
+
     // Recursively compare objects and arrays.
-    if (className == '[object Array]') {
+    if (areArrays) {
       // Compare array lengths to determine if a deep comparison is necessary.
-      size = a.length;
-      result = size == b.length;
-      if (result) {
-        // Deep compare the contents, ignoring non-numeric properties.
-        while (size--) {
-          if (!(result = eq(a[size], b[size], aStack, bStack))) break;
-        }
+      length = a.length;
+      if (length !== b.length) return false;
+      // Deep compare the contents, ignoring non-numeric properties.
+      while (length--) {
+        if (!eq(a[length], b[length], aStack, bStack)) return false;
       }
     } else {
       // Deep compare objects.
-      for (var key in a) {
-        if (_.has(a, key)) {
-          // Count the expected number of properties.
-          size++;
-          // Deep compare each member.
-          if (!(result = _.has(b, key) && eq(a[key], b[key], aStack, bStack))) break;
-        }
-      }
-      // Ensure that both objects contain the same number of properties.
-      if (result) {
-        for (key in b) {
-          if (_.has(b, key) && !(size--)) break;
-        }
-        result = !size;
+      var keys = _.keys(a), key;
+      length = keys.length;
+      // Ensure that both objects contain the same number of properties before comparing deep equality.
+      if (_.keys(b).length !== length) return false;
+      while (length--) {
+        // Deep compare each member
+        key = keys[length];
+        if (!(_.has(b, key) && eq(a[key], b[key], aStack, bStack))) return false;
       }
     }
     // Remove the first object from the stack of traversed objects.
     aStack.pop();
     bStack.pop();
-    return result;
+    return true;
   };
 
   // Perform a deep comparison to check if two objects are equal.
   _.isEqual = function(a, b) {
-    return eq(a, b, [], []);
+    return eq(a, b);
   };
 
   // Is a given array, string, or object empty?
   // An "empty" object has no enumerable own-properties.
   _.isEmpty = function(obj) {
     if (obj == null) return true;
-    if (_.isArray(obj) || _.isString(obj)) return obj.length === 0;
-    for (var key in obj) if (_.has(obj, key)) return false;
-    return true;
+    if (isArrayLike(obj) && (_.isArray(obj) || _.isString(obj) || _.isArguments(obj))) return obj.length === 0;
+    return _.keys(obj).length === 0;
   };
 
   // Is a given value a DOM element?
@@ -2249,33 +1205,35 @@
   // Is a given value an array?
   // Delegates to ECMA5's native Array.isArray
   _.isArray = nativeIsArray || function(obj) {
-    return toString.call(obj) == '[object Array]';
+    return toString.call(obj) === '[object Array]';
   };
 
   // Is a given variable an object?
   _.isObject = function(obj) {
-    return obj === Object(obj);
+    var type = typeof obj;
+    return type === 'function' || type === 'object' && !!obj;
   };
 
-  // Add some isType methods: isArguments, isFunction, isString, isNumber, isDate, isRegExp.
-  each(['Arguments', 'Function', 'String', 'Number', 'Date', 'RegExp'], function(name) {
+  // Add some isType methods: isArguments, isFunction, isString, isNumber, isDate, isRegExp, isError.
+  _.each(['Arguments', 'Function', 'String', 'Number', 'Date', 'RegExp', 'Error'], function(name) {
     _['is' + name] = function(obj) {
-      return toString.call(obj) == '[object ' + name + ']';
+      return toString.call(obj) === '[object ' + name + ']';
     };
   });
 
-  // Define a fallback version of the method in browsers (ahem, IE), where
+  // Define a fallback version of the method in browsers (ahem, IE < 9), where
   // there isn't any inspectable "Arguments" type.
   if (!_.isArguments(arguments)) {
     _.isArguments = function(obj) {
-      return !!(obj && _.has(obj, 'callee'));
+      return _.has(obj, 'callee');
     };
   }
 
-  // Optimize `isFunction` if appropriate.
-  if (typeof (/./) !== 'function') {
+  // Optimize `isFunction` if appropriate. Work around some typeof bugs in old v8,
+  // IE 11 (#1621), and in Safari 8 (#1929).
+  if (typeof /./ != 'function' && typeof Int8Array != 'object') {
     _.isFunction = function(obj) {
-      return typeof obj === 'function';
+      return typeof obj == 'function' || false;
     };
   }
 
@@ -2286,12 +1244,12 @@
 
   // Is the given value `NaN`? (NaN is the only number which does not equal itself).
   _.isNaN = function(obj) {
-    return _.isNumber(obj) && obj != +obj;
+    return _.isNumber(obj) && obj !== +obj;
   };
 
   // Is a given value a boolean?
   _.isBoolean = function(obj) {
-    return obj === true || obj === false || toString.call(obj) == '[object Boolean]';
+    return obj === true || obj === false || toString.call(obj) === '[object Boolean]';
   };
 
   // Is a given value equal to null?
@@ -2307,7 +1265,7 @@
   // Shortcut function for checking if an object has a given property directly
   // on itself (in other words, not on a prototype).
   _.has = function(obj, key) {
-    return hasOwnProperty.call(obj, key);
+    return obj != null && hasOwnProperty.call(obj, key);
   };
 
   // Utility Functions
@@ -2320,39 +1278,43 @@
     return this;
   };
 
-  // Keep the identity function around for default iterators.
+  // Keep the identity function around for default iteratees.
   _.identity = function(value) {
     return value;
   };
 
+  // Predicate-generating functions. Often useful outside of Underscore.
   _.constant = function(value) {
-    return function () {
+    return function() {
       return value;
     };
   };
 
-  _.property = function(key) {
-    return function(obj) {
+  _.noop = function(){};
+
+  _.property = property;
+
+  // Generates a function for a given object that returns a given property.
+  _.propertyOf = function(obj) {
+    return obj == null ? function(){} : function(key) {
       return obj[key];
     };
   };
 
-  // Returns a predicate for checking whether an object has a given set of `key:value` pairs.
-  _.matches = function(attrs) {
+  // Returns a predicate for checking whether an object has a given set of
+  // `key:value` pairs.
+  _.matcher = _.matches = function(attrs) {
+    attrs = _.extendOwn({}, attrs);
     return function(obj) {
-      if (obj === attrs) return true; //avoid comparing an object to itself.
-      for (var key in attrs) {
-        if (attrs[key] !== obj[key])
-          return false;
-      }
-      return true;
-    }
+      return _.isMatch(obj, attrs);
+    };
   };
 
   // Run a function **n** times.
-  _.times = function(n, iterator, context) {
+  _.times = function(n, iteratee, context) {
     var accum = Array(Math.max(0, n));
-    for (var i = 0; i < n; i++) accum[i] = iterator.call(context, i);
+    iteratee = optimizeCb(iteratee, context, 1);
+    for (var i = 0; i < n; i++) accum[i] = iteratee(i);
     return accum;
   };
 
@@ -2366,54 +1328,46 @@
   };
 
   // A (possibly faster) way to get the current timestamp as an integer.
-  _.now = Date.now || function() { return new Date().getTime(); };
-
-  // List of HTML entities for escaping.
-  var entityMap = {
-    escape: {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#x27;'
-    }
+  _.now = Date.now || function() {
+    return new Date().getTime();
   };
-  entityMap.unescape = _.invert(entityMap.escape);
 
-  // Regexes containing the keys and values listed immediately above.
-  var entityRegexes = {
-    escape:   new RegExp('[' + _.keys(entityMap.escape).join('') + ']', 'g'),
-    unescape: new RegExp('(' + _.keys(entityMap.unescape).join('|') + ')', 'g')
+   // List of HTML entities for escaping.
+  var escapeMap = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#x27;',
+    '`': '&#x60;'
   };
+  var unescapeMap = _.invert(escapeMap);
 
   // Functions for escaping and unescaping strings to/from HTML interpolation.
-  _.each(['escape', 'unescape'], function(method) {
-    _[method] = function(string) {
-      if (string == null) return '';
-      return ('' + string).replace(entityRegexes[method], function(match) {
-        return entityMap[method][match];
-      });
+  var createEscaper = function(map) {
+    var escaper = function(match) {
+      return map[match];
     };
-  });
+    // Regexes for identifying a key that needs to be escaped
+    var source = '(?:' + _.keys(map).join('|') + ')';
+    var testRegexp = RegExp(source);
+    var replaceRegexp = RegExp(source, 'g');
+    return function(string) {
+      string = string == null ? '' : '' + string;
+      return testRegexp.test(string) ? string.replace(replaceRegexp, escaper) : string;
+    };
+  };
+  _.escape = createEscaper(escapeMap);
+  _.unescape = createEscaper(unescapeMap);
 
   // If the value of the named `property` is a function then invoke it with the
   // `object` as context; otherwise, return it.
-  _.result = function(object, property) {
-    if (object == null) return void 0;
-    var value = object[property];
+  _.result = function(object, property, fallback) {
+    var value = object == null ? void 0 : object[property];
+    if (value === void 0) {
+      value = fallback;
+    }
     return _.isFunction(value) ? value.call(object) : value;
-  };
-
-  // Add your own custom functions to the Underscore object.
-  _.mixin = function(obj) {
-    each(_.functions(obj), function(name) {
-      var func = _[name] = obj[name];
-      _.prototype[name] = function() {
-        var args = [this._wrapped];
-        push.apply(args, arguments);
-        return result.call(this, func.apply(_, args));
-      };
-    });
   };
 
   // Generate a unique integer id (unique within the entire client session).
@@ -2444,22 +1398,26 @@
     '\\':     '\\',
     '\r':     'r',
     '\n':     'n',
-    '\t':     't',
     '\u2028': 'u2028',
     '\u2029': 'u2029'
   };
 
-  var escaper = /\\|'|\r|\n|\t|\u2028|\u2029/g;
+  var escaper = /\\|'|\r|\n|\u2028|\u2029/g;
+
+  var escapeChar = function(match) {
+    return '\\' + escapes[match];
+  };
 
   // JavaScript micro-templating, similar to John Resig's implementation.
   // Underscore templating handles arbitrary delimiters, preserves whitespace,
   // and correctly escapes quotes within interpolated code.
-  _.template = function(text, data, settings) {
-    var render;
+  // NB: `oldSettings` only exists for backwards compatibility.
+  _.template = function(text, settings, oldSettings) {
+    if (!settings && oldSettings) settings = oldSettings;
     settings = _.defaults({}, settings, _.templateSettings);
 
     // Combine delimiters into one regular expression via alternation.
-    var matcher = new RegExp([
+    var matcher = RegExp([
       (settings.escape || noMatch).source,
       (settings.interpolate || noMatch).source,
       (settings.evaluate || noMatch).source
@@ -2469,19 +1427,18 @@
     var index = 0;
     var source = "__p+='";
     text.replace(matcher, function(match, escape, interpolate, evaluate, offset) {
-      source += text.slice(index, offset)
-        .replace(escaper, function(match) { return '\\' + escapes[match]; });
+      source += text.slice(index, offset).replace(escaper, escapeChar);
+      index = offset + match.length;
 
       if (escape) {
         source += "'+\n((__t=(" + escape + "))==null?'':_.escape(__t))+\n'";
-      }
-      if (interpolate) {
+      } else if (interpolate) {
         source += "'+\n((__t=(" + interpolate + "))==null?'':__t)+\n'";
-      }
-      if (evaluate) {
+      } else if (evaluate) {
         source += "';\n" + evaluate + "\n__p+='";
       }
-      index = offset + match.length;
+
+      // Adobe VMs need the match returned to produce the correct offest.
       return match;
     });
     source += "';\n";
@@ -2491,29 +1448,31 @@
 
     source = "var __t,__p='',__j=Array.prototype.join," +
       "print=function(){__p+=__j.call(arguments,'');};\n" +
-      source + "return __p;\n";
+      source + 'return __p;\n';
 
     try {
-      render = new Function(settings.variable || 'obj', '_', source);
+      var render = new Function(settings.variable || 'obj', '_', source);
     } catch (e) {
       e.source = source;
       throw e;
     }
 
-    if (data) return render(data, _);
     var template = function(data) {
       return render.call(this, data, _);
     };
 
-    // Provide the compiled function source as a convenience for precompilation.
-    template.source = 'function(' + (settings.variable || 'obj') + '){\n' + source + '}';
+    // Provide the compiled source as a convenience for precompilation.
+    var argument = settings.variable || 'obj';
+    template.source = 'function(' + argument + '){\n' + source + '}';
 
     return template;
   };
 
-  // Add a "chain" function, which will delegate to the wrapper.
+  // Add a "chain" function. Start chaining a wrapped Underscore object.
   _.chain = function(obj) {
-    return _(obj).chain();
+    var instance = _(obj);
+    instance._chain = true;
+    return instance;
   };
 
   // OOP
@@ -2523,46 +1482,56 @@
   // underscore functions. Wrapped objects may be chained.
 
   // Helper function to continue chaining intermediate results.
-  var result = function(obj) {
-    return this._chain ? _(obj).chain() : obj;
+  var result = function(instance, obj) {
+    return instance._chain ? _(obj).chain() : obj;
+  };
+
+  // Add your own custom functions to the Underscore object.
+  _.mixin = function(obj) {
+    _.each(_.functions(obj), function(name) {
+      var func = _[name] = obj[name];
+      _.prototype[name] = function() {
+        var args = [this._wrapped];
+        push.apply(args, arguments);
+        return result(this, func.apply(_, args));
+      };
+    });
   };
 
   // Add all of the Underscore functions to the wrapper object.
   _.mixin(_);
 
   // Add all mutator Array functions to the wrapper.
-  each(['pop', 'push', 'reverse', 'shift', 'sort', 'splice', 'unshift'], function(name) {
+  _.each(['pop', 'push', 'reverse', 'shift', 'sort', 'splice', 'unshift'], function(name) {
     var method = ArrayProto[name];
     _.prototype[name] = function() {
       var obj = this._wrapped;
       method.apply(obj, arguments);
-      if ((name == 'shift' || name == 'splice') && obj.length === 0) delete obj[0];
-      return result.call(this, obj);
+      if ((name === 'shift' || name === 'splice') && obj.length === 0) delete obj[0];
+      return result(this, obj);
     };
   });
 
   // Add all accessor Array functions to the wrapper.
-  each(['concat', 'join', 'slice'], function(name) {
+  _.each(['concat', 'join', 'slice'], function(name) {
     var method = ArrayProto[name];
     _.prototype[name] = function() {
-      return result.call(this, method.apply(this._wrapped, arguments));
+      return result(this, method.apply(this._wrapped, arguments));
     };
   });
 
-  _.extend(_.prototype, {
+  // Extracts the result from a wrapped and chained object.
+  _.prototype.value = function() {
+    return this._wrapped;
+  };
 
-    // Start chaining a wrapped Underscore object.
-    chain: function() {
-      this._chain = true;
-      return this;
-    },
+  // Provide unwrapping proxy for some methods used in engine operations
+  // such as arithmetic and JSON stringification.
+  _.prototype.valueOf = _.prototype.toJSON = _.prototype.value;
 
-    // Extracts the result from a wrapped and chained object.
-    value: function() {
-      return this._wrapped;
-    }
-
-  });
+  _.prototype.toString = function() {
+    return '' + this._wrapped;
+  };
 
   // AMD registration happens at the end for compatibility with AMD loaders
   // that may not enforce next-turn semantics on modules. Even though general
@@ -2576,15 +1545,15 @@
       return _;
     });
   }
-}).call(this);
+}.call(this));
 
 //! moment.js
-//! version : 2.11.2
+//! version : 2.10.6
 //! authors : Tim Wood, Iskren Chernev, Moment.js contributors
 //! license : MIT
 //! momentjs.com
 
-;(function (global, factory) {
+(function (global, factory) {
     typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory() :
     typeof define === 'function' && define.amd ? define(factory) :
     global.moment = factory()
@@ -2701,45 +1670,39 @@
         return m;
     }
 
-    function isUndefined(input) {
-        return input === void 0;
-    }
-
-    // Plugins that add properties should also add the key here (null value),
-    // so we can properly clone ourselves.
     var momentProperties = utils_hooks__hooks.momentProperties = [];
 
     function copyConfig(to, from) {
         var i, prop, val;
 
-        if (!isUndefined(from._isAMomentObject)) {
+        if (typeof from._isAMomentObject !== 'undefined') {
             to._isAMomentObject = from._isAMomentObject;
         }
-        if (!isUndefined(from._i)) {
+        if (typeof from._i !== 'undefined') {
             to._i = from._i;
         }
-        if (!isUndefined(from._f)) {
+        if (typeof from._f !== 'undefined') {
             to._f = from._f;
         }
-        if (!isUndefined(from._l)) {
+        if (typeof from._l !== 'undefined') {
             to._l = from._l;
         }
-        if (!isUndefined(from._strict)) {
+        if (typeof from._strict !== 'undefined') {
             to._strict = from._strict;
         }
-        if (!isUndefined(from._tzm)) {
+        if (typeof from._tzm !== 'undefined') {
             to._tzm = from._tzm;
         }
-        if (!isUndefined(from._isUTC)) {
+        if (typeof from._isUTC !== 'undefined') {
             to._isUTC = from._isUTC;
         }
-        if (!isUndefined(from._offset)) {
+        if (typeof from._offset !== 'undefined') {
             to._offset = from._offset;
         }
-        if (!isUndefined(from._pf)) {
+        if (typeof from._pf !== 'undefined') {
             to._pf = getParsingFlags(from);
         }
-        if (!isUndefined(from._locale)) {
+        if (typeof from._locale !== 'undefined') {
             to._locale = from._locale;
         }
 
@@ -2747,7 +1710,7 @@
             for (i in momentProperties) {
                 prop = momentProperties[i];
                 val = from[prop];
-                if (!isUndefined(val)) {
+                if (typeof val !== 'undefined') {
                     to[prop] = val;
                 }
             }
@@ -2794,7 +1757,6 @@
         return value;
     }
 
-    // compare two arrays, return the number of differences
     function compareArrays(array1, array2, dontConvert) {
         var len = Math.min(array1.length, array2.length),
             lengthDiff = Math.abs(array1.length - array2.length),
@@ -2812,7 +1774,6 @@
     function Locale() {
     }
 
-    // internal storage for locale config files
     var locales = {};
     var globalLocale;
 
@@ -2850,7 +1811,7 @@
     function loadLocale(name) {
         var oldLocale = null;
         // TODO: Find a better way to register and load all the locales in Node
-        if (!locales[name] && (typeof module !== 'undefined') &&
+        if (!locales[name] && typeof module !== 'undefined' &&
                 module && module.exports) {
             try {
                 oldLocale = globalLocale._abbr;
@@ -2869,7 +1830,7 @@
     function locale_locales__getSetGlobalLocale (key, values) {
         var data;
         if (key) {
-            if (isUndefined(values)) {
+            if (typeof values === 'undefined') {
                 data = locale_locales__getLocale(key);
             }
             else {
@@ -2954,10 +1915,6 @@
         return normalizedInput;
     }
 
-    function isFunction(input) {
-        return input instanceof Function || Object.prototype.toString.call(input) === '[object Function]';
-    }
-
     function makeGetSet (unit, keepTime) {
         return function (value) {
             if (value != null) {
@@ -2971,14 +1928,11 @@
     }
 
     function get_set__get (mom, unit) {
-        return mom.isValid() ?
-            mom._d['get' + (mom._isUTC ? 'UTC' : '') + unit]() : NaN;
+        return mom._d['get' + (mom._isUTC ? 'UTC' : '') + unit]();
     }
 
     function get_set__set (mom, unit, value) {
-        if (mom.isValid()) {
-            mom._d['set' + (mom._isUTC ? 'UTC' : '') + unit](value);
-        }
+        return mom._d['set' + (mom._isUTC ? 'UTC' : '') + unit](value);
     }
 
     // MOMENTS
@@ -2991,7 +1945,7 @@
             }
         } else {
             units = normalizeUnits(units);
-            if (isFunction(this[units])) {
+            if (typeof this[units] === 'function') {
                 return this[units](value);
             }
         }
@@ -3006,7 +1960,7 @@
             Math.pow(10, Math.max(0, zerosToFill)).toString().substr(1) + absNumber;
     }
 
-    var formattingTokens = /(\[[^\[]*\])|(\\)?([Hh]mm(ss)?|Mo|MM?M?M?|Do|DDDo|DD?D?D?|ddd?d?|do?|w[o|w]?|W[o|W]?|Qo?|YYYYYY|YYYYY|YYYY|YY|gg(ggg?)?|GG(GGG?)?|e|E|a|A|hh?|HH?|mm?|ss?|S{1,9}|x|X|zz?|ZZ?|.)/g;
+    var formattingTokens = /(\[[^\[]*\])|(\\)?(Mo|MM?M?M?|Do|DDDo|DD?D?D?|ddd?d?|do?|w[o|w]?|W[o|W]?|Q|YYYYYY|YYYYY|YYYY|YY|gg(ggg?)?|GG(GGG?)?|e|E|a|A|hh?|HH?|mm?|ss?|S{1,9}|x|X|zz?|ZZ?|.)/g;
 
     var localFormattingTokens = /(\[[^\[]*\])|(\\)?(LTS|LT|LL?L?L?|l{1,4})/g;
 
@@ -3102,8 +2056,6 @@
     var match4         = /\d{4}/;         //    0000 - 9999
     var match6         = /[+-]?\d{6}/;    // -999999 - 999999
     var match1to2      = /\d\d?/;         //       0 - 99
-    var match3to4      = /\d\d\d\d?/;     //     999 - 9999
-    var match5to6      = /\d\d\d\d\d\d?/; //   99999 - 999999
     var match1to3      = /\d{1,3}/;       //       0 - 999
     var match1to4      = /\d{1,4}/;       //       0 - 9999
     var match1to6      = /[+-]?\d{1,6}/;  // -999999 - 999999
@@ -3112,19 +2064,23 @@
     var matchSigned    = /[+-]?\d+/;      //    -inf - inf
 
     var matchOffset    = /Z|[+-]\d\d:?\d\d/gi; // +00:00 -00:00 +0000 -0000 or Z
-    var matchShortOffset = /Z|[+-]\d\d(?::?\d\d)?/gi; // +00 -00 +00:00 -00:00 +0000 -0000 or Z
 
     var matchTimestamp = /[+-]?\d+(\.\d{1,3})?/; // 123456789 123456789.123
 
     // any word (or two) characters or numbers including two/three word month in arabic.
-    // includes scottish gaelic two word and hyphenated months
     var matchWord = /[0-9]*['a-z\u00A0-\u05FF\u0700-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF]+|[\u0600-\u06FF\/]+(\s*?[\u0600-\u06FF]+){1,2}/i;
-
 
     var regexes = {};
 
+    function isFunction (sth) {
+        // https://github.com/moment/moment/issues/2325
+        return typeof sth === 'function' &&
+            Object.prototype.toString.call(sth) === '[object Function]';
+    }
+
+
     function addRegexToken (token, regex, strictRegex) {
-        regexes[token] = isFunction(regex) ? regex : function (isStrict, localeData) {
+        regexes[token] = isFunction(regex) ? regex : function (isStrict) {
             return (isStrict && strictRegex) ? strictRegex : regex;
         };
     }
@@ -3139,13 +2095,9 @@
 
     // Code from http://stackoverflow.com/questions/3561493/is-there-a-regexp-escape-function-in-javascript
     function unescapeFormat(s) {
-        return regexEscape(s.replace('\\', '').replace(/\\(\[)|\\(\])|\[([^\]\[]*)\]|\\(.)/g, function (matched, p1, p2, p3, p4) {
+        return s.replace('\\', '').replace(/\\(\[)|\\(\])|\[([^\]\[]*)\]|\\(.)/g, function (matched, p1, p2, p3, p4) {
             return p1 || p2 || p3 || p4;
-        }));
-    }
-
-    function regexEscape(s) {
-        return s.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        }).replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
     }
 
     var tokens = {};
@@ -3185,8 +2137,6 @@
     var MINUTE = 4;
     var SECOND = 5;
     var MILLISECOND = 6;
-    var WEEK = 7;
-    var WEEKDAY = 8;
 
     function daysInMonth(year, month) {
         return new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
@@ -3214,12 +2164,8 @@
 
     addRegexToken('M',    match1to2);
     addRegexToken('MM',   match1to2, match2);
-    addRegexToken('MMM',  function (isStrict, locale) {
-        return locale.monthsShortRegex(isStrict);
-    });
-    addRegexToken('MMMM', function (isStrict, locale) {
-        return locale.monthsRegex(isStrict);
-    });
+    addRegexToken('MMM',  matchWord);
+    addRegexToken('MMMM', matchWord);
 
     addParseToken(['M', 'MM'], function (input, array) {
         array[MONTH] = toInt(input) - 1;
@@ -3237,17 +2183,14 @@
 
     // LOCALES
 
-    var MONTHS_IN_FORMAT = /D[oD]?(\[[^\[\]]*\]|\s+)+MMMM?/;
     var defaultLocaleMonths = 'January_February_March_April_May_June_July_August_September_October_November_December'.split('_');
-    function localeMonths (m, format) {
-        return isArray(this._months) ? this._months[m.month()] :
-            this._months[MONTHS_IN_FORMAT.test(format) ? 'format' : 'standalone'][m.month()];
+    function localeMonths (m) {
+        return this._months[m.month()];
     }
 
     var defaultLocaleMonthsShort = 'Jan_Feb_Mar_Apr_May_Jun_Jul_Aug_Sep_Oct_Nov_Dec'.split('_');
-    function localeMonthsShort (m, format) {
-        return isArray(this._monthsShort) ? this._monthsShort[m.month()] :
-            this._monthsShort[MONTHS_IN_FORMAT.test(format) ? 'format' : 'standalone'][m.month()];
+    function localeMonthsShort (m) {
+        return this._monthsShort[m.month()];
     }
 
     function localeMonthsParse (monthName, format, strict) {
@@ -3286,11 +2229,6 @@
     function setMonth (mom, value) {
         var dayOfMonth;
 
-        if (!mom.isValid()) {
-            // No op
-            return mom;
-        }
-
         // TODO: Move this out of here!
         if (typeof value === 'string') {
             value = mom.localeData().monthsParse(value);
@@ -3319,72 +2257,6 @@
         return daysInMonth(this.year(), this.month());
     }
 
-    var defaultMonthsShortRegex = matchWord;
-    function monthsShortRegex (isStrict) {
-        if (this._monthsParseExact) {
-            if (!hasOwnProp(this, '_monthsRegex')) {
-                computeMonthsParse.call(this);
-            }
-            if (isStrict) {
-                return this._monthsShortStrictRegex;
-            } else {
-                return this._monthsShortRegex;
-            }
-        } else {
-            return this._monthsShortStrictRegex && isStrict ?
-                this._monthsShortStrictRegex : this._monthsShortRegex;
-        }
-    }
-
-    var defaultMonthsRegex = matchWord;
-    function monthsRegex (isStrict) {
-        if (this._monthsParseExact) {
-            if (!hasOwnProp(this, '_monthsRegex')) {
-                computeMonthsParse.call(this);
-            }
-            if (isStrict) {
-                return this._monthsStrictRegex;
-            } else {
-                return this._monthsRegex;
-            }
-        } else {
-            return this._monthsStrictRegex && isStrict ?
-                this._monthsStrictRegex : this._monthsRegex;
-        }
-    }
-
-    function computeMonthsParse () {
-        function cmpLenRev(a, b) {
-            return b.length - a.length;
-        }
-
-        var shortPieces = [], longPieces = [], mixedPieces = [],
-            i, mom;
-        for (i = 0; i < 12; i++) {
-            // make the regex if we don't have it already
-            mom = create_utc__createUTC([2000, i]);
-            shortPieces.push(this.monthsShort(mom, ''));
-            longPieces.push(this.months(mom, ''));
-            mixedPieces.push(this.months(mom, ''));
-            mixedPieces.push(this.monthsShort(mom, ''));
-        }
-        // Sorting makes sure if one month (or abbr) is a prefix of another it
-        // will match the longer piece.
-        shortPieces.sort(cmpLenRev);
-        longPieces.sort(cmpLenRev);
-        mixedPieces.sort(cmpLenRev);
-        for (i = 0; i < 12; i++) {
-            shortPieces[i] = regexEscape(shortPieces[i]);
-            longPieces[i] = regexEscape(longPieces[i]);
-            mixedPieces[i] = regexEscape(mixedPieces[i]);
-        }
-
-        this._monthsRegex = new RegExp('^(' + mixedPieces.join('|') + ')', 'i');
-        this._monthsShortRegex = this._monthsRegex;
-        this._monthsStrictRegex = new RegExp('^(' + longPieces.join('|') + ')$', 'i');
-        this._monthsShortStrictRegex = new RegExp('^(' + shortPieces.join('|') + ')$', 'i');
-    }
-
     function checkOverflow (m) {
         var overflow;
         var a = m._a;
@@ -3402,12 +2274,6 @@
             if (getParsingFlags(m)._overflowDayOfYear && (overflow < YEAR || overflow > DATE)) {
                 overflow = DATE;
             }
-            if (getParsingFlags(m)._overflowWeeks && overflow === -1) {
-                overflow = WEEK;
-            }
-            if (getParsingFlags(m)._overflowWeekday && overflow === -1) {
-                overflow = WEEKDAY;
-            }
 
             getParsingFlags(m).overflow = overflow;
         }
@@ -3416,8 +2282,7 @@
     }
 
     function warn(msg) {
-        if (utils_hooks__hooks.suppressDeprecationWarnings === false &&
-                (typeof console !==  'undefined') && console.warn) {
+        if (utils_hooks__hooks.suppressDeprecationWarnings === false && typeof console !== 'undefined' && console.warn) {
             console.warn('Deprecation warning: ' + msg);
         }
     }
@@ -3427,7 +2292,7 @@
 
         return extend(function () {
             if (firstTime) {
-                warn(msg + '\nArguments: ' + Array.prototype.slice.call(arguments).join(', ') + '\n' + (new Error()).stack);
+                warn(msg + '\n' + (new Error()).stack);
                 firstTime = false;
             }
             return fn.apply(this, arguments);
@@ -3445,39 +2310,22 @@
 
     utils_hooks__hooks.suppressDeprecationWarnings = false;
 
-    // iso 8601 regex
-    // 0000-00-00 0000-W00 or 0000-W00-0 + T + 00 or 00:00 or 00:00:00 or 00:00:00.000 + +00:00 or +0000 or +00)
-    var extendedIsoRegex = /^\s*((?:[+-]\d{6}|\d{4})-(?:\d\d-\d\d|W\d\d-\d|W\d\d|\d\d\d|\d\d))(?:(T| )(\d\d(?::\d\d(?::\d\d(?:[.,]\d+)?)?)?)([\+\-]\d\d(?::?\d\d)?|\s*Z)?)?/;
-    var basicIsoRegex = /^\s*((?:[+-]\d{6}|\d{4})(?:\d\d\d\d|W\d\d\d|W\d\d|\d\d\d|\d\d))(?:(T| )(\d\d(?:\d\d(?:\d\d(?:[.,]\d+)?)?)?)([\+\-]\d\d(?::?\d\d)?|\s*Z)?)?/;
-
-    var tzRegex = /Z|[+-]\d\d(?::?\d\d)?/;
+    var from_string__isoRegex = /^\s*(?:[+-]\d{6}|\d{4})-(?:(\d\d-\d\d)|(W\d\d$)|(W\d\d-\d)|(\d\d\d))((T| )(\d\d(:\d\d(:\d\d(\.\d+)?)?)?)?([\+\-]\d\d(?::?\d\d)?|\s*Z)?)?$/;
 
     var isoDates = [
-        ['YYYYYY-MM-DD', /[+-]\d{6}-\d\d-\d\d/],
-        ['YYYY-MM-DD', /\d{4}-\d\d-\d\d/],
-        ['GGGG-[W]WW-E', /\d{4}-W\d\d-\d/],
-        ['GGGG-[W]WW', /\d{4}-W\d\d/, false],
-        ['YYYY-DDD', /\d{4}-\d{3}/],
-        ['YYYY-MM', /\d{4}-\d\d/, false],
-        ['YYYYYYMMDD', /[+-]\d{10}/],
-        ['YYYYMMDD', /\d{8}/],
-        // YYYYMM is NOT allowed by the standard
-        ['GGGG[W]WWE', /\d{4}W\d{3}/],
-        ['GGGG[W]WW', /\d{4}W\d{2}/, false],
-        ['YYYYDDD', /\d{7}/]
+        ['YYYYYY-MM-DD', /[+-]\d{6}-\d{2}-\d{2}/],
+        ['YYYY-MM-DD', /\d{4}-\d{2}-\d{2}/],
+        ['GGGG-[W]WW-E', /\d{4}-W\d{2}-\d/],
+        ['GGGG-[W]WW', /\d{4}-W\d{2}/],
+        ['YYYY-DDD', /\d{4}-\d{3}/]
     ];
 
     // iso time formats and regexes
     var isoTimes = [
-        ['HH:mm:ss.SSSS', /\d\d:\d\d:\d\d\.\d+/],
-        ['HH:mm:ss,SSSS', /\d\d:\d\d:\d\d,\d+/],
-        ['HH:mm:ss', /\d\d:\d\d:\d\d/],
-        ['HH:mm', /\d\d:\d\d/],
-        ['HHmmss.SSSS', /\d\d\d\d\d\d\.\d+/],
-        ['HHmmss,SSSS', /\d\d\d\d\d\d,\d+/],
-        ['HHmmss', /\d\d\d\d\d\d/],
-        ['HHmm', /\d\d\d\d/],
-        ['HH', /\d\d/]
+        ['HH:mm:ss.SSSS', /(T| )\d\d:\d\d:\d\d\.\d+/],
+        ['HH:mm:ss', /(T| )\d\d:\d\d:\d\d/],
+        ['HH:mm', /(T| )\d\d:\d\d/],
+        ['HH', /(T| )\d\d/]
     ];
 
     var aspNetJsonRegex = /^\/?Date\((\-?\d+)/i;
@@ -3486,49 +2334,26 @@
     function configFromISO(config) {
         var i, l,
             string = config._i,
-            match = extendedIsoRegex.exec(string) || basicIsoRegex.exec(string),
-            allowTime, dateFormat, timeFormat, tzFormat;
+            match = from_string__isoRegex.exec(string);
 
         if (match) {
             getParsingFlags(config).iso = true;
-
             for (i = 0, l = isoDates.length; i < l; i++) {
-                if (isoDates[i][1].exec(match[1])) {
-                    dateFormat = isoDates[i][0];
-                    allowTime = isoDates[i][2] !== false;
+                if (isoDates[i][1].exec(string)) {
+                    config._f = isoDates[i][0];
                     break;
                 }
             }
-            if (dateFormat == null) {
-                config._isValid = false;
-                return;
-            }
-            if (match[3]) {
-                for (i = 0, l = isoTimes.length; i < l; i++) {
-                    if (isoTimes[i][1].exec(match[3])) {
-                        // match[2] should be 'T' or space
-                        timeFormat = (match[2] || ' ') + isoTimes[i][0];
-                        break;
-                    }
-                }
-                if (timeFormat == null) {
-                    config._isValid = false;
-                    return;
+            for (i = 0, l = isoTimes.length; i < l; i++) {
+                if (isoTimes[i][1].exec(string)) {
+                    // match[6] should be 'T' or space
+                    config._f += (match[6] || ' ') + isoTimes[i][0];
+                    break;
                 }
             }
-            if (!allowTime && timeFormat != null) {
-                config._isValid = false;
-                return;
+            if (string.match(matchOffset)) {
+                config._f += 'Z';
             }
-            if (match[4]) {
-                if (tzRegex.exec(match[4])) {
-                    tzFormat = 'Z';
-                } else {
-                    config._isValid = false;
-                    return;
-                }
-            }
-            config._f = dateFormat + (timeFormat || '') + (tzFormat || '');
             configFromStringAndFormat(config);
         } else {
             config._isValid = false;
@@ -3566,8 +2391,8 @@
         //http://stackoverflow.com/questions/181348/instantiating-a-javascript-object-by-calling-prototype-constructor-apply
         var date = new Date(y, m, d, h, M, s, ms);
 
-        //the date constructor remaps years 0-99 to 1900-1999
-        if (y < 100 && y >= 0 && isFinite(date.getFullYear())) {
+        //the date constructor doesn't accept years < 1970
+        if (y < 1970) {
             date.setFullYear(y);
         }
         return date;
@@ -3575,20 +2400,11 @@
 
     function createUTCDate (y) {
         var date = new Date(Date.UTC.apply(null, arguments));
-
-        //the Date.UTC function remaps years 0-99 to 1900-1999
-        if (y < 100 && y >= 0 && isFinite(date.getUTCFullYear())) {
+        if (y < 1970) {
             date.setUTCFullYear(y);
         }
         return date;
     }
-
-    // FORMATTING
-
-    addFormatToken('Y', 0, 0, function () {
-        var y = this.year();
-        return y <= 9999 ? '' + y : '+' + y;
-    });
 
     addFormatToken(0, ['YY', 2], 0, function () {
         return this.year() % 100;
@@ -3617,9 +2433,6 @@
     addParseToken('YY', function (input, array) {
         array[YEAR] = utils_hooks__hooks.parseTwoDigitYear(input);
     });
-    addParseToken('Y', function (input, array) {
-        array[YEAR] = parseInt(input, 10);
-    });
 
     // HELPERS
 
@@ -3645,66 +2458,124 @@
         return isLeapYear(this.year());
     }
 
-    // start-of-first-week - start-of-year
-    function firstWeekOffset(year, dow, doy) {
-        var // first-week day -- which january is always in the first week (4 for iso, 1 for other)
-            fwd = 7 + dow - doy,
-            // first-week day local weekday -- which local weekday is fwd
-            fwdlw = (7 + createUTCDate(year, 0, fwd).getUTCDay() - dow) % 7;
+    addFormatToken('w', ['ww', 2], 'wo', 'week');
+    addFormatToken('W', ['WW', 2], 'Wo', 'isoWeek');
 
-        return -fwdlw + fwd - 1;
+    // ALIASES
+
+    addUnitAlias('week', 'w');
+    addUnitAlias('isoWeek', 'W');
+
+    // PARSING
+
+    addRegexToken('w',  match1to2);
+    addRegexToken('ww', match1to2, match2);
+    addRegexToken('W',  match1to2);
+    addRegexToken('WW', match1to2, match2);
+
+    addWeekParseToken(['w', 'ww', 'W', 'WW'], function (input, week, config, token) {
+        week[token.substr(0, 1)] = toInt(input);
+    });
+
+    // HELPERS
+
+    // firstDayOfWeek       0 = sun, 6 = sat
+    //                      the day of the week that starts the week
+    //                      (usually sunday or monday)
+    // firstDayOfWeekOfYear 0 = sun, 6 = sat
+    //                      the first week is the week that contains the first
+    //                      of this day of the week
+    //                      (eg. ISO weeks use thursday (4))
+    function weekOfYear(mom, firstDayOfWeek, firstDayOfWeekOfYear) {
+        var end = firstDayOfWeekOfYear - firstDayOfWeek,
+            daysToDayOfWeek = firstDayOfWeekOfYear - mom.day(),
+            adjustedMoment;
+
+
+        if (daysToDayOfWeek > end) {
+            daysToDayOfWeek -= 7;
+        }
+
+        if (daysToDayOfWeek < end - 7) {
+            daysToDayOfWeek += 7;
+        }
+
+        adjustedMoment = local__createLocal(mom).add(daysToDayOfWeek, 'd');
+        return {
+            week: Math.ceil(adjustedMoment.dayOfYear() / 7),
+            year: adjustedMoment.year()
+        };
     }
+
+    // LOCALES
+
+    function localeWeek (mom) {
+        return weekOfYear(mom, this._week.dow, this._week.doy).week;
+    }
+
+    var defaultLocaleWeek = {
+        dow : 0, // Sunday is the first day of the week.
+        doy : 6  // The week that contains Jan 1st is the first week of the year.
+    };
+
+    function localeFirstDayOfWeek () {
+        return this._week.dow;
+    }
+
+    function localeFirstDayOfYear () {
+        return this._week.doy;
+    }
+
+    // MOMENTS
+
+    function getSetWeek (input) {
+        var week = this.localeData().week(this);
+        return input == null ? week : this.add((input - week) * 7, 'd');
+    }
+
+    function getSetISOWeek (input) {
+        var week = weekOfYear(this, 1, 4).week;
+        return input == null ? week : this.add((input - week) * 7, 'd');
+    }
+
+    addFormatToken('DDD', ['DDDD', 3], 'DDDo', 'dayOfYear');
+
+    // ALIASES
+
+    addUnitAlias('dayOfYear', 'DDD');
+
+    // PARSING
+
+    addRegexToken('DDD',  match1to3);
+    addRegexToken('DDDD', match3);
+    addParseToken(['DDD', 'DDDD'], function (input, array, config) {
+        config._dayOfYear = toInt(input);
+    });
+
+    // HELPERS
 
     //http://en.wikipedia.org/wiki/ISO_week_date#Calculating_a_date_given_the_year.2C_week_number_and_weekday
-    function dayOfYearFromWeeks(year, week, weekday, dow, doy) {
-        var localWeekday = (7 + weekday - dow) % 7,
-            weekOffset = firstWeekOffset(year, dow, doy),
-            dayOfYear = 1 + 7 * (week - 1) + localWeekday + weekOffset,
-            resYear, resDayOfYear;
-
-        if (dayOfYear <= 0) {
-            resYear = year - 1;
-            resDayOfYear = daysInYear(resYear) + dayOfYear;
-        } else if (dayOfYear > daysInYear(year)) {
-            resYear = year + 1;
-            resDayOfYear = dayOfYear - daysInYear(year);
-        } else {
-            resYear = year;
-            resDayOfYear = dayOfYear;
+    function dayOfYearFromWeeks(year, week, weekday, firstDayOfWeekOfYear, firstDayOfWeek) {
+        var week1Jan = 6 + firstDayOfWeek - firstDayOfWeekOfYear, janX = createUTCDate(year, 0, 1 + week1Jan), d = janX.getUTCDay(), dayOfYear;
+        if (d < firstDayOfWeek) {
+            d += 7;
         }
 
+        weekday = weekday != null ? 1 * weekday : firstDayOfWeek;
+
+        dayOfYear = 1 + week1Jan + 7 * (week - 1) - d + weekday;
+
         return {
-            year: resYear,
-            dayOfYear: resDayOfYear
+            year: dayOfYear > 0 ? year : year - 1,
+            dayOfYear: dayOfYear > 0 ?  dayOfYear : daysInYear(year - 1) + dayOfYear
         };
     }
 
-    function weekOfYear(mom, dow, doy) {
-        var weekOffset = firstWeekOffset(mom.year(), dow, doy),
-            week = Math.floor((mom.dayOfYear() - weekOffset - 1) / 7) + 1,
-            resWeek, resYear;
+    // MOMENTS
 
-        if (week < 1) {
-            resYear = mom.year() - 1;
-            resWeek = week + weeksInYear(resYear, dow, doy);
-        } else if (week > weeksInYear(mom.year(), dow, doy)) {
-            resWeek = week - weeksInYear(mom.year(), dow, doy);
-            resYear = mom.year() + 1;
-        } else {
-            resYear = mom.year();
-            resWeek = week;
-        }
-
-        return {
-            week: resWeek,
-            year: resYear
-        };
-    }
-
-    function weeksInYear(year, dow, doy) {
-        var weekOffset = firstWeekOffset(year, dow, doy),
-            weekOffsetNext = firstWeekOffset(year + 1, dow, doy);
-        return (daysInYear(year) - weekOffset + weekOffsetNext) / 7;
+    function getSetDayOfYear (input) {
+        var dayOfYear = Math.round((this.clone().startOf('day') - this.clone().startOf('year')) / 864e5) + 1;
+        return input == null ? dayOfYear : this.add((input - dayOfYear), 'd');
     }
 
     // Pick the first defined of two or three arguments.
@@ -3719,12 +2590,11 @@
     }
 
     function currentDateArray(config) {
-        // hooks is actually the exported moment object
-        var nowValue = new Date(utils_hooks__hooks.now());
+        var now = new Date();
         if (config._useUTC) {
-            return [nowValue.getUTCFullYear(), nowValue.getUTCMonth(), nowValue.getUTCDate()];
+            return [now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()];
         }
-        return [nowValue.getFullYear(), nowValue.getMonth(), nowValue.getDate()];
+        return [now.getFullYear(), now.getMonth(), now.getDate()];
     }
 
     // convert an array to a date.
@@ -3794,7 +2664,7 @@
     }
 
     function dayOfYearFromWeekInfo(config) {
-        var w, weekYear, week, weekday, dow, doy, temp, weekdayOverflow;
+        var w, weekYear, week, weekday, dow, doy, temp;
 
         w = config._w;
         if (w.GG != null || w.W != null || w.E != null) {
@@ -3808,9 +2678,6 @@
             weekYear = defaults(w.GG, config._a[YEAR], weekOfYear(local__createLocal(), 1, 4).year);
             week = defaults(w.W, 1);
             weekday = defaults(w.E, 1);
-            if (weekday < 1 || weekday > 7) {
-                weekdayOverflow = true;
-            }
         } else {
             dow = config._locale._week.dow;
             doy = config._locale._week.doy;
@@ -3821,32 +2688,23 @@
             if (w.d != null) {
                 // weekday -- low day numbers are considered next week
                 weekday = w.d;
-                if (weekday < 0 || weekday > 6) {
-                    weekdayOverflow = true;
+                if (weekday < dow) {
+                    ++week;
                 }
             } else if (w.e != null) {
                 // local weekday -- counting starts from begining of week
                 weekday = w.e + dow;
-                if (w.e < 0 || w.e > 6) {
-                    weekdayOverflow = true;
-                }
             } else {
                 // default to begining of week
                 weekday = dow;
             }
         }
-        if (week < 1 || week > weeksInYear(weekYear, dow, doy)) {
-            getParsingFlags(config)._overflowWeeks = true;
-        } else if (weekdayOverflow != null) {
-            getParsingFlags(config)._overflowWeekday = true;
-        } else {
-            temp = dayOfYearFromWeeks(weekYear, week, weekday, dow, doy);
-            config._a[YEAR] = temp.year;
-            config._dayOfYear = temp.dayOfYear;
-        }
+        temp = dayOfYearFromWeeks(weekYear, week, weekday, doy, dow);
+
+        config._a[YEAR] = temp.year;
+        config._dayOfYear = temp.dayOfYear;
     }
 
-    // constant that refers to the ISO standard
     utils_hooks__hooks.ISO_8601 = function () {};
 
     // date from string and format string
@@ -3871,8 +2729,6 @@
         for (i = 0; i < tokens.length; i++) {
             token = tokens[i];
             parsedInput = (string.match(getParseRegexForToken(token, config)) || [])[0];
-            // console.log('token', token, 'parsedInput', parsedInput,
-            //         'regex', getParseRegexForToken(token, config));
             if (parsedInput) {
                 skipped = string.substr(0, string.indexOf(parsedInput));
                 if (skipped.length > 0) {
@@ -3941,7 +2797,6 @@
         }
     }
 
-    // date from string and array of format strings
     function configFromStringAndArray(config) {
         var tempConfig,
             bestMoment,
@@ -3992,9 +2847,7 @@
         }
 
         var i = normalizeObjectUnits(config._i);
-        config._a = map([i.year, i.month, i.day || i.date, i.hour, i.minute, i.second, i.millisecond], function (obj) {
-            return obj && parseInt(obj, 10);
-        });
+        config._a = [i.year, i.month, i.day || i.date, i.hour, i.minute, i.second, i.millisecond];
 
         configFromArray(config);
     }
@@ -4036,17 +2889,13 @@
             configFromInput(config);
         }
 
-        if (!valid__isValid(config)) {
-            config._d = null;
-        }
-
         return config;
     }
 
     function configFromInput(config) {
         var input = config._i;
         if (input === undefined) {
-            config._d = new Date(utils_hooks__hooks.now());
+            config._d = new Date();
         } else if (isDate(input)) {
             config._d = new Date(+input);
         } else if (typeof input === 'string') {
@@ -4093,11 +2942,7 @@
          'moment().min is deprecated, use moment.min instead. https://github.com/moment/moment/issues/1548',
          function () {
              var other = local__createLocal.apply(null, arguments);
-             if (this.isValid() && other.isValid()) {
-                 return other < this ? this : other;
-             } else {
-                 return valid__createInvalid();
-             }
+             return other < this ? this : other;
          }
      );
 
@@ -4105,11 +2950,7 @@
         'moment().max is deprecated, use moment.max instead. https://github.com/moment/moment/issues/1548',
         function () {
             var other = local__createLocal.apply(null, arguments);
-            if (this.isValid() && other.isValid()) {
-                return other > this ? this : other;
-            } else {
-                return valid__createInvalid();
-            }
+            return other > this ? this : other;
         }
     );
 
@@ -4147,10 +2988,6 @@
 
         return pickBy('isAfter', args);
     }
-
-    var now = function () {
-        return Date.now ? Date.now() : +(new Date());
-    };
 
     function Duration (duration) {
         var normalizedInput = normalizeObjectUnits(duration),
@@ -4191,8 +3028,6 @@
         return obj instanceof Duration;
     }
 
-    // FORMATTING
-
     function offset (token, separator) {
         addFormatToken(token, 0, 0, function () {
             var offset = this.utcOffset();
@@ -4210,11 +3045,11 @@
 
     // PARSING
 
-    addRegexToken('Z',  matchShortOffset);
-    addRegexToken('ZZ', matchShortOffset);
+    addRegexToken('Z',  matchOffset);
+    addRegexToken('ZZ', matchOffset);
     addParseToken(['Z', 'ZZ'], function (input, array, config) {
         config._useUTC = true;
-        config._tzm = offsetFromString(matchShortOffset, input);
+        config._tzm = offsetFromString(input);
     });
 
     // HELPERS
@@ -4224,8 +3059,8 @@
     // '-1530'  > ['-15', '30']
     var chunkOffset = /([\+\-]|\d\d)/gi;
 
-    function offsetFromString(matcher, string) {
-        var matches = ((string || '').match(matcher) || []);
+    function offsetFromString(string) {
+        var matches = ((string || '').match(matchOffset) || []);
         var chunk   = matches[matches.length - 1] || [];
         var parts   = (chunk + '').match(chunkOffset) || ['-', 0, 0];
         var minutes = +(parts[1] * 60) + toInt(parts[2]);
@@ -4275,13 +3110,11 @@
     function getSetOffset (input, keepLocalTime) {
         var offset = this._offset || 0,
             localAdjust;
-        if (!this.isValid()) {
-            return input != null ? this : NaN;
-        }
         if (input != null) {
             if (typeof input === 'string') {
-                input = offsetFromString(matchShortOffset, input);
-            } else if (Math.abs(input) < 16) {
+                input = offsetFromString(input);
+            }
+            if (Math.abs(input) < 16) {
                 input = input * 60;
             }
             if (!this._isUTC && keepLocalTime) {
@@ -4341,15 +3174,12 @@
         if (this._tzm) {
             this.utcOffset(this._tzm);
         } else if (typeof this._i === 'string') {
-            this.utcOffset(offsetFromString(matchOffset, this._i));
+            this.utcOffset(offsetFromString(this._i));
         }
         return this;
     }
 
     function hasAlignedHourOffset (input) {
-        if (!this.isValid()) {
-            return false;
-        }
         input = input ? local__createLocal(input).utcOffset() : 0;
 
         return (this.utcOffset() - input) % 60 === 0;
@@ -4363,7 +3193,7 @@
     }
 
     function isDaylightSavingTimeShifted () {
-        if (!isUndefined(this._isDSTShifted)) {
+        if (typeof this._isDSTShifted !== 'undefined') {
             return this._isDSTShifted;
         }
 
@@ -4384,23 +3214,22 @@
     }
 
     function isLocal () {
-        return this.isValid() ? !this._isUTC : false;
+        return !this._isUTC;
     }
 
     function isUtcOffset () {
-        return this.isValid() ? this._isUTC : false;
+        return this._isUTC;
     }
 
     function isUtc () {
-        return this.isValid() ? this._isUTC && this._offset === 0 : false;
+        return this._isUTC && this._offset === 0;
     }
 
-    // ASP.NET json date format regex
-    var aspNetRegex = /^(\-)?(?:(\d*)[. ])?(\d+)\:(\d+)(?:\:(\d+)\.?(\d{3})?\d*)?$/;
+    var aspNetRegex = /(\-)?(?:(\d*)\.)?(\d+)\:(\d+)(?:\:(\d+)\.?(\d{3})?)?/;
 
     // from http://docs.closure-library.googlecode.com/git/closure_goog_date_date.js.source.html
     // somewhat more in line with 4.4.3.2 2004 spec, but allows decimal anywhere
-    var isoRegex = /^(-)?P(?:(?:([0-9,.]*)Y)?(?:([0-9,.]*)M)?(?:([0-9,.]*)D)?(?:T(?:([0-9,.]*)H)?(?:([0-9,.]*)M)?(?:([0-9,.]*)S)?)?|([0-9,.]*)W)$/;
+    var create__isoRegex = /^(-)?P(?:(?:([0-9,.]*)Y)?(?:([0-9,.]*)M)?(?:([0-9,.]*)D)?(?:T(?:([0-9,.]*)H)?(?:([0-9,.]*)M)?(?:([0-9,.]*)S)?)?|([0-9,.]*)W)$/;
 
     function create__createDuration (input, key) {
         var duration = input,
@@ -4433,7 +3262,7 @@
                 s  : toInt(match[SECOND])      * sign,
                 ms : toInt(match[MILLISECOND]) * sign
             };
-        } else if (!!(match = isoRegex.exec(input))) {
+        } else if (!!(match = create__isoRegex.exec(input))) {
             sign = (match[1] === '-') ? -1 : 1;
             duration = {
                 y : parseIso(match[2], sign),
@@ -4490,10 +3319,6 @@
 
     function momentsDifference(base, other) {
         var res;
-        if (!(base.isValid() && other.isValid())) {
-            return {milliseconds: 0, months: 0};
-        }
-
         other = cloneWithOffset(other, base);
         if (base.isBefore(other)) {
             res = positiveMomentsDifference(base, other);
@@ -4506,7 +3331,6 @@
         return res;
     }
 
-    // TODO: remove 'name' arg after deprecation is removed
     function createAdder(direction, name) {
         return function (val, period) {
             var dur, tmp;
@@ -4527,12 +3351,6 @@
         var milliseconds = duration._milliseconds,
             days = duration._days,
             months = duration._months;
-
-        if (!mom.isValid()) {
-            // No op
-            return;
-        }
-
         updateOffset = updateOffset == null ? true : updateOffset;
 
         if (milliseconds) {
@@ -4564,10 +3382,7 @@
                 diff < 1 ? 'sameDay' :
                 diff < 2 ? 'nextDay' :
                 diff < 7 ? 'nextWeek' : 'sameElse';
-
-        var output = formats && (isFunction(formats[format]) ? formats[format]() : formats[format]);
-
-        return this.format(output || this.localeData().calendar(format, this, local__createLocal(now)));
+        return this.format(formats && formats[format] || this.localeData().calendar(format, this, local__createLocal(now)));
     }
 
     function clone () {
@@ -4575,28 +3390,26 @@
     }
 
     function isAfter (input, units) {
-        var localInput = isMoment(input) ? input : local__createLocal(input);
-        if (!(this.isValid() && localInput.isValid())) {
-            return false;
-        }
-        units = normalizeUnits(!isUndefined(units) ? units : 'millisecond');
+        var inputMs;
+        units = normalizeUnits(typeof units !== 'undefined' ? units : 'millisecond');
         if (units === 'millisecond') {
-            return +this > +localInput;
+            input = isMoment(input) ? input : local__createLocal(input);
+            return +this > +input;
         } else {
-            return +localInput < +this.clone().startOf(units);
+            inputMs = isMoment(input) ? +input : +local__createLocal(input);
+            return inputMs < +this.clone().startOf(units);
         }
     }
 
     function isBefore (input, units) {
-        var localInput = isMoment(input) ? input : local__createLocal(input);
-        if (!(this.isValid() && localInput.isValid())) {
-            return false;
-        }
-        units = normalizeUnits(!isUndefined(units) ? units : 'millisecond');
+        var inputMs;
+        units = normalizeUnits(typeof units !== 'undefined' ? units : 'millisecond');
         if (units === 'millisecond') {
-            return +this < +localInput;
+            input = isMoment(input) ? input : local__createLocal(input);
+            return +this < +input;
         } else {
-            return +this.clone().endOf(units) < +localInput;
+            inputMs = isMoment(input) ? +input : +local__createLocal(input);
+            return +this.clone().endOf(units) < inputMs;
         }
     }
 
@@ -4605,44 +3418,21 @@
     }
 
     function isSame (input, units) {
-        var localInput = isMoment(input) ? input : local__createLocal(input),
-            inputMs;
-        if (!(this.isValid() && localInput.isValid())) {
-            return false;
-        }
+        var inputMs;
         units = normalizeUnits(units || 'millisecond');
         if (units === 'millisecond') {
-            return +this === +localInput;
+            input = isMoment(input) ? input : local__createLocal(input);
+            return +this === +input;
         } else {
-            inputMs = +localInput;
+            inputMs = +local__createLocal(input);
             return +(this.clone().startOf(units)) <= inputMs && inputMs <= +(this.clone().endOf(units));
         }
     }
 
-    function isSameOrAfter (input, units) {
-        return this.isSame(input, units) || this.isAfter(input,units);
-    }
-
-    function isSameOrBefore (input, units) {
-        return this.isSame(input, units) || this.isBefore(input,units);
-    }
-
     function diff (input, units, asFloat) {
-        var that,
-            zoneDelta,
+        var that = cloneWithOffset(input, this),
+            zoneDelta = (that.utcOffset() - this.utcOffset()) * 6e4,
             delta, output;
-
-        if (!this.isValid()) {
-            return NaN;
-        }
-
-        that = cloneWithOffset(input, this);
-
-        if (!that.isValid()) {
-            return NaN;
-        }
-
-        zoneDelta = (that.utcOffset() - this.utcOffset()) * 6e4;
 
         units = normalizeUnits(units);
 
@@ -4694,7 +3484,7 @@
     function moment_format__toISOString () {
         var m = this.clone().utc();
         if (0 < m.year() && m.year() <= 9999) {
-            if (isFunction(Date.prototype.toISOString)) {
+            if ('function' === typeof Date.prototype.toISOString) {
                 // native implementation is ~50x faster, use it when we can
                 return this.toDate().toISOString();
             } else {
@@ -4711,13 +3501,10 @@
     }
 
     function from (time, withoutSuffix) {
-        if (this.isValid() &&
-                ((isMoment(time) && time.isValid()) ||
-                 local__createLocal(time).isValid())) {
-            return create__createDuration({to: this, from: time}).locale(this.locale()).humanize(!withoutSuffix);
-        } else {
+        if (!this.isValid()) {
             return this.localeData().invalidDate();
         }
+        return create__createDuration({to: this, from: time}).locale(this.locale()).humanize(!withoutSuffix);
     }
 
     function fromNow (withoutSuffix) {
@@ -4725,22 +3512,16 @@
     }
 
     function to (time, withoutSuffix) {
-        if (this.isValid() &&
-                ((isMoment(time) && time.isValid()) ||
-                 local__createLocal(time).isValid())) {
-            return create__createDuration({from: this, to: time}).locale(this.locale()).humanize(!withoutSuffix);
-        } else {
+        if (!this.isValid()) {
             return this.localeData().invalidDate();
         }
+        return create__createDuration({from: this, to: time}).locale(this.locale()).humanize(!withoutSuffix);
     }
 
     function toNow (withoutSuffix) {
         return this.to(local__createLocal(), withoutSuffix);
     }
 
-    // If passed a locale key, it will set the locale for this
-    // instance.  Otherwise, it will return the locale configuration
-    // variables for this instance.
     function locale (key) {
         var newLocaleData;
 
@@ -4851,11 +3632,6 @@
         };
     }
 
-    function toJSON () {
-        // JSON.stringify(new Date(NaN)) === 'null'
-        return this.isValid() ? this.toISOString() : 'null';
-    }
-
     function moment_valid__isValid () {
         return valid__isValid(this);
     }
@@ -4867,18 +3643,6 @@
     function invalidAt () {
         return getParsingFlags(this).overflow;
     }
-
-    function creationData() {
-        return {
-            input: this._i,
-            format: this._f,
-            locale: this._locale,
-            isUTC: this._isUTC,
-            strict: this._strict
-        };
-    }
-
-    // FORMATTING
 
     addFormatToken(0, ['gg', 2], 0, function () {
         return this.weekYear() % 100;
@@ -4921,20 +3685,22 @@
         week[token] = utils_hooks__hooks.parseTwoDigitYear(input);
     });
 
+    // HELPERS
+
+    function weeksInYear(year, dow, doy) {
+        return weekOfYear(local__createLocal([year, 11, 31 + dow - doy]), dow, doy).week;
+    }
+
     // MOMENTS
 
     function getSetWeekYear (input) {
-        return getSetWeekYearHelper.call(this,
-                input,
-                this.week(),
-                this.weekday(),
-                this.localeData()._week.dow,
-                this.localeData()._week.doy);
+        var year = weekOfYear(this, this.localeData()._week.dow, this.localeData()._week.doy).year;
+        return input == null ? year : this.add((input - year), 'y');
     }
 
     function getSetISOWeekYear (input) {
-        return getSetWeekYearHelper.call(this,
-                input, this.isoWeek(), this.isoWeekday(), 1, 4);
+        var year = weekOfYear(this, 1, 4).year;
+        return input == null ? year : this.add((input - year), 'y');
     }
 
     function getISOWeeksInYear () {
@@ -4946,33 +3712,7 @@
         return weeksInYear(this.year(), weekInfo.dow, weekInfo.doy);
     }
 
-    function getSetWeekYearHelper(input, week, weekday, dow, doy) {
-        var weeksTarget;
-        if (input == null) {
-            return weekOfYear(this, dow, doy).year;
-        } else {
-            weeksTarget = weeksInYear(input, dow, doy);
-            if (week > weeksTarget) {
-                week = weeksTarget;
-            }
-            return setWeekAll.call(this, input, week, weekday, dow, doy);
-        }
-    }
-
-    function setWeekAll(weekYear, week, weekday, dow, doy) {
-        var dayOfYearData = dayOfYearFromWeeks(weekYear, week, weekday, dow, doy),
-            date = createUTCDate(dayOfYearData.year, 0, dayOfYearData.dayOfYear);
-
-        // console.log("got", weekYear, week, weekday, "set", date.toISOString());
-        this.year(date.getUTCFullYear());
-        this.month(date.getUTCMonth());
-        this.date(date.getUTCDate());
-        return this;
-    }
-
-    // FORMATTING
-
-    addFormatToken('Q', 0, 'Qo', 'quarter');
+    addFormatToken('Q', 0, 0, 'quarter');
 
     // ALIASES
 
@@ -4990,62 +3730,6 @@
     function getSetQuarter (input) {
         return input == null ? Math.ceil((this.month() + 1) / 3) : this.month((input - 1) * 3 + this.month() % 3);
     }
-
-    // FORMATTING
-
-    addFormatToken('w', ['ww', 2], 'wo', 'week');
-    addFormatToken('W', ['WW', 2], 'Wo', 'isoWeek');
-
-    // ALIASES
-
-    addUnitAlias('week', 'w');
-    addUnitAlias('isoWeek', 'W');
-
-    // PARSING
-
-    addRegexToken('w',  match1to2);
-    addRegexToken('ww', match1to2, match2);
-    addRegexToken('W',  match1to2);
-    addRegexToken('WW', match1to2, match2);
-
-    addWeekParseToken(['w', 'ww', 'W', 'WW'], function (input, week, config, token) {
-        week[token.substr(0, 1)] = toInt(input);
-    });
-
-    // HELPERS
-
-    // LOCALES
-
-    function localeWeek (mom) {
-        return weekOfYear(mom, this._week.dow, this._week.doy).week;
-    }
-
-    var defaultLocaleWeek = {
-        dow : 0, // Sunday is the first day of the week.
-        doy : 6  // The week that contains Jan 1st is the first week of the year.
-    };
-
-    function localeFirstDayOfWeek () {
-        return this._week.dow;
-    }
-
-    function localeFirstDayOfYear () {
-        return this._week.doy;
-    }
-
-    // MOMENTS
-
-    function getSetWeek (input) {
-        var week = this.localeData().week(this);
-        return input == null ? week : this.add((input - week) * 7, 'd');
-    }
-
-    function getSetISOWeek (input) {
-        var week = weekOfYear(this, 1, 4).week;
-        return input == null ? week : this.add((input - week) * 7, 'd');
-    }
-
-    // FORMATTING
 
     addFormatToken('D', ['DD', 2], 'Do', 'date');
 
@@ -5069,8 +3753,6 @@
     // MOMENTS
 
     var getSetDayOfMonth = makeGetSet('Date', true);
-
-    // FORMATTING
 
     addFormatToken('d', 0, 'do', 'day');
 
@@ -5104,8 +3786,8 @@
     addRegexToken('ddd',  matchWord);
     addRegexToken('dddd', matchWord);
 
-    addWeekParseToken(['dd', 'ddd', 'dddd'], function (input, week, config, token) {
-        var weekday = config._locale.weekdaysParse(input, token, config._strict);
+    addWeekParseToken(['dd', 'ddd', 'dddd'], function (input, week, config) {
+        var weekday = config._locale.weekdaysParse(input);
         // if we didn't get a weekday name, mark the date as invalid
         if (weekday != null) {
             week.d = weekday;
@@ -5140,9 +3822,8 @@
     // LOCALES
 
     var defaultLocaleWeekdays = 'Sunday_Monday_Tuesday_Wednesday_Thursday_Friday_Saturday'.split('_');
-    function localeWeekdays (m, format) {
-        return isArray(this._weekdays) ? this._weekdays[m.day()] :
-            this._weekdays[this._weekdays.isFormat.test(format) ? 'format' : 'standalone'][m.day()];
+    function localeWeekdays (m) {
+        return this._weekdays[m.day()];
     }
 
     var defaultLocaleWeekdaysShort = 'Sun_Mon_Tue_Wed_Thu_Fri_Sat'.split('_');
@@ -5155,37 +3836,20 @@
         return this._weekdaysMin[m.day()];
     }
 
-    function localeWeekdaysParse (weekdayName, format, strict) {
+    function localeWeekdaysParse (weekdayName) {
         var i, mom, regex;
 
-        if (!this._weekdaysParse) {
-            this._weekdaysParse = [];
-            this._minWeekdaysParse = [];
-            this._shortWeekdaysParse = [];
-            this._fullWeekdaysParse = [];
-        }
+        this._weekdaysParse = this._weekdaysParse || [];
 
         for (i = 0; i < 7; i++) {
             // make the regex if we don't have it already
-
-            mom = local__createLocal([2000, 1]).day(i);
-            if (strict && !this._fullWeekdaysParse[i]) {
-                this._fullWeekdaysParse[i] = new RegExp('^' + this.weekdays(mom, '').replace('.', '\.?') + '$', 'i');
-                this._shortWeekdaysParse[i] = new RegExp('^' + this.weekdaysShort(mom, '').replace('.', '\.?') + '$', 'i');
-                this._minWeekdaysParse[i] = new RegExp('^' + this.weekdaysMin(mom, '').replace('.', '\.?') + '$', 'i');
-            }
             if (!this._weekdaysParse[i]) {
+                mom = local__createLocal([2000, 1]).day(i);
                 regex = '^' + this.weekdays(mom, '') + '|^' + this.weekdaysShort(mom, '') + '|^' + this.weekdaysMin(mom, '');
                 this._weekdaysParse[i] = new RegExp(regex.replace('.', ''), 'i');
             }
             // test the regex
-            if (strict && format === 'dddd' && this._fullWeekdaysParse[i].test(weekdayName)) {
-                return i;
-            } else if (strict && format === 'ddd' && this._shortWeekdaysParse[i].test(weekdayName)) {
-                return i;
-            } else if (strict && format === 'dd' && this._minWeekdaysParse[i].test(weekdayName)) {
-                return i;
-            } else if (!strict && this._weekdaysParse[i].test(weekdayName)) {
+            if (this._weekdaysParse[i].test(weekdayName)) {
                 return i;
             }
         }
@@ -5194,9 +3858,6 @@
     // MOMENTS
 
     function getSetDayOfWeek (input) {
-        if (!this.isValid()) {
-            return input != null ? this : NaN;
-        }
         var day = this._isUTC ? this._d.getUTCDay() : this._d.getDay();
         if (input != null) {
             input = parseWeekday(input, this.localeData());
@@ -5207,73 +3868,20 @@
     }
 
     function getSetLocaleDayOfWeek (input) {
-        if (!this.isValid()) {
-            return input != null ? this : NaN;
-        }
         var weekday = (this.day() + 7 - this.localeData()._week.dow) % 7;
         return input == null ? weekday : this.add(input - weekday, 'd');
     }
 
     function getSetISODayOfWeek (input) {
-        if (!this.isValid()) {
-            return input != null ? this : NaN;
-        }
         // behaves the same as moment#day except
         // as a getter, returns 7 instead of 0 (1-7 range instead of 0-6)
         // as a setter, sunday should belong to the previous week.
         return input == null ? this.day() || 7 : this.day(this.day() % 7 ? input : input - 7);
     }
 
-    // FORMATTING
-
-    addFormatToken('DDD', ['DDDD', 3], 'DDDo', 'dayOfYear');
-
-    // ALIASES
-
-    addUnitAlias('dayOfYear', 'DDD');
-
-    // PARSING
-
-    addRegexToken('DDD',  match1to3);
-    addRegexToken('DDDD', match3);
-    addParseToken(['DDD', 'DDDD'], function (input, array, config) {
-        config._dayOfYear = toInt(input);
-    });
-
-    // HELPERS
-
-    // MOMENTS
-
-    function getSetDayOfYear (input) {
-        var dayOfYear = Math.round((this.clone().startOf('day') - this.clone().startOf('year')) / 864e5) + 1;
-        return input == null ? dayOfYear : this.add((input - dayOfYear), 'd');
-    }
-
-    // FORMATTING
-
-    function hFormat() {
-        return this.hours() % 12 || 12;
-    }
-
     addFormatToken('H', ['HH', 2], 0, 'hour');
-    addFormatToken('h', ['hh', 2], 0, hFormat);
-
-    addFormatToken('hmm', 0, 0, function () {
-        return '' + hFormat.apply(this) + zeroFill(this.minutes(), 2);
-    });
-
-    addFormatToken('hmmss', 0, 0, function () {
-        return '' + hFormat.apply(this) + zeroFill(this.minutes(), 2) +
-            zeroFill(this.seconds(), 2);
-    });
-
-    addFormatToken('Hmm', 0, 0, function () {
-        return '' + this.hours() + zeroFill(this.minutes(), 2);
-    });
-
-    addFormatToken('Hmmss', 0, 0, function () {
-        return '' + this.hours() + zeroFill(this.minutes(), 2) +
-            zeroFill(this.seconds(), 2);
+    addFormatToken('h', ['hh', 2], 0, function () {
+        return this.hours() % 12 || 12;
     });
 
     function meridiem (token, lowercase) {
@@ -5302,11 +3910,6 @@
     addRegexToken('HH', match1to2, match2);
     addRegexToken('hh', match1to2, match2);
 
-    addRegexToken('hmm', match3to4);
-    addRegexToken('hmmss', match5to6);
-    addRegexToken('Hmm', match3to4);
-    addRegexToken('Hmmss', match5to6);
-
     addParseToken(['H', 'HH'], HOUR);
     addParseToken(['a', 'A'], function (input, array, config) {
         config._isPm = config._locale.isPM(input);
@@ -5315,32 +3918,6 @@
     addParseToken(['h', 'hh'], function (input, array, config) {
         array[HOUR] = toInt(input);
         getParsingFlags(config).bigHour = true;
-    });
-    addParseToken('hmm', function (input, array, config) {
-        var pos = input.length - 2;
-        array[HOUR] = toInt(input.substr(0, pos));
-        array[MINUTE] = toInt(input.substr(pos));
-        getParsingFlags(config).bigHour = true;
-    });
-    addParseToken('hmmss', function (input, array, config) {
-        var pos1 = input.length - 4;
-        var pos2 = input.length - 2;
-        array[HOUR] = toInt(input.substr(0, pos1));
-        array[MINUTE] = toInt(input.substr(pos1, 2));
-        array[SECOND] = toInt(input.substr(pos2));
-        getParsingFlags(config).bigHour = true;
-    });
-    addParseToken('Hmm', function (input, array, config) {
-        var pos = input.length - 2;
-        array[HOUR] = toInt(input.substr(0, pos));
-        array[MINUTE] = toInt(input.substr(pos));
-    });
-    addParseToken('Hmmss', function (input, array, config) {
-        var pos1 = input.length - 4;
-        var pos2 = input.length - 2;
-        array[HOUR] = toInt(input.substr(0, pos1));
-        array[MINUTE] = toInt(input.substr(pos1, 2));
-        array[SECOND] = toInt(input.substr(pos2));
     });
 
     // LOCALES
@@ -5369,8 +3946,6 @@
     // this rule.
     var getSetHour = makeGetSet('Hours', true);
 
-    // FORMATTING
-
     addFormatToken('m', ['mm', 2], 0, 'minute');
 
     // ALIASES
@@ -5387,8 +3962,6 @@
 
     var getSetMinute = makeGetSet('Minutes', false);
 
-    // FORMATTING
-
     addFormatToken('s', ['ss', 2], 0, 'second');
 
     // ALIASES
@@ -5404,8 +3977,6 @@
     // MOMENTS
 
     var getSetSecond = makeGetSet('Seconds', false);
-
-    // FORMATTING
 
     addFormatToken('S', 0, 0, function () {
         return ~~(this.millisecond() / 100);
@@ -5462,8 +4033,6 @@
 
     var getSetMillisecond = makeGetSet('Milliseconds', false);
 
-    // FORMATTING
-
     addFormatToken('z',  0, 0, 'zoneAbbr');
     addFormatToken('zz', 0, 0, 'zoneName');
 
@@ -5479,43 +4048,40 @@
 
     var momentPrototype__proto = Moment.prototype;
 
-    momentPrototype__proto.add               = add_subtract__add;
-    momentPrototype__proto.calendar          = moment_calendar__calendar;
-    momentPrototype__proto.clone             = clone;
-    momentPrototype__proto.diff              = diff;
-    momentPrototype__proto.endOf             = endOf;
-    momentPrototype__proto.format            = format;
-    momentPrototype__proto.from              = from;
-    momentPrototype__proto.fromNow           = fromNow;
-    momentPrototype__proto.to                = to;
-    momentPrototype__proto.toNow             = toNow;
-    momentPrototype__proto.get               = getSet;
-    momentPrototype__proto.invalidAt         = invalidAt;
-    momentPrototype__proto.isAfter           = isAfter;
-    momentPrototype__proto.isBefore          = isBefore;
-    momentPrototype__proto.isBetween         = isBetween;
-    momentPrototype__proto.isSame            = isSame;
-    momentPrototype__proto.isSameOrAfter     = isSameOrAfter;
-    momentPrototype__proto.isSameOrBefore    = isSameOrBefore;
-    momentPrototype__proto.isValid           = moment_valid__isValid;
-    momentPrototype__proto.lang              = lang;
-    momentPrototype__proto.locale            = locale;
-    momentPrototype__proto.localeData        = localeData;
-    momentPrototype__proto.max               = prototypeMax;
-    momentPrototype__proto.min               = prototypeMin;
-    momentPrototype__proto.parsingFlags      = parsingFlags;
-    momentPrototype__proto.set               = getSet;
-    momentPrototype__proto.startOf           = startOf;
-    momentPrototype__proto.subtract          = add_subtract__subtract;
-    momentPrototype__proto.toArray           = toArray;
-    momentPrototype__proto.toObject          = toObject;
-    momentPrototype__proto.toDate            = toDate;
-    momentPrototype__proto.toISOString       = moment_format__toISOString;
-    momentPrototype__proto.toJSON            = toJSON;
-    momentPrototype__proto.toString          = toString;
-    momentPrototype__proto.unix              = unix;
-    momentPrototype__proto.valueOf           = to_type__valueOf;
-    momentPrototype__proto.creationData      = creationData;
+    momentPrototype__proto.add          = add_subtract__add;
+    momentPrototype__proto.calendar     = moment_calendar__calendar;
+    momentPrototype__proto.clone        = clone;
+    momentPrototype__proto.diff         = diff;
+    momentPrototype__proto.endOf        = endOf;
+    momentPrototype__proto.format       = format;
+    momentPrototype__proto.from         = from;
+    momentPrototype__proto.fromNow      = fromNow;
+    momentPrototype__proto.to           = to;
+    momentPrototype__proto.toNow        = toNow;
+    momentPrototype__proto.get          = getSet;
+    momentPrototype__proto.invalidAt    = invalidAt;
+    momentPrototype__proto.isAfter      = isAfter;
+    momentPrototype__proto.isBefore     = isBefore;
+    momentPrototype__proto.isBetween    = isBetween;
+    momentPrototype__proto.isSame       = isSame;
+    momentPrototype__proto.isValid      = moment_valid__isValid;
+    momentPrototype__proto.lang         = lang;
+    momentPrototype__proto.locale       = locale;
+    momentPrototype__proto.localeData   = localeData;
+    momentPrototype__proto.max          = prototypeMax;
+    momentPrototype__proto.min          = prototypeMin;
+    momentPrototype__proto.parsingFlags = parsingFlags;
+    momentPrototype__proto.set          = getSet;
+    momentPrototype__proto.startOf      = startOf;
+    momentPrototype__proto.subtract     = add_subtract__subtract;
+    momentPrototype__proto.toArray      = toArray;
+    momentPrototype__proto.toObject     = toObject;
+    momentPrototype__proto.toDate       = toDate;
+    momentPrototype__proto.toISOString  = moment_format__toISOString;
+    momentPrototype__proto.toJSON       = moment_format__toISOString;
+    momentPrototype__proto.toString     = toString;
+    momentPrototype__proto.unix         = unix;
+    momentPrototype__proto.valueOf      = to_type__valueOf;
 
     // Year
     momentPrototype__proto.year       = getSetYear;
@@ -5601,7 +4167,7 @@
 
     function locale_calendar__calendar (key, mom, now) {
         var output = this._calendar[key];
-        return isFunction(output) ? output.call(mom, now) : output;
+        return typeof output === 'function' ? output.call(mom, now) : output;
     }
 
     var defaultLongDateFormat = {
@@ -5663,21 +4229,21 @@
 
     function relative__relativeTime (number, withoutSuffix, string, isFuture) {
         var output = this._relativeTime[string];
-        return (isFunction(output)) ?
+        return (typeof output === 'function') ?
             output(number, withoutSuffix, string, isFuture) :
             output.replace(/%d/i, number);
     }
 
     function pastFuture (diff, output) {
         var format = this._relativeTime[diff > 0 ? 'future' : 'past'];
-        return isFunction(format) ? format(output) : format.replace(/%s/i, output);
+        return typeof format === 'function' ? format(output) : format.replace(/%s/i, output);
     }
 
     function locale_set__set (config) {
         var prop, i;
         for (i in config) {
             prop = config[i];
-            if (isFunction(prop)) {
+            if (typeof prop === 'function') {
                 this[i] = prop;
             } else {
                 this['_' + i] = prop;
@@ -5707,15 +4273,11 @@
     prototype__proto.set             = locale_set__set;
 
     // Month
-    prototype__proto.months            =        localeMonths;
-    prototype__proto._months           = defaultLocaleMonths;
-    prototype__proto.monthsShort       =        localeMonthsShort;
-    prototype__proto._monthsShort      = defaultLocaleMonthsShort;
-    prototype__proto.monthsParse       =        localeMonthsParse;
-    prototype__proto._monthsRegex      = defaultMonthsRegex;
-    prototype__proto.monthsRegex       = monthsRegex;
-    prototype__proto._monthsShortRegex = defaultMonthsShortRegex;
-    prototype__proto.monthsShortRegex  = monthsShortRegex;
+    prototype__proto.months       =        localeMonths;
+    prototype__proto._months      = defaultLocaleMonths;
+    prototype__proto.monthsShort  =        localeMonthsShort;
+    prototype__proto._monthsShort = defaultLocaleMonthsShort;
+    prototype__proto.monthsParse  =        localeMonthsParse;
 
     // Week
     prototype__proto.week = localeWeek;
@@ -6003,15 +4565,15 @@
         var years    = round(duration.as('y'));
 
         var a = seconds < thresholds.s && ['s', seconds]  ||
-                minutes <= 1           && ['m']           ||
+                minutes === 1          && ['m']           ||
                 minutes < thresholds.m && ['mm', minutes] ||
-                hours   <= 1           && ['h']           ||
+                hours   === 1          && ['h']           ||
                 hours   < thresholds.h && ['hh', hours]   ||
-                days    <= 1           && ['d']           ||
+                days    === 1          && ['d']           ||
                 days    < thresholds.d && ['dd', days]    ||
-                months  <= 1           && ['M']           ||
+                months  === 1          && ['M']           ||
                 months  < thresholds.M && ['MM', months]  ||
-                years   <= 1           && ['y']           || ['yy', years];
+                years   === 1          && ['y']           || ['yy', years];
 
         a[2] = withoutSuffix;
         a[3] = +posNegDuration > 0;
@@ -6132,8 +4694,6 @@
 
     // Side effect imports
 
-    // FORMATTING
-
     addFormatToken('X', 0, 0, 'unix');
     addFormatToken('x', 0, 0, 'valueOf');
 
@@ -6151,14 +4711,13 @@
     // Side effect imports
 
 
-    utils_hooks__hooks.version = '2.11.2';
+    utils_hooks__hooks.version = '2.10.6';
 
     setHookCallback(local__createLocal);
 
     utils_hooks__hooks.fn                    = momentPrototype;
     utils_hooks__hooks.min                   = min;
     utils_hooks__hooks.max                   = max;
-    utils_hooks__hooks.now                   = now;
     utils_hooks__hooks.utc                   = create_utc__createUTC;
     utils_hooks__hooks.unix                  = moment__createUnix;
     utils_hooks__hooks.months                = lists__listMonths;
@@ -6177,14 +4736,13 @@
     utils_hooks__hooks.weekdaysShort         = lists__listWeekdaysShort;
     utils_hooks__hooks.normalizeUnits        = normalizeUnits;
     utils_hooks__hooks.relativeTimeThreshold = duration_humanize__getSetRelativeTimeThreshold;
-    utils_hooks__hooks.prototype             = momentPrototype;
 
     var _moment = utils_hooks__hooks;
 
     return _moment;
 
 }));
-/* angular-moment.js / v1.0.0-beta.3 / (c) 2013, 2014, 2015 Uri Shaked / MIT Licence */
+/* angular-moment.js / v0.10.3 / (c) 2013, 2014, 2015 Uri Shaked / MIT Licence */
 
 'format amd';
 /* global define */
@@ -6192,27 +4750,7 @@
 (function () {
 	'use strict';
 
-	function isUndefinedOrNull(val) {
-		return angular.isUndefined(val) || val === null;
-	}
-
-	function requireMoment() {
-		try {
-			return require('moment'); // Using nw.js or browserify?
-		} catch (e) {
-			throw new Error('Please install moment via npm. Please reference to: https://github.com/urish/angular-moment'); // Add wiki/troubleshooting section?
-		}
-	}
-
 	function angularMoment(angular, moment) {
-
-		if(typeof moment === 'undefined') {
-			if(typeof require === 'function') {
-				moment = requireMoment();
-			}else{
-				throw new Error('Moment cannot be found by angular-moment! Please reference to: https://github.com/urish/angular-moment'); // Add wiki/troubleshooting section?
-			}
-		}
 
 		/**
 		 * @ngdoc overview
@@ -6235,19 +4773,13 @@
 				 * @ngdoc property
 				 * @name angularMoment.config.angularMomentConfig#preprocess
 				 * @propertyOf angularMoment.config:angularMomentConfig
-				 * @returns {function} A preprocessor function that will be applied on all incoming dates
+				 * @returns {string} The default preprocessor to apply
 				 *
 				 * @description
-				 * Defines a preprocessor function to apply on all input dates (e.g. the input of `am-time-ago`,
-				 * `amCalendar`, etc.). The function must return a `moment` object.
-				 *
-				 * @example
-				 *   // Causes angular-moment to always treat the input values as unix timestamps
-				 *   angularMomentConfig.preprocess = function(value) {
-				 * 	   return moment.unix(value);
-				 *   }
+				 * Defines a default preprocessor to apply (e.g. 'unix', 'etc', ...). The default value is null,
+				 * i.e. no preprocessor will be applied.
 				 */
-				preprocess: null,
+				preprocess: null, // e.g. 'unix', 'utc', ...
 
 				/**
 				 * @ngdoc property
@@ -6258,10 +4790,8 @@
 				 * @description
 				 * The default timezone (e.g. 'Europe/London'). Empty string by default (does not apply
 				 * any timezone shift).
-				 *
-				 * NOTE: This option requires moment-timezone >= 0.3.0.
 				 */
-				timezone: null,
+				timezone: '',
 
 				/**
 				 * @ngdoc property
@@ -6285,7 +4815,7 @@
 				 * @description
 				 * Specifies whether the filters included with angular-moment are stateful.
 				 * Stateful filters will automatically re-evaluate whenever you change the timezone
-				 * or locale settings, but may negatively impact performance. true by default.
+				 * or language settings, but may negatively impact performance. true by default.
 				 */
 				statefulFilters: true
 			})
@@ -6374,20 +4904,21 @@
 		 *
 		 * @restrict A
 		 */
-			.directive('amTimeAgo', ['$window', 'moment', 'amMoment', 'amTimeAgoConfig', function ($window, moment, amMoment, amTimeAgoConfig) {
+			.directive('amTimeAgo', ['$window', 'moment', 'amMoment', 'amTimeAgoConfig', 'angularMomentConfig', function ($window, moment, amMoment, amTimeAgoConfig, angularMomentConfig) {
 
 				return function (scope, element, attr) {
 					var activeTimeout = null;
 					var currentValue;
+					var currentFormat = angularMomentConfig.format;
 					var withoutSuffix = amTimeAgoConfig.withoutSuffix;
 					var titleFormat = amTimeAgoConfig.titleFormat;
 					var fullDateThreshold = amTimeAgoConfig.fullDateThreshold;
 					var fullDateFormat = amTimeAgoConfig.fullDateFormat;
 					var localDate = new Date().getTime();
+					var preprocess = angularMomentConfig.preprocess;
 					var modelName = attr.amTimeAgo;
 					var currentFrom;
 					var isTimeElement = ('TIME' === element[0].nodeName.toUpperCase());
-					var setTitleTime = !element.attr('title');
 
 					function getNow() {
 						var now;
@@ -6421,7 +4952,7 @@
 							element.text(momentInstance.from(getNow(), withoutSuffix));
 						}
 
-						if (titleFormat && setTitleTime) {
+						if (titleFormat && !element.attr('title')) {
 							element.attr('title', momentInstance.local().format(titleFormat));
 						}
 
@@ -6451,14 +4982,14 @@
 					function updateMoment() {
 						cancelTimer();
 						if (currentValue) {
-							var momentValue = amMoment.preprocessDate(currentValue);
+							var momentValue = amMoment.preprocessDate(currentValue, preprocess, currentFormat);
 							updateTime(momentValue);
 							updateDateTimeAttr(momentValue.toISOString());
 						}
 					}
 
 					scope.$watch(modelName, function (value) {
-						if (isUndefinedOrNull(value) || (value === '')) {
+						if ((typeof value === 'undefined') || (value === null) || (value === '')) {
 							cancelTimer();
 							if (currentValue) {
 								element.text('');
@@ -6474,7 +5005,7 @@
 
 					if (angular.isDefined(attr.amFrom)) {
 						scope.$watch(attr.amFrom, function (value) {
-							if (isUndefinedOrNull(value) || (value === '')) {
+							if ((typeof value === 'undefined') || (value === null) || (value === '')) {
 								currentFrom = null;
 							} else {
 								currentFrom = moment(value);
@@ -6493,6 +5024,18 @@
 							}
 						});
 					}
+
+					attr.$observe('amFormat', function (format) {
+						if (typeof format !== 'undefined') {
+							currentFormat = format;
+							updateMoment();
+						}
+					});
+
+					attr.$observe('amPreprocess', function (newValue) {
+						preprocess = newValue;
+						updateMoment();
+					});
 
 					attr.$observe('amFullDateThreshold', function (newValue) {
 						fullDateThreshold = newValue;
@@ -6520,7 +5063,19 @@
 		 * @module angularMoment
 		 */
 			.service('amMoment', ['moment', '$rootScope', '$log', 'angularMomentConfig', function (moment, $rootScope, $log, angularMomentConfig) {
-				var defaultTimezone = null;
+				/**
+				 * @ngdoc property
+				 * @name angularMoment:amMoment#preprocessors
+				 * @module angularMoment
+				 *
+				 * @description
+				 * Defines the preprocessors for the preprocessDate method. By default, the following preprocessors
+				 * are defined: utc, unix.
+				 */
+				this.preprocessors = {
+					utc: moment.utc,
+					unix: moment.unix
+				};
 
 				/**
 				 * @ngdoc function
@@ -6552,19 +5107,11 @@
 				 * Changes the default timezone for amCalendar, amDateFormat and amTimeAgo. Also broadcasts an
 				 * `amMoment:timezoneChanged` event on $rootScope.
 				 *
-				 * Note: this method works only if moment-timezone > 0.3.0 is loaded
-				 *
 				 * @param {string} timezone Timezone name (e.g. UTC)
 				 */
 				this.changeTimezone = function (timezone) {
-					if (moment.tz && moment.tz.setDefault) {
-						moment.tz.setDefault(timezone);
-						$rootScope.$broadcast('amMoment:timezoneChanged');
-					} else {
-						$log.warn('angular-moment: changeTimezone() works only with moment-timezone.js v0.3.0 or greater.');
-					}
 					angularMomentConfig.timezone = timezone;
-					defaultTimezone = timezone;
+					$rootScope.$broadcast('amMoment:timezoneChanged');
 				};
 
 				/**
@@ -6574,120 +5121,62 @@
 				 *
 				 * @description
 				 * Preprocess a given value and convert it into a Moment instance appropriate for use in the
-				 * am-time-ago directive and the filters. The behavior of this function can be overriden by
-				 * setting `angularMomentConfig.preprocess`.
+				 * am-time-ago directive and the filters.
 				 *
 				 * @param {*} value The value to be preprocessed
-				 * @return {Moment} A `moment` object
+				 * @param {string} preprocess The name of the preprocessor the apply (e.g. utc, unix)
+				 * @param {string=} format Specifies how to parse the value (see {@link http://momentjs.com/docs/#/parsing/string-format/})
+				 * @return {Moment} A value that can be parsed by the moment library
 				 */
-				this.preprocessDate = function (value) {
-					// Configure the default timezone if needed
-					if (defaultTimezone !== angularMomentConfig.timezone) {
-						this.changeTimezone(angularMomentConfig.timezone);
+				this.preprocessDate = function (value, preprocess, format) {
+					if (angular.isUndefined(preprocess)) {
+						preprocess = angularMomentConfig.preprocess;
 					}
-
-					if (angularMomentConfig.preprocess) {
-						return angularMomentConfig.preprocess(value);
+					if (this.preprocessors[preprocess]) {
+						return this.preprocessors[preprocess](value, format);
 					}
-
+					if (preprocess) {
+						$log.warn('angular-moment: Ignoring unsupported value for preprocess: ' + preprocess);
+					}
 					if (!isNaN(parseFloat(value)) && isFinite(value)) {
 						// Milliseconds since the epoch
 						return moment(parseInt(value, 10));
 					}
-
 					// else just returns the value as-is.
-					return moment(value);
-				};
-			}])
-
-		/**
-		 * @ngdoc filter
-		 * @name angularMoment.filter:amParse
-		 * @module angularMoment
-		 */
-			.filter('amParse', ['moment', function (moment) {
-				return function (value, format) {
 					return moment(value, format);
 				};
-			}])
 
-		/**
-		 * @ngdoc filter
-		 * @name angularMoment.filter:amFromUnix
-		 * @module angularMoment
-		 */
-			.filter('amFromUnix', ['moment', function (moment) {
-				return function (value) {
-					return moment.unix(value);
-				};
-			}])
-
-		/**
-		 * @ngdoc filter
-		 * @name angularMoment.filter:amUtc
-		 * @module angularMoment
-		 */
-			.filter('amUtc', ['moment', function (moment) {
-				return function (value) {
-					return moment.utc(value);
-				};
-			}])
-
-		/**
-		 * @ngdoc filter
-		 * @name angularMoment.filter:amUtcOffset
-		 * @module angularMoment
-		 *
-		 * @description
-		 * Adds a UTC offset to the given timezone object. The offset can be a number of minutes, or a string such as
-		 * '+0300', '-0300' or 'Z'.
-		 */
-			.filter('amUtcOffset', ['amMoment', function (amMoment) {
-				function amUtcOffset(value, offset) {
-					return amMoment.preprocessDate(value).utcOffset(offset);
-				}
-
-				return amUtcOffset;
-			}])
-
-		/**
-		 * @ngdoc filter
-		 * @name angularMoment.filter:amLocal
-		 * @module angularMoment
-		 */
-			.filter('amLocal', ['moment', function (moment) {
-				return function (value) {
-					return moment.isMoment(value) ? value.local() : null;
-				};
-			}])
-
-		/**
-		 * @ngdoc filter
-		 * @name angularMoment.filter:amTimezone
-		 * @module angularMoment
-		 *
-		 * @description
-		 * Apply a timezone onto a given moment object, e.g. 'America/Phoenix').
-		 *
-		 * You need to include moment-timezone.js for timezone support.
-		 */
-			.filter('amTimezone', ['amMoment', 'angularMomentConfig', '$log', function (amMoment, angularMomentConfig, $log) {
-				function amTimezone(value, timezone) {
-					var aMoment = amMoment.preprocessDate(value);
-
+				/**
+				 * @ngdoc function
+				 * @name angularMoment.service.amMoment#applyTimezone
+				 * @methodOf angularMoment.service.amMoment
+				 *
+				 * @description
+				 * Apply a timezone onto a given moment object. It can be a named timezone (e.g. 'America/Phoenix') or an offset from UTC (e.g. '+0300')
+				 * moment-timezone.js is needed when a named timezone is used, otherwise, it'll not apply any timezone shift.
+				 *
+				 * @param {Moment} aMoment a moment() instance to apply the timezone shift to
+				 * @param {string=} timezone The timezone to apply. If none given, will apply the timezone
+				 *        configured in angularMomentConfig.timezone. It can be a named timezone (e.g. 'America/Phoenix') or an offset from UTC (e.g. '+0300')
+				 *
+				 * @returns {Moment} The given moment with the timezone shift applied
+				 */
+				this.applyTimezone = function (aMoment, timezone) {
+					timezone = timezone || angularMomentConfig.timezone;
 					if (!timezone) {
 						return aMoment;
 					}
 
-					if (aMoment.tz) {
-						return aMoment.tz(timezone);
+					if (timezone.match(/^Z|[+-]\d\d:?\d\d$/i)) {
+						aMoment = aMoment.utcOffset(timezone);
+					} else if (aMoment.tz) {
+						aMoment = aMoment.tz(timezone);
 					} else {
-						$log.warn('angular-moment: named timezone specified but moment.tz() is undefined. Did you forget to include moment-timezone.js ?');
-						return aMoment;
+						$log.warn('angular-moment: named timezone specified but moment.tz() is undefined. Did you forget to include moment-timezone.js?');
 					}
-				}
 
-				return amTimezone;
+					return aMoment;
+				};
 			}])
 
 		/**
@@ -6696,13 +5185,18 @@
 		 * @module angularMoment
 		 */
 			.filter('amCalendar', ['moment', 'amMoment', 'angularMomentConfig', function (moment, amMoment, angularMomentConfig) {
-				function amCalendarFilter(value) {
-					if (isUndefinedOrNull(value)) {
+				function amCalendarFilter(value, preprocess, timezone) {
+					if (typeof value === 'undefined' || value === null) {
 						return '';
 					}
 
-					var date = amMoment.preprocessDate(value);
-					return date.isValid() ? date.calendar() : '';
+					value = amMoment.preprocessDate(value, preprocess);
+					var date = moment(value);
+					if (!date.isValid()) {
+						return '';
+					}
+
+					return amMoment.applyTimezone(date, timezone).calendar();
 				}
 
 				// Since AngularJS 1.3, filters have to explicitly define being stateful
@@ -6718,19 +5212,29 @@
 		 * @module angularMoment
 		 */
 			.filter('amDifference', ['moment', 'amMoment', 'angularMomentConfig', function (moment, amMoment, angularMomentConfig) {
-				function amDifferenceFilter(value, otherValue, unit, usePrecision) {
-					if (isUndefinedOrNull(value)) {
+				function amDifferenceFilter(value, otherValue, unit, usePrecision, preprocessValue, preprocessOtherValue) {
+					if (typeof value === 'undefined' || value === null) {
 						return '';
 					}
 
-					var date = amMoment.preprocessDate(value);
-					var date2 = !isUndefinedOrNull(otherValue) ? amMoment.preprocessDate(otherValue) : moment();
-
-					if (!date.isValid() || !date2.isValid()) {
+					value = amMoment.preprocessDate(value, preprocessValue);
+					var date = moment(value);
+					if (!date.isValid()) {
 						return '';
 					}
 
-					return date.diff(date2, unit, usePrecision);
+					var date2;
+					if (typeof otherValue === 'undefined' || otherValue === null) {
+						date2 = moment();
+					} else {
+						otherValue = amMoment.preprocessDate(otherValue, preprocessOtherValue);
+						date2 = moment(otherValue);
+						if (!date2.isValid()) {
+							return '';
+						}
+					}
+
+					return amMoment.applyTimezone(date).diff(amMoment.applyTimezone(date2), unit, usePrecision);
 				}
 
 				amDifferenceFilter.$stateful = angularMomentConfig.statefulFilters;
@@ -6745,17 +5249,19 @@
 		 * @function
 		 */
 			.filter('amDateFormat', ['moment', 'amMoment', 'angularMomentConfig', function (moment, amMoment, angularMomentConfig) {
-				function amDateFormatFilter(value, format) {
-					if (isUndefinedOrNull(value)) {
+				function amDateFormatFilter(value, format, preprocess, timezone, inputFormat) {
+					var currentFormat = inputFormat || angularMomentConfig.format;
+					if (typeof value === 'undefined' || value === null) {
 						return '';
 					}
 
-					var date = amMoment.preprocessDate(value);
+					value = amMoment.preprocessDate(value, preprocess, currentFormat);
+					var date = moment(value);
 					if (!date.isValid()) {
 						return '';
 					}
 
-					return date.format(format);
+					return amMoment.applyTimezone(date, timezone).format(format);
 				}
 
 				amDateFormatFilter.$stateful = angularMomentConfig.statefulFilters;
@@ -6771,7 +5277,7 @@
 		 */
 			.filter('amDurationFormat', ['moment', 'angularMomentConfig', function (moment, angularMomentConfig) {
 				function amDurationFormatFilter(value, format, suffix) {
-					if (isUndefinedOrNull(value)) {
+					if (typeof value === 'undefined' || value === null) {
 						return '';
 					}
 
@@ -6790,25 +5296,25 @@
 		 * @function
 		 */
 			.filter('amTimeAgo', ['moment', 'amMoment', 'angularMomentConfig', function (moment, amMoment, angularMomentConfig) {
-				function amTimeAgoFilter(value, suffix, from) {
+				function amTimeAgoFilter(value, preprocess, suffix, from) {
 					var date, dateFrom;
 
-					if (isUndefinedOrNull(value)) {
+					if (typeof value === 'undefined' || value === null) {
 						return '';
 					}
 
-					value = amMoment.preprocessDate(value);
+					value = amMoment.preprocessDate(value, preprocess);
 					date = moment(value);
 					if (!date.isValid()) {
 						return '';
 					}
 
 					dateFrom = moment(from);
-					if (!isUndefinedOrNull(from) && dateFrom.isValid()) {
-						return date.from(dateFrom, suffix);
+					if (typeof from !== 'undefined' && dateFrom.isValid()) {
+						return amMoment.applyTimezone(date).from(dateFrom, suffix);
 					}
 
-					return date.fromNow(suffix);
+					return amMoment.applyTimezone(date).fromNow(suffix);
 				}
 
 				amTimeAgoFilter.$stateful = angularMomentConfig.statefulFilters;
@@ -6825,7 +5331,7 @@
 			.filter('amSubtract', ['moment', 'angularMomentConfig', function (moment, angularMomentConfig) {
 				function amSubtractFilter(value, amount, type) {
 
-					if (isUndefinedOrNull(value)) {
+					if (typeof value === 'undefined' || value === null) {
 						return '';
 					}
 
@@ -6846,7 +5352,7 @@
 			.filter('amAdd', ['moment', 'angularMomentConfig', function (moment, angularMomentConfig) {
 				function amAddFilter(value, amount, type) {
 
-					if (isUndefinedOrNull(value)) {
+					if (typeof value === 'undefined' || value === null) {
 						return '';
 					}
 
@@ -6856,55 +5362,13 @@
 				amAddFilter.$stateful = angularMomentConfig.statefulFilters;
 
 				return amAddFilter;
-			}])
-
-		/**
-		 * @ngdoc filter
-		 * @name angularMoment.filter:amStartOf
-		 * @module angularMoment
-		 * @function
-		 */
-			.filter('amStartOf', ['moment', 'angularMomentConfig', function (moment, angularMomentConfig) {
-				function amStartOfFilter(value, type) {
-
-					if (isUndefinedOrNull(value)) {
-						return '';
-					}
-
-					return moment(value).startOf(type);
-				}
-
-				amStartOfFilter.$stateful = angularMomentConfig.statefulFilters;
-
-				return amStartOfFilter;
-			}])
-
-		/**
-		 * @ngdoc filter
-		 * @name angularMoment.filter:amEndOf
-		 * @module angularMoment
-		 * @function
-		 */
-			.filter('amEndOf', ['moment', 'angularMomentConfig', function (moment, angularMomentConfig) {
-				function amEndOfFilter(value, type) {
-
-					if (isUndefinedOrNull(value)) {
-						return '';
-					}
-
-					return moment(value).endOf(type);
-				}
-
-				amEndOfFilter.$stateful = angularMomentConfig.statefulFilters;
-
-				return amEndOfFilter;
- 			}]);
+			}]);
 	}
 
 	if (typeof define === 'function' && define.amd) {
 		define(['angular', 'moment'], angularMoment);
 	} else if (typeof module !== 'undefined' && module && module.exports) {
-		angularMoment(require('angular'), require('moment'));
+		angularMoment(angular, require('moment'));
 		module.exports = 'angularMoment';
 	} else {
 		angularMoment(angular, (typeof global !== 'undefined' ? global : window).moment);
@@ -6915,9 +5379,8 @@
 //! locale : portuguese (pt)
 //! author : Jefferson : https://github.com/jalex79
 
-;(function (global, factory) {
-   typeof exports === 'object' && typeof module !== 'undefined'
-       && typeof require === 'function' ? factory(require('../moment')) :
+(function (global, factory) {
+   typeof exports === 'object' && typeof module !== 'undefined' ? factory(require('../moment')) :
    typeof define === 'function' && define.amd ? define(['moment'], factory) :
    factory(global.moment)
 }(this, function (moment) { 'use strict';
@@ -7379,7 +5842,7 @@
 
 /*!
  * ngCordova
- * v0.1.23-alpha
+ * v0.1.26-alpha
  * Copyright 2015 Drifty Co. http://drifty.com/
  * See LICENSE in this repository for license information
  */
@@ -7619,8 +6082,8 @@ angular.module('ngCordova.plugins.appVersion', [])
 
       getPackageName: function () {
         var q = $q.defer();
-        cordova.getAppVersion.getPackageName(function (package) {
-          q.resolve(package);
+        cordova.getAppVersion.getPackageName(function (pack) {
+          q.resolve(pack);
         });
 
         return q.promise;
@@ -9163,7 +7626,7 @@ angular.module('ngCordova.plugins.datePicker', [])
         options = options || {date: new Date(), mode: 'date'};
         $window.datePicker.show(options, function (date) {
           q.resolve(date);
-        }, function(error){
+        }, function (error){
           q.reject(error);
         });
         return q.promise;
@@ -9265,6 +7728,7 @@ angular.module('ngCordova.plugins.deviceMotion', [])
         if (angular.isUndefined(navigator.accelerometer) ||
         !angular.isFunction(navigator.accelerometer.getCurrentAcceleration)) {
           q.reject('Device do not support watchAcceleration');
+          return q.promise;
         }
 
         navigator.accelerometer.getCurrentAcceleration(function (result) {
@@ -9282,6 +7746,7 @@ angular.module('ngCordova.plugins.deviceMotion', [])
         if (angular.isUndefined(navigator.accelerometer) ||
         !angular.isFunction(navigator.accelerometer.watchAcceleration)) {
           q.reject('Device do not support watchAcceleration');
+          return q.promise;
         }
 
         var watchID = navigator.accelerometer.watchAcceleration(function (result) {
@@ -9433,6 +7898,71 @@ angular.module('ngCordova.plugins.dialogs', [])
 
       beep: function (times) {
         return navigator.notification.beep(times);
+      },
+
+      activityStart: function (message, title) {
+        var q = $q.defer();
+
+        if (cordova.platformId === 'android') {
+          navigator.notification.activityStart(title, message);
+          q.resolve();
+        } else {
+          q.reject(message, title);
+        }
+      
+        return q.promise;
+      },
+
+      activityStop: function () {
+        var q = $q.defer();
+
+        if (cordova.platformId === 'android') {
+          navigator.notification.activityStop();
+          q.resolve();
+        } else {
+          q.reject();
+        }
+      
+        return q.promise;
+      },
+
+      progressStart: function (message, title) {
+        var q = $q.defer();
+
+        if (cordova.platformId === 'android') {
+          navigator.notification.progressStart(title, message);
+          q.resolve();
+        } else {
+          q.reject(message, title);
+        }
+      
+        return q.promise;
+      },
+
+      progressStop: function () {
+        var q = $q.defer();
+
+        if (cordova.platformId === 'android') {
+          navigator.notification.progressStop();
+          q.resolve();
+        } else {
+          q.reject();
+        }
+      
+        return q.promise;
+      },
+
+      progressValue: function (value) {
+        var q = $q.defer();
+
+        if (cordova.platformId === 'android') {
+          navigator.notification.progressValue(value);
+          q.resolve();
+        } else {
+          q.reject(value);
+        }
+      
+        return q.promise;
       }
     };
   }]);
@@ -10316,6 +8846,34 @@ angular.module('ngCordova.plugins.file', [])
             q.reject(e);
           }
           return q.promise;
+        },
+
+        readFileMetadata: function (path, file) {
+          var q = $q.defer();
+
+          if ((/^\//.test(file))) {
+            q.reject('directory cannot start with \/');
+          }
+
+          try {
+            var directory = path + file;
+            $window.resolveLocalFileSystemURL(directory, function (fileEntry) {
+              fileEntry.file(function (result) {
+                q.resolve(result);
+              }, function (error) {
+                error.message = $cordovaFileError[error.code];
+                q.reject(error);
+              });
+            }, function (err) {
+              err.message = $cordovaFileError[err.code];
+              q.reject(err);
+            });
+          } catch (e) {
+            e.message = $cordovaFileError[e.code];
+            q.reject(e);
+          }
+
+          return q.promise;
         }
 
         /*
@@ -10351,9 +8909,6 @@ angular.module('ngCordova.plugins.file', [])
          return q.promise;
          },
 
-         readFileMetadata: function (filePath) {
-         //return getFile(filePath, {create: false});
-         }
          */
       };
 
@@ -13004,9 +11559,9 @@ angular.module('ngCordova.plugins.nativeAudio', [])
         return q.promise;
       },
 
-      preloadComplex: function (id, assetPath, volume, voices) {
+      preloadComplex: function (id, assetPath, volume, voices, delay) {
         var q = $q.defer();
-        $window.plugins.NativeAudio.preloadComplex(id, assetPath, volume, voices, function (result) {
+        $window.plugins.NativeAudio.preloadComplex(id, assetPath, volume, voices, delay, function (result) {
           q.resolve(result);
         }, function (err) {
           q.reject(err);
@@ -13017,11 +11572,11 @@ angular.module('ngCordova.plugins.nativeAudio', [])
 
       play: function (id, completeCallback) {
         var q = $q.defer();
-        $window.plugins.NativeAudio.play(id, completeCallback, function (err) {
-          q.reject(err);
-        }, function (result) {
+        $window.plugins.NativeAudio.play(id, function (result) {
           q.resolve(result);
-        });
+        }, function (err) {
+          q.reject(err);
+        }, completeCallback);
 
         return q.promise;
       },
@@ -13171,13 +11726,13 @@ angular.module('ngCordova.plugins.preferences', [])
     	 * Decorate the promise object.
     	 * @param promise The promise object.
     	 */
-    	decoratePromise: function(promise){
-    		promise.success = function(fn) {
+    	decoratePromise: function (promise){
+    		promise.success = function (fn) {
 	            promise.then(fn);
 	            return promise;
 	        };
 
-	        promise.error = function(fn) {
+	        promise.error = function (fn) {
 	            promise.then(null, fn);
 	            return promise;
 	        };
@@ -13190,7 +11745,7 @@ angular.module('ngCordova.plugins.preferences', [])
          * @param dict The dictionary. It's optional.
          * @returns Returns a promise.
     	 */
-	    store: function(key, value, dict) {
+	    store: function (key, value, dict) {
 	    	var deferred = $q.defer();
 	    	var promise = deferred.promise;
             
@@ -13225,7 +11780,7 @@ angular.module('ngCordova.plugins.preferences', [])
          * @param dict The dictionary. It's optional.
          * @returns Returns a promise.
 	     */
-	    fetch: function(key, dict) {
+	    fetch: function (key, dict) {
 	    	var deferred = $q.defer();
 	    	var promise = deferred.promise;
             
@@ -13259,7 +11814,7 @@ angular.module('ngCordova.plugins.preferences', [])
          * @param dict The dictionary. It's optional.
          * @returns Returns a promise.
 	     */
-	    remove: function(key, dict) {
+	    remove: function (key, dict) {
 	    	var deferred = $q.defer();
 	    	var promise = deferred.promise;
             
@@ -13291,7 +11846,7 @@ angular.module('ngCordova.plugins.preferences', [])
 	     * Show the application preferences.
          * @returns Returns a promise.
 	     */
-	    show: function() {
+	    show: function () {
 	    	var deferred = $q.defer();
 	    	var promise = deferred.promise;
             
@@ -13549,6 +12104,19 @@ angular.module('ngCordova.plugins.push_v5', [])
         }
         return q.promise;
       },
+      getBadgeNumber : function () {
+        var q = $q.defer();
+        if (push === undefined) {
+          q.reject(new Error('init must be called before any other operation'));
+        } else {
+          push.getApplicationIconBadgeNumber(function (success) {
+            q.resolve(success);
+          }, function (error) {
+            q.reject(error);
+          });
+        }
+        return q.promise;
+      },
       setBadgeNumber : function (number) {
         var q = $q.defer();
         if (push === undefined) {
@@ -13559,6 +12127,19 @@ angular.module('ngCordova.plugins.push_v5', [])
           }, function (error) {
             q.reject(error);
           }, number);
+        }
+        return q.promise;
+      },
+      finish: function (){
+        var q = $q.defer();
+        if (push === undefined) {
+          q.reject(new Error('init must be called before any other operation'));
+        } else {
+          push.finish(function (success) {
+            q.resolve(success);
+          }, function (error) {
+            q.reject(error);
+          });
         }
         return q.promise;
       }
@@ -14329,1289 +12910,1393 @@ angular.module('ngCordova.plugins.zip', [])
 transformation:function(){var t=o.Projection.Mercator,e=t.R_MAJOR,i=.5/(Math.PI*e);return new o.Transformation(i,.5,-i,.5)}()}),o.TileLayer=o.Class.extend({includes:o.Mixin.Events,options:{minZoom:0,maxZoom:18,tileSize:256,subdomains:"abc",errorTileUrl:"",attribution:"",zoomOffset:0,opacity:1,unloadInvisibleTiles:o.Browser.mobile,updateWhenIdle:o.Browser.mobile},initialize:function(t,e){e=o.setOptions(this,e),e.detectRetina&&o.Browser.retina&&e.maxZoom>0&&(e.tileSize=Math.floor(e.tileSize/2),e.zoomOffset++,e.minZoom>0&&e.minZoom--,this.options.maxZoom--),e.bounds&&(e.bounds=o.latLngBounds(e.bounds)),this._url=t;var i=this.options.subdomains;"string"==typeof i&&(this.options.subdomains=i.split(""))},onAdd:function(t){this._map=t,this._animated=t._zoomAnimated,this._initContainer(),t.on({viewreset:this._reset,moveend:this._update},this),this._animated&&t.on({zoomanim:this._animateZoom,zoomend:this._endZoomAnim},this),this.options.updateWhenIdle||(this._limitedUpdate=o.Util.limitExecByInterval(this._update,150,this),t.on("move",this._limitedUpdate,this)),this._reset(),this._update()},addTo:function(t){return t.addLayer(this),this},onRemove:function(t){this._container.parentNode.removeChild(this._container),t.off({viewreset:this._reset,moveend:this._update},this),this._animated&&t.off({zoomanim:this._animateZoom,zoomend:this._endZoomAnim},this),this.options.updateWhenIdle||t.off("move",this._limitedUpdate,this),this._container=null,this._map=null},bringToFront:function(){var t=this._map._panes.tilePane;return this._container&&(t.appendChild(this._container),this._setAutoZIndex(t,Math.max)),this},bringToBack:function(){var t=this._map._panes.tilePane;return this._container&&(t.insertBefore(this._container,t.firstChild),this._setAutoZIndex(t,Math.min)),this},getAttribution:function(){return this.options.attribution},getContainer:function(){return this._container},setOpacity:function(t){return this.options.opacity=t,this._map&&this._updateOpacity(),this},setZIndex:function(t){return this.options.zIndex=t,this._updateZIndex(),this},setUrl:function(t,e){return this._url=t,e||this.redraw(),this},redraw:function(){return this._map&&(this._reset({hard:!0}),this._update()),this},_updateZIndex:function(){this._container&&this.options.zIndex!==i&&(this._container.style.zIndex=this.options.zIndex)},_setAutoZIndex:function(t,e){var i,n,o,s=t.children,a=-e(1/0,-(1/0));for(n=0,o=s.length;o>n;n++)s[n]!==this._container&&(i=parseInt(s[n].style.zIndex,10),isNaN(i)||(a=e(a,i)));this.options.zIndex=this._container.style.zIndex=(isFinite(a)?a:0)+e(1,-1)},_updateOpacity:function(){var t,e=this._tiles;if(o.Browser.ielt9)for(t in e)o.DomUtil.setOpacity(e[t],this.options.opacity);else o.DomUtil.setOpacity(this._container,this.options.opacity)},_initContainer:function(){var t=this._map._panes.tilePane;if(!this._container){if(this._container=o.DomUtil.create("div","leaflet-layer"),this._updateZIndex(),this._animated){var e="leaflet-tile-container";this._bgBuffer=o.DomUtil.create("div",e,this._container),this._tileContainer=o.DomUtil.create("div",e,this._container)}else this._tileContainer=this._container;t.appendChild(this._container),this.options.opacity<1&&this._updateOpacity()}},_reset:function(t){for(var e in this._tiles)this.fire("tileunload",{tile:this._tiles[e]});this._tiles={},this._tilesToLoad=0,this.options.reuseTiles&&(this._unusedTiles=[]),this._tileContainer.innerHTML="",this._animated&&t&&t.hard&&this._clearBgBuffer(),this._initContainer()},_getTileSize:function(){var t=this._map,e=t.getZoom()+this.options.zoomOffset,i=this.options.maxNativeZoom,n=this.options.tileSize;return i&&e>i&&(n=Math.round(t.getZoomScale(e)/t.getZoomScale(i)*n)),n},_update:function(){if(this._map){var t=this._map,e=t.getPixelBounds(),i=t.getZoom(),n=this._getTileSize();if(!(i>this.options.maxZoom||i<this.options.minZoom)){var s=o.bounds(e.min.divideBy(n)._floor(),e.max.divideBy(n)._floor());this._addTilesFromCenterOut(s),(this.options.unloadInvisibleTiles||this.options.reuseTiles)&&this._removeOtherTiles(s)}}},_addTilesFromCenterOut:function(t){var i,n,s,a=[],r=t.getCenter();for(i=t.min.y;i<=t.max.y;i++)for(n=t.min.x;n<=t.max.x;n++)s=new o.Point(n,i),this._tileShouldBeLoaded(s)&&a.push(s);var h=a.length;if(0!==h){a.sort(function(t,e){return t.distanceTo(r)-e.distanceTo(r)});var l=e.createDocumentFragment();for(this._tilesToLoad||this.fire("loading"),this._tilesToLoad+=h,n=0;h>n;n++)this._addTile(a[n],l);this._tileContainer.appendChild(l)}},_tileShouldBeLoaded:function(t){if(t.x+":"+t.y in this._tiles)return!1;var e=this.options;if(!e.continuousWorld){var i=this._getWrapTileNum();if(e.noWrap&&(t.x<0||t.x>=i.x)||t.y<0||t.y>=i.y)return!1}if(e.bounds){var n=this._getTileSize(),o=t.multiplyBy(n),s=o.add([n,n]),a=this._map.unproject(o),r=this._map.unproject(s);if(e.continuousWorld||e.noWrap||(a=a.wrap(),r=r.wrap()),!e.bounds.intersects([a,r]))return!1}return!0},_removeOtherTiles:function(t){var e,i,n,o;for(o in this._tiles)e=o.split(":"),i=parseInt(e[0],10),n=parseInt(e[1],10),(i<t.min.x||i>t.max.x||n<t.min.y||n>t.max.y)&&this._removeTile(o)},_removeTile:function(t){var e=this._tiles[t];this.fire("tileunload",{tile:e,url:e.src}),this.options.reuseTiles?(o.DomUtil.removeClass(e,"leaflet-tile-loaded"),this._unusedTiles.push(e)):e.parentNode===this._tileContainer&&this._tileContainer.removeChild(e),o.Browser.android||(e.onload=null,e.src=o.Util.emptyImageUrl),delete this._tiles[t]},_addTile:function(t,e){var i=this._getTilePos(t),n=this._getTile();o.DomUtil.setPosition(n,i,o.Browser.chrome),this._tiles[t.x+":"+t.y]=n,this._loadTile(n,t),n.parentNode!==this._tileContainer&&e.appendChild(n)},_getZoomForUrl:function(){var t=this.options,e=this._map.getZoom();return t.zoomReverse&&(e=t.maxZoom-e),e+=t.zoomOffset,t.maxNativeZoom?Math.min(e,t.maxNativeZoom):e},_getTilePos:function(t){var e=this._map.getPixelOrigin(),i=this._getTileSize();return t.multiplyBy(i).subtract(e)},getTileUrl:function(t){return o.Util.template(this._url,o.extend({s:this._getSubdomain(t),z:t.z,x:t.x,y:t.y},this.options))},_getWrapTileNum:function(){var t=this._map.options.crs,e=t.getSize(this._map.getZoom());return e.divideBy(this._getTileSize())._floor()},_adjustTilePoint:function(t){var e=this._getWrapTileNum();this.options.continuousWorld||this.options.noWrap||(t.x=(t.x%e.x+e.x)%e.x),this.options.tms&&(t.y=e.y-t.y-1),t.z=this._getZoomForUrl()},_getSubdomain:function(t){var e=Math.abs(t.x+t.y)%this.options.subdomains.length;return this.options.subdomains[e]},_getTile:function(){if(this.options.reuseTiles&&this._unusedTiles.length>0){var t=this._unusedTiles.pop();return this._resetTile(t),t}return this._createTile()},_resetTile:function(){},_createTile:function(){var t=o.DomUtil.create("img","leaflet-tile");return t.style.width=t.style.height=this._getTileSize()+"px",t.galleryimg="no",t.onselectstart=t.onmousemove=o.Util.falseFn,o.Browser.ielt9&&this.options.opacity!==i&&o.DomUtil.setOpacity(t,this.options.opacity),o.Browser.mobileWebkit3d&&(t.style.WebkitBackfaceVisibility="hidden"),t},_loadTile:function(t,e){t._layer=this,t.onload=this._tileOnLoad,t.onerror=this._tileOnError,this._adjustTilePoint(e),t.src=this.getTileUrl(e),this.fire("tileloadstart",{tile:t,url:t.src})},_tileLoaded:function(){this._tilesToLoad--,this._animated&&o.DomUtil.addClass(this._tileContainer,"leaflet-zoom-animated"),this._tilesToLoad||(this.fire("load"),this._animated&&(clearTimeout(this._clearBgBufferTimer),this._clearBgBufferTimer=setTimeout(o.bind(this._clearBgBuffer,this),500)))},_tileOnLoad:function(){var t=this._layer;this.src!==o.Util.emptyImageUrl&&(o.DomUtil.addClass(this,"leaflet-tile-loaded"),t.fire("tileload",{tile:this,url:this.src})),t._tileLoaded()},_tileOnError:function(){var t=this._layer;t.fire("tileerror",{tile:this,url:this.src});var e=t.options.errorTileUrl;e&&(this.src=e),t._tileLoaded()}}),o.tileLayer=function(t,e){return new o.TileLayer(t,e)},o.TileLayer.WMS=o.TileLayer.extend({defaultWmsParams:{service:"WMS",request:"GetMap",version:"1.1.1",layers:"",styles:"",format:"image/jpeg",transparent:!1},initialize:function(t,e){this._url=t;var i=o.extend({},this.defaultWmsParams),n=e.tileSize||this.options.tileSize;e.detectRetina&&o.Browser.retina?i.width=i.height=2*n:i.width=i.height=n;for(var s in e)this.options.hasOwnProperty(s)||"crs"===s||(i[s]=e[s]);this.wmsParams=i,o.setOptions(this,e)},onAdd:function(t){this._crs=this.options.crs||t.options.crs,this._wmsVersion=parseFloat(this.wmsParams.version);var e=this._wmsVersion>=1.3?"crs":"srs";this.wmsParams[e]=this._crs.code,o.TileLayer.prototype.onAdd.call(this,t)},getTileUrl:function(t){var e=this._map,i=this.options.tileSize,n=t.multiplyBy(i),s=n.add([i,i]),a=this._crs.project(e.unproject(n,t.z)),r=this._crs.project(e.unproject(s,t.z)),h=this._wmsVersion>=1.3&&this._crs===o.CRS.EPSG4326?[r.y,a.x,a.y,r.x].join(","):[a.x,r.y,r.x,a.y].join(","),l=o.Util.template(this._url,{s:this._getSubdomain(t)});return l+o.Util.getParamString(this.wmsParams,l,!0)+"&BBOX="+h},setParams:function(t,e){return o.extend(this.wmsParams,t),e||this.redraw(),this}}),o.tileLayer.wms=function(t,e){return new o.TileLayer.WMS(t,e)},o.TileLayer.Canvas=o.TileLayer.extend({options:{async:!1},initialize:function(t){o.setOptions(this,t)},redraw:function(){this._map&&(this._reset({hard:!0}),this._update());for(var t in this._tiles)this._redrawTile(this._tiles[t]);return this},_redrawTile:function(t){this.drawTile(t,t._tilePoint,this._map._zoom)},_createTile:function(){var t=o.DomUtil.create("canvas","leaflet-tile");return t.width=t.height=this.options.tileSize,t.onselectstart=t.onmousemove=o.Util.falseFn,t},_loadTile:function(t,e){t._layer=this,t._tilePoint=e,this._redrawTile(t),this.options.async||this.tileDrawn(t)},drawTile:function(){},tileDrawn:function(t){this._tileOnLoad.call(t)}}),o.tileLayer.canvas=function(t){return new o.TileLayer.Canvas(t)},o.ImageOverlay=o.Class.extend({includes:o.Mixin.Events,options:{opacity:1},initialize:function(t,e,i){this._url=t,this._bounds=o.latLngBounds(e),o.setOptions(this,i)},onAdd:function(t){this._map=t,this._image||this._initImage(),t._panes.overlayPane.appendChild(this._image),t.on("viewreset",this._reset,this),t.options.zoomAnimation&&o.Browser.any3d&&t.on("zoomanim",this._animateZoom,this),this._reset()},onRemove:function(t){t.getPanes().overlayPane.removeChild(this._image),t.off("viewreset",this._reset,this),t.options.zoomAnimation&&t.off("zoomanim",this._animateZoom,this)},addTo:function(t){return t.addLayer(this),this},setOpacity:function(t){return this.options.opacity=t,this._updateOpacity(),this},bringToFront:function(){return this._image&&this._map._panes.overlayPane.appendChild(this._image),this},bringToBack:function(){var t=this._map._panes.overlayPane;return this._image&&t.insertBefore(this._image,t.firstChild),this},setUrl:function(t){this._url=t,this._image.src=this._url},getAttribution:function(){return this.options.attribution},_initImage:function(){this._image=o.DomUtil.create("img","leaflet-image-layer"),this._map.options.zoomAnimation&&o.Browser.any3d?o.DomUtil.addClass(this._image,"leaflet-zoom-animated"):o.DomUtil.addClass(this._image,"leaflet-zoom-hide"),this._updateOpacity(),o.extend(this._image,{galleryimg:"no",onselectstart:o.Util.falseFn,onmousemove:o.Util.falseFn,onload:o.bind(this._onImageLoad,this),src:this._url})},_animateZoom:function(t){var e=this._map,i=this._image,n=e.getZoomScale(t.zoom),s=this._bounds.getNorthWest(),a=this._bounds.getSouthEast(),r=e._latLngToNewLayerPoint(s,t.zoom,t.center),h=e._latLngToNewLayerPoint(a,t.zoom,t.center)._subtract(r),l=r._add(h._multiplyBy(.5*(1-1/n)));i.style[o.DomUtil.TRANSFORM]=o.DomUtil.getTranslateString(l)+" scale("+n+") "},_reset:function(){var t=this._image,e=this._map.latLngToLayerPoint(this._bounds.getNorthWest()),i=this._map.latLngToLayerPoint(this._bounds.getSouthEast())._subtract(e);o.DomUtil.setPosition(t,e),t.style.width=i.x+"px",t.style.height=i.y+"px"},_onImageLoad:function(){this.fire("load")},_updateOpacity:function(){o.DomUtil.setOpacity(this._image,this.options.opacity)}}),o.imageOverlay=function(t,e,i){return new o.ImageOverlay(t,e,i)},o.Icon=o.Class.extend({options:{className:""},initialize:function(t){o.setOptions(this,t)},createIcon:function(t){return this._createIcon("icon",t)},createShadow:function(t){return this._createIcon("shadow",t)},_createIcon:function(t,e){var i=this._getIconUrl(t);if(!i){if("icon"===t)throw new Error("iconUrl not set in Icon options (see the docs).");return null}var n;return n=e&&"IMG"===e.tagName?this._createImg(i,e):this._createImg(i),this._setIconStyles(n,t),n},_setIconStyles:function(t,e){var i,n=this.options,s=o.point(n[e+"Size"]);i="shadow"===e?o.point(n.shadowAnchor||n.iconAnchor):o.point(n.iconAnchor),!i&&s&&(i=s.divideBy(2,!0)),t.className="leaflet-marker-"+e+" "+n.className,i&&(t.style.marginLeft=-i.x+"px",t.style.marginTop=-i.y+"px"),s&&(t.style.width=s.x+"px",t.style.height=s.y+"px")},_createImg:function(t,i){return i=i||e.createElement("img"),i.src=t,i},_getIconUrl:function(t){return o.Browser.retina&&this.options[t+"RetinaUrl"]?this.options[t+"RetinaUrl"]:this.options[t+"Url"]}}),o.icon=function(t){return new o.Icon(t)},o.Icon.Default=o.Icon.extend({options:{iconSize:[25,41],iconAnchor:[12,41],popupAnchor:[1,-34],shadowSize:[41,41]},_getIconUrl:function(t){var e=t+"Url";if(this.options[e])return this.options[e];o.Browser.retina&&"icon"===t&&(t+="-2x");var i=o.Icon.Default.imagePath;if(!i)throw new Error("Couldn't autodetect L.Icon.Default.imagePath, set it manually.");return i+"/marker-"+t+".png"}}),o.Icon.Default.imagePath=function(){var t,i,n,o,s,a=e.getElementsByTagName("script"),r=/[\/^]leaflet[\-\._]?([\w\-\._]*)\.js\??/;for(t=0,i=a.length;i>t;t++)if(n=a[t].src,o=n.match(r))return s=n.split(r)[0],(s?s+"/":"")+"images"}(),o.Marker=o.Class.extend({includes:o.Mixin.Events,options:{icon:new o.Icon.Default,title:"",alt:"",clickable:!0,draggable:!1,keyboard:!0,zIndexOffset:0,opacity:1,riseOnHover:!1,riseOffset:250},initialize:function(t,e){o.setOptions(this,e),this._latlng=o.latLng(t)},onAdd:function(t){this._map=t,t.on("viewreset",this.update,this),this._initIcon(),this.update(),this.fire("add"),t.options.zoomAnimation&&t.options.markerZoomAnimation&&t.on("zoomanim",this._animateZoom,this)},addTo:function(t){return t.addLayer(this),this},onRemove:function(t){this.dragging&&this.dragging.disable(),this._removeIcon(),this._removeShadow(),this.fire("remove"),t.off({viewreset:this.update,zoomanim:this._animateZoom},this),this._map=null},getLatLng:function(){return this._latlng},setLatLng:function(t){return this._latlng=o.latLng(t),this.update(),this.fire("move",{latlng:this._latlng})},setZIndexOffset:function(t){return this.options.zIndexOffset=t,this.update(),this},setIcon:function(t){return this.options.icon=t,this._map&&(this._initIcon(),this.update()),this._popup&&this.bindPopup(this._popup),this},update:function(){return this._icon&&this._setPos(this._map.latLngToLayerPoint(this._latlng).round()),this},_initIcon:function(){var t=this.options,e=this._map,i=e.options.zoomAnimation&&e.options.markerZoomAnimation,n=i?"leaflet-zoom-animated":"leaflet-zoom-hide",s=t.icon.createIcon(this._icon),a=!1;s!==this._icon&&(this._icon&&this._removeIcon(),a=!0,t.title&&(s.title=t.title),t.alt&&(s.alt=t.alt)),o.DomUtil.addClass(s,n),t.keyboard&&(s.tabIndex="0"),this._icon=s,this._initInteraction(),t.riseOnHover&&o.DomEvent.on(s,"mouseover",this._bringToFront,this).on(s,"mouseout",this._resetZIndex,this);var r=t.icon.createShadow(this._shadow),h=!1;r!==this._shadow&&(this._removeShadow(),h=!0),r&&o.DomUtil.addClass(r,n),this._shadow=r,t.opacity<1&&this._updateOpacity();var l=this._map._panes;a&&l.markerPane.appendChild(this._icon),r&&h&&l.shadowPane.appendChild(this._shadow)},_removeIcon:function(){this.options.riseOnHover&&o.DomEvent.off(this._icon,"mouseover",this._bringToFront).off(this._icon,"mouseout",this._resetZIndex),this._map._panes.markerPane.removeChild(this._icon),this._icon=null},_removeShadow:function(){this._shadow&&this._map._panes.shadowPane.removeChild(this._shadow),this._shadow=null},_setPos:function(t){o.DomUtil.setPosition(this._icon,t),this._shadow&&o.DomUtil.setPosition(this._shadow,t),this._zIndex=t.y+this.options.zIndexOffset,this._resetZIndex()},_updateZIndex:function(t){this._icon.style.zIndex=this._zIndex+t},_animateZoom:function(t){var e=this._map._latLngToNewLayerPoint(this._latlng,t.zoom,t.center).round();this._setPos(e)},_initInteraction:function(){if(this.options.clickable){var t=this._icon,e=["dblclick","mousedown","mouseover","mouseout","contextmenu"];o.DomUtil.addClass(t,"leaflet-clickable"),o.DomEvent.on(t,"click",this._onMouseClick,this),o.DomEvent.on(t,"keypress",this._onKeyPress,this);for(var i=0;i<e.length;i++)o.DomEvent.on(t,e[i],this._fireMouseEvent,this);o.Handler.MarkerDrag&&(this.dragging=new o.Handler.MarkerDrag(this),this.options.draggable&&this.dragging.enable())}},_onMouseClick:function(t){var e=this.dragging&&this.dragging.moved();(this.hasEventListeners(t.type)||e)&&o.DomEvent.stopPropagation(t),e||(this.dragging&&this.dragging._enabled||!this._map.dragging||!this._map.dragging.moved())&&this.fire(t.type,{originalEvent:t,latlng:this._latlng})},_onKeyPress:function(t){13===t.keyCode&&this.fire("click",{originalEvent:t,latlng:this._latlng})},_fireMouseEvent:function(t){this.fire(t.type,{originalEvent:t,latlng:this._latlng}),"contextmenu"===t.type&&this.hasEventListeners(t.type)&&o.DomEvent.preventDefault(t),"mousedown"!==t.type?o.DomEvent.stopPropagation(t):o.DomEvent.preventDefault(t)},setOpacity:function(t){return this.options.opacity=t,this._map&&this._updateOpacity(),this},_updateOpacity:function(){o.DomUtil.setOpacity(this._icon,this.options.opacity),this._shadow&&o.DomUtil.setOpacity(this._shadow,this.options.opacity)},_bringToFront:function(){this._updateZIndex(this.options.riseOffset)},_resetZIndex:function(){this._updateZIndex(0)}}),o.marker=function(t,e){return new o.Marker(t,e)},o.DivIcon=o.Icon.extend({options:{iconSize:[12,12],className:"leaflet-div-icon",html:!1},createIcon:function(t){var i=t&&"DIV"===t.tagName?t:e.createElement("div"),n=this.options;return n.html!==!1?i.innerHTML=n.html:i.innerHTML="",n.bgPos&&(i.style.backgroundPosition=-n.bgPos.x+"px "+-n.bgPos.y+"px"),this._setIconStyles(i,"icon"),i},createShadow:function(){return null}}),o.divIcon=function(t){return new o.DivIcon(t)},o.Map.mergeOptions({closePopupOnClick:!0}),o.Popup=o.Class.extend({includes:o.Mixin.Events,options:{minWidth:50,maxWidth:300,autoPan:!0,closeButton:!0,offset:[0,7],autoPanPadding:[5,5],keepInView:!1,className:"",zoomAnimation:!0},initialize:function(t,e){o.setOptions(this,t),this._source=e,this._animated=o.Browser.any3d&&this.options.zoomAnimation,this._isOpen=!1},onAdd:function(t){this._map=t,this._container||this._initLayout();var e=t.options.fadeAnimation;e&&o.DomUtil.setOpacity(this._container,0),t._panes.popupPane.appendChild(this._container),t.on(this._getEvents(),this),this.update(),e&&o.DomUtil.setOpacity(this._container,1),this.fire("open"),t.fire("popupopen",{popup:this}),this._source&&this._source.fire("popupopen",{popup:this})},addTo:function(t){return t.addLayer(this),this},openOn:function(t){return t.openPopup(this),this},onRemove:function(t){t._panes.popupPane.removeChild(this._container),o.Util.falseFn(this._container.offsetWidth),t.off(this._getEvents(),this),t.options.fadeAnimation&&o.DomUtil.setOpacity(this._container,0),this._map=null,this.fire("close"),t.fire("popupclose",{popup:this}),this._source&&this._source.fire("popupclose",{popup:this})},getLatLng:function(){return this._latlng},setLatLng:function(t){return this._latlng=o.latLng(t),this._map&&(this._updatePosition(),this._adjustPan()),this},getContent:function(){return this._content},setContent:function(t){return this._content=t,this.update(),this},update:function(){this._map&&(this._container.style.visibility="hidden",this._updateContent(),this._updateLayout(),this._updatePosition(),this._container.style.visibility="",this._adjustPan())},_getEvents:function(){var t={viewreset:this._updatePosition};return this._animated&&(t.zoomanim=this._zoomAnimation),("closeOnClick"in this.options?this.options.closeOnClick:this._map.options.closePopupOnClick)&&(t.preclick=this._close),this.options.keepInView&&(t.moveend=this._adjustPan),t},_close:function(){this._map&&this._map.closePopup(this)},_initLayout:function(){var t,e="leaflet-popup",i=e+" "+this.options.className+" leaflet-zoom-"+(this._animated?"animated":"hide"),n=this._container=o.DomUtil.create("div",i);this.options.closeButton&&(t=this._closeButton=o.DomUtil.create("a",e+"-close-button",n),t.href="#close",t.innerHTML="&#215;",o.DomEvent.disableClickPropagation(t),o.DomEvent.on(t,"click",this._onCloseButtonClick,this));var s=this._wrapper=o.DomUtil.create("div",e+"-content-wrapper",n);o.DomEvent.disableClickPropagation(s),this._contentNode=o.DomUtil.create("div",e+"-content",s),o.DomEvent.disableScrollPropagation(this._contentNode),o.DomEvent.on(s,"contextmenu",o.DomEvent.stopPropagation),this._tipContainer=o.DomUtil.create("div",e+"-tip-container",n),this._tip=o.DomUtil.create("div",e+"-tip",this._tipContainer)},_updateContent:function(){if(this._content){if("string"==typeof this._content)this._contentNode.innerHTML=this._content;else{for(;this._contentNode.hasChildNodes();)this._contentNode.removeChild(this._contentNode.firstChild);this._contentNode.appendChild(this._content)}this.fire("contentupdate")}},_updateLayout:function(){var t=this._contentNode,e=t.style;e.width="",e.whiteSpace="nowrap";var i=t.offsetWidth;i=Math.min(i,this.options.maxWidth),i=Math.max(i,this.options.minWidth),e.width=i+1+"px",e.whiteSpace="",e.height="";var n=t.offsetHeight,s=this.options.maxHeight,a="leaflet-popup-scrolled";s&&n>s?(e.height=s+"px",o.DomUtil.addClass(t,a)):o.DomUtil.removeClass(t,a),this._containerWidth=this._container.offsetWidth},_updatePosition:function(){if(this._map){var t=this._map.latLngToLayerPoint(this._latlng),e=this._animated,i=o.point(this.options.offset);e&&o.DomUtil.setPosition(this._container,t),this._containerBottom=-i.y-(e?0:t.y),this._containerLeft=-Math.round(this._containerWidth/2)+i.x+(e?0:t.x),this._container.style.bottom=this._containerBottom+"px",this._container.style.left=this._containerLeft+"px"}},_zoomAnimation:function(t){var e=this._map._latLngToNewLayerPoint(this._latlng,t.zoom,t.center);o.DomUtil.setPosition(this._container,e)},_adjustPan:function(){if(this.options.autoPan){var t=this._map,e=this._container.offsetHeight,i=this._containerWidth,n=new o.Point(this._containerLeft,-e-this._containerBottom);this._animated&&n._add(o.DomUtil.getPosition(this._container));var s=t.layerPointToContainerPoint(n),a=o.point(this.options.autoPanPadding),r=o.point(this.options.autoPanPaddingTopLeft||a),h=o.point(this.options.autoPanPaddingBottomRight||a),l=t.getSize(),u=0,c=0;s.x+i+h.x>l.x&&(u=s.x+i-l.x+h.x),s.x-u-r.x<0&&(u=s.x-r.x),s.y+e+h.y>l.y&&(c=s.y+e-l.y+h.y),s.y-c-r.y<0&&(c=s.y-r.y),(u||c)&&t.fire("autopanstart").panBy([u,c])}},_onCloseButtonClick:function(t){this._close(),o.DomEvent.stop(t)}}),o.popup=function(t,e){return new o.Popup(t,e)},o.Map.include({openPopup:function(t,e,i){if(this.closePopup(),!(t instanceof o.Popup)){var n=t;t=new o.Popup(i).setLatLng(e).setContent(n)}return t._isOpen=!0,this._popup=t,this.addLayer(t)},closePopup:function(t){return t&&t!==this._popup||(t=this._popup,this._popup=null),t&&(this.removeLayer(t),t._isOpen=!1),this}}),o.Marker.include({openPopup:function(){return this._popup&&this._map&&!this._map.hasLayer(this._popup)&&(this._popup.setLatLng(this._latlng),this._map.openPopup(this._popup)),this},closePopup:function(){return this._popup&&this._popup._close(),this},togglePopup:function(){return this._popup&&(this._popup._isOpen?this.closePopup():this.openPopup()),this},bindPopup:function(t,e){var i=o.point(this.options.icon.options.popupAnchor||[0,0]);return i=i.add(o.Popup.prototype.options.offset),e&&e.offset&&(i=i.add(e.offset)),e=o.extend({offset:i},e),this._popupHandlersAdded||(this.on("click",this.togglePopup,this).on("remove",this.closePopup,this).on("move",this._movePopup,this),this._popupHandlersAdded=!0),t instanceof o.Popup?(o.setOptions(t,e),this._popup=t,t._source=this):this._popup=new o.Popup(e,this).setContent(t),this},setPopupContent:function(t){return this._popup&&this._popup.setContent(t),this},unbindPopup:function(){return this._popup&&(this._popup=null,this.off("click",this.togglePopup,this).off("remove",this.closePopup,this).off("move",this._movePopup,this),this._popupHandlersAdded=!1),this},getPopup:function(){return this._popup},_movePopup:function(t){this._popup.setLatLng(t.latlng)}}),o.LayerGroup=o.Class.extend({initialize:function(t){this._layers={};var e,i;if(t)for(e=0,i=t.length;i>e;e++)this.addLayer(t[e])},addLayer:function(t){var e=this.getLayerId(t);return this._layers[e]=t,this._map&&this._map.addLayer(t),this},removeLayer:function(t){var e=t in this._layers?t:this.getLayerId(t);return this._map&&this._layers[e]&&this._map.removeLayer(this._layers[e]),delete this._layers[e],this},hasLayer:function(t){return t?t in this._layers||this.getLayerId(t)in this._layers:!1},clearLayers:function(){return this.eachLayer(this.removeLayer,this),this},invoke:function(t){var e,i,n=Array.prototype.slice.call(arguments,1);for(e in this._layers)i=this._layers[e],i[t]&&i[t].apply(i,n);return this},onAdd:function(t){this._map=t,this.eachLayer(t.addLayer,t)},onRemove:function(t){this.eachLayer(t.removeLayer,t),this._map=null},addTo:function(t){return t.addLayer(this),this},eachLayer:function(t,e){for(var i in this._layers)t.call(e,this._layers[i]);return this},getLayer:function(t){return this._layers[t]},getLayers:function(){var t=[];for(var e in this._layers)t.push(this._layers[e]);return t},setZIndex:function(t){return this.invoke("setZIndex",t)},getLayerId:function(t){return o.stamp(t)}}),o.layerGroup=function(t){return new o.LayerGroup(t)},o.FeatureGroup=o.LayerGroup.extend({includes:o.Mixin.Events,statics:{EVENTS:"click dblclick mouseover mouseout mousemove contextmenu popupopen popupclose"},addLayer:function(t){return this.hasLayer(t)?this:("on"in t&&t.on(o.FeatureGroup.EVENTS,this._propagateEvent,this),o.LayerGroup.prototype.addLayer.call(this,t),this._popupContent&&t.bindPopup&&t.bindPopup(this._popupContent,this._popupOptions),this.fire("layeradd",{layer:t}))},removeLayer:function(t){return this.hasLayer(t)?(t in this._layers&&(t=this._layers[t]),"off"in t&&t.off(o.FeatureGroup.EVENTS,this._propagateEvent,this),o.LayerGroup.prototype.removeLayer.call(this,t),this._popupContent&&this.invoke("unbindPopup"),this.fire("layerremove",{layer:t})):this},bindPopup:function(t,e){return this._popupContent=t,this._popupOptions=e,this.invoke("bindPopup",t,e)},openPopup:function(t){for(var e in this._layers){this._layers[e].openPopup(t);break}return this},setStyle:function(t){return this.invoke("setStyle",t)},bringToFront:function(){return this.invoke("bringToFront")},bringToBack:function(){return this.invoke("bringToBack")},getBounds:function(){var t=new o.LatLngBounds;return this.eachLayer(function(e){t.extend(e instanceof o.Marker?e.getLatLng():e.getBounds())}),t},_propagateEvent:function(t){t=o.extend({layer:t.target,target:this},t),this.fire(t.type,t)}}),o.featureGroup=function(t){return new o.FeatureGroup(t)},o.Path=o.Class.extend({includes:[o.Mixin.Events],statics:{CLIP_PADDING:function(){var e=o.Browser.mobile?1280:2e3,i=(e/Math.max(t.outerWidth,t.outerHeight)-1)/2;return Math.max(0,Math.min(.5,i))}()},options:{stroke:!0,color:"#0033ff",dashArray:null,lineCap:null,lineJoin:null,weight:5,opacity:.5,fill:!1,fillColor:null,fillOpacity:.2,clickable:!0},initialize:function(t){o.setOptions(this,t)},onAdd:function(t){this._map=t,this._container||(this._initElements(),this._initEvents()),this.projectLatlngs(),this._updatePath(),this._container&&this._map._pathRoot.appendChild(this._container),this.fire("add"),t.on({viewreset:this.projectLatlngs,moveend:this._updatePath},this)},addTo:function(t){return t.addLayer(this),this},onRemove:function(t){t._pathRoot.removeChild(this._container),this.fire("remove"),this._map=null,o.Browser.vml&&(this._container=null,this._stroke=null,this._fill=null),t.off({viewreset:this.projectLatlngs,moveend:this._updatePath},this)},projectLatlngs:function(){},setStyle:function(t){return o.setOptions(this,t),this._container&&this._updateStyle(),this},redraw:function(){return this._map&&(this.projectLatlngs(),this._updatePath()),this}}),o.Map.include({_updatePathViewport:function(){var t=o.Path.CLIP_PADDING,e=this.getSize(),i=o.DomUtil.getPosition(this._mapPane),n=i.multiplyBy(-1)._subtract(e.multiplyBy(t)._round()),s=n.add(e.multiplyBy(1+2*t)._round());this._pathViewport=new o.Bounds(n,s)}}),o.Path.SVG_NS="http://www.w3.org/2000/svg",o.Browser.svg=!(!e.createElementNS||!e.createElementNS(o.Path.SVG_NS,"svg").createSVGRect),o.Path=o.Path.extend({statics:{SVG:o.Browser.svg},bringToFront:function(){var t=this._map._pathRoot,e=this._container;return e&&t.lastChild!==e&&t.appendChild(e),this},bringToBack:function(){var t=this._map._pathRoot,e=this._container,i=t.firstChild;return e&&i!==e&&t.insertBefore(e,i),this},getPathString:function(){},_createElement:function(t){return e.createElementNS(o.Path.SVG_NS,t)},_initElements:function(){this._map._initPathRoot(),this._initPath(),this._initStyle()},_initPath:function(){this._container=this._createElement("g"),this._path=this._createElement("path"),this.options.className&&o.DomUtil.addClass(this._path,this.options.className),this._container.appendChild(this._path)},_initStyle:function(){this.options.stroke&&(this._path.setAttribute("stroke-linejoin","round"),this._path.setAttribute("stroke-linecap","round")),this.options.fill&&this._path.setAttribute("fill-rule","evenodd"),this.options.pointerEvents&&this._path.setAttribute("pointer-events",this.options.pointerEvents),this.options.clickable||this.options.pointerEvents||this._path.setAttribute("pointer-events","none"),this._updateStyle()},_updateStyle:function(){this.options.stroke?(this._path.setAttribute("stroke",this.options.color),this._path.setAttribute("stroke-opacity",this.options.opacity),this._path.setAttribute("stroke-width",this.options.weight),this.options.dashArray?this._path.setAttribute("stroke-dasharray",this.options.dashArray):this._path.removeAttribute("stroke-dasharray"),this.options.lineCap&&this._path.setAttribute("stroke-linecap",this.options.lineCap),this.options.lineJoin&&this._path.setAttribute("stroke-linejoin",this.options.lineJoin)):this._path.setAttribute("stroke","none"),this.options.fill?(this._path.setAttribute("fill",this.options.fillColor||this.options.color),this._path.setAttribute("fill-opacity",this.options.fillOpacity)):this._path.setAttribute("fill","none")},_updatePath:function(){var t=this.getPathString();t||(t="M0 0"),this._path.setAttribute("d",t)},_initEvents:function(){if(this.options.clickable){(o.Browser.svg||!o.Browser.vml)&&o.DomUtil.addClass(this._path,"leaflet-clickable"),o.DomEvent.on(this._container,"click",this._onMouseClick,this);for(var t=["dblclick","mousedown","mouseover","mouseout","mousemove","contextmenu"],e=0;e<t.length;e++)o.DomEvent.on(this._container,t[e],this._fireMouseEvent,this)}},_onMouseClick:function(t){this._map.dragging&&this._map.dragging.moved()||this._fireMouseEvent(t)},_fireMouseEvent:function(t){if(this._map&&this.hasEventListeners(t.type)){var e=this._map,i=e.mouseEventToContainerPoint(t),n=e.containerPointToLayerPoint(i),s=e.layerPointToLatLng(n);this.fire(t.type,{latlng:s,layerPoint:n,containerPoint:i,originalEvent:t}),"contextmenu"===t.type&&o.DomEvent.preventDefault(t),"mousemove"!==t.type&&o.DomEvent.stopPropagation(t)}}}),o.Map.include({_initPathRoot:function(){this._pathRoot||(this._pathRoot=o.Path.prototype._createElement("svg"),this._panes.overlayPane.appendChild(this._pathRoot),this.options.zoomAnimation&&o.Browser.any3d?(o.DomUtil.addClass(this._pathRoot,"leaflet-zoom-animated"),
 this.on({zoomanim:this._animatePathZoom,zoomend:this._endPathZoom})):o.DomUtil.addClass(this._pathRoot,"leaflet-zoom-hide"),this.on("moveend",this._updateSvgViewport),this._updateSvgViewport())},_animatePathZoom:function(t){var e=this.getZoomScale(t.zoom),i=this._getCenterOffset(t.center)._multiplyBy(-e)._add(this._pathViewport.min);this._pathRoot.style[o.DomUtil.TRANSFORM]=o.DomUtil.getTranslateString(i)+" scale("+e+") ",this._pathZooming=!0},_endPathZoom:function(){this._pathZooming=!1},_updateSvgViewport:function(){if(!this._pathZooming){this._updatePathViewport();var t=this._pathViewport,e=t.min,i=t.max,n=i.x-e.x,s=i.y-e.y,a=this._pathRoot,r=this._panes.overlayPane;o.Browser.mobileWebkit&&r.removeChild(a),o.DomUtil.setPosition(a,e),a.setAttribute("width",n),a.setAttribute("height",s),a.setAttribute("viewBox",[e.x,e.y,n,s].join(" ")),o.Browser.mobileWebkit&&r.appendChild(a)}}}),o.Path.include({bindPopup:function(t,e){return t instanceof o.Popup?this._popup=t:((!this._popup||e)&&(this._popup=new o.Popup(e,this)),this._popup.setContent(t)),this._popupHandlersAdded||(this.on("click",this._openPopup,this).on("remove",this.closePopup,this),this._popupHandlersAdded=!0),this},unbindPopup:function(){return this._popup&&(this._popup=null,this.off("click",this._openPopup).off("remove",this.closePopup),this._popupHandlersAdded=!1),this},openPopup:function(t){return this._popup&&(t=t||this._latlng||this._latlngs[Math.floor(this._latlngs.length/2)],this._openPopup({latlng:t})),this},closePopup:function(){return this._popup&&this._popup._close(),this},_openPopup:function(t){this._popup.setLatLng(t.latlng),this._map.openPopup(this._popup)}}),o.Browser.vml=!o.Browser.svg&&function(){try{var t=e.createElement("div");t.innerHTML='<v:shape adj="1"/>';var i=t.firstChild;return i.style.behavior="url(#default#VML)",i&&"object"==typeof i.adj}catch(n){return!1}}(),o.Path=o.Browser.svg||!o.Browser.vml?o.Path:o.Path.extend({statics:{VML:!0,CLIP_PADDING:.02},_createElement:function(){try{return e.namespaces.add("lvml","urn:schemas-microsoft-com:vml"),function(t){return e.createElement("<lvml:"+t+' class="lvml">')}}catch(t){return function(t){return e.createElement("<"+t+' xmlns="urn:schemas-microsoft.com:vml" class="lvml">')}}}(),_initPath:function(){var t=this._container=this._createElement("shape");o.DomUtil.addClass(t,"leaflet-vml-shape"+(this.options.className?" "+this.options.className:"")),this.options.clickable&&o.DomUtil.addClass(t,"leaflet-clickable"),t.coordsize="1 1",this._path=this._createElement("path"),t.appendChild(this._path),this._map._pathRoot.appendChild(t)},_initStyle:function(){this._updateStyle()},_updateStyle:function(){var t=this._stroke,e=this._fill,i=this.options,n=this._container;n.stroked=i.stroke,n.filled=i.fill,i.stroke?(t||(t=this._stroke=this._createElement("stroke"),t.endcap="round",n.appendChild(t)),t.weight=i.weight+"px",t.color=i.color,t.opacity=i.opacity,i.dashArray?t.dashStyle=o.Util.isArray(i.dashArray)?i.dashArray.join(" "):i.dashArray.replace(/( *, *)/g," "):t.dashStyle="",i.lineCap&&(t.endcap=i.lineCap.replace("butt","flat")),i.lineJoin&&(t.joinstyle=i.lineJoin)):t&&(n.removeChild(t),this._stroke=null),i.fill?(e||(e=this._fill=this._createElement("fill"),n.appendChild(e)),e.color=i.fillColor||i.color,e.opacity=i.fillOpacity):e&&(n.removeChild(e),this._fill=null)},_updatePath:function(){var t=this._container.style;t.display="none",this._path.v=this.getPathString()+" ",t.display=""}}),o.Map.include(o.Browser.svg||!o.Browser.vml?{}:{_initPathRoot:function(){if(!this._pathRoot){var t=this._pathRoot=e.createElement("div");t.className="leaflet-vml-container",this._panes.overlayPane.appendChild(t),this.on("moveend",this._updatePathViewport),this._updatePathViewport()}}}),o.Browser.canvas=function(){return!!e.createElement("canvas").getContext}(),o.Path=o.Path.SVG&&!t.L_PREFER_CANVAS||!o.Browser.canvas?o.Path:o.Path.extend({statics:{CANVAS:!0,SVG:!1},redraw:function(){return this._map&&(this.projectLatlngs(),this._requestUpdate()),this},setStyle:function(t){return o.setOptions(this,t),this._map&&(this._updateStyle(),this._requestUpdate()),this},onRemove:function(t){t.off("viewreset",this.projectLatlngs,this).off("moveend",this._updatePath,this),this.options.clickable&&(this._map.off("click",this._onClick,this),this._map.off("mousemove",this._onMouseMove,this)),this._requestUpdate(),this.fire("remove"),this._map=null},_requestUpdate:function(){this._map&&!o.Path._updateRequest&&(o.Path._updateRequest=o.Util.requestAnimFrame(this._fireMapMoveEnd,this._map))},_fireMapMoveEnd:function(){o.Path._updateRequest=null,this.fire("moveend")},_initElements:function(){this._map._initPathRoot(),this._ctx=this._map._canvasCtx},_updateStyle:function(){var t=this.options;t.stroke&&(this._ctx.lineWidth=t.weight,this._ctx.strokeStyle=t.color),t.fill&&(this._ctx.fillStyle=t.fillColor||t.color),t.lineCap&&(this._ctx.lineCap=t.lineCap),t.lineJoin&&(this._ctx.lineJoin=t.lineJoin)},_drawPath:function(){var t,e,i,n,s,a;for(this._ctx.beginPath(),t=0,i=this._parts.length;i>t;t++){for(e=0,n=this._parts[t].length;n>e;e++)s=this._parts[t][e],a=(0===e?"move":"line")+"To",this._ctx[a](s.x,s.y);this instanceof o.Polygon&&this._ctx.closePath()}},_checkIfEmpty:function(){return!this._parts.length},_updatePath:function(){if(!this._checkIfEmpty()){var t=this._ctx,e=this.options;this._drawPath(),t.save(),this._updateStyle(),e.fill&&(t.globalAlpha=e.fillOpacity,t.fill(e.fillRule||"evenodd")),e.stroke&&(t.globalAlpha=e.opacity,t.stroke()),t.restore()}},_initEvents:function(){this.options.clickable&&(this._map.on("mousemove",this._onMouseMove,this),this._map.on("click dblclick contextmenu",this._fireMouseEvent,this))},_fireMouseEvent:function(t){this._containsPoint(t.layerPoint)&&this.fire(t.type,t)},_onMouseMove:function(t){this._map&&!this._map._animatingZoom&&(this._containsPoint(t.layerPoint)?(this._ctx.canvas.style.cursor="pointer",this._mouseInside=!0,this.fire("mouseover",t)):this._mouseInside&&(this._ctx.canvas.style.cursor="",this._mouseInside=!1,this.fire("mouseout",t)))}}),o.Map.include(o.Path.SVG&&!t.L_PREFER_CANVAS||!o.Browser.canvas?{}:{_initPathRoot:function(){var t,i=this._pathRoot;i||(i=this._pathRoot=e.createElement("canvas"),i.style.position="absolute",t=this._canvasCtx=i.getContext("2d"),t.lineCap="round",t.lineJoin="round",this._panes.overlayPane.appendChild(i),this.options.zoomAnimation&&(this._pathRoot.className="leaflet-zoom-animated",this.on("zoomanim",this._animatePathZoom),this.on("zoomend",this._endPathZoom)),this.on("moveend",this._updateCanvasViewport),this._updateCanvasViewport())},_updateCanvasViewport:function(){if(!this._pathZooming){this._updatePathViewport();var t=this._pathViewport,e=t.min,i=t.max.subtract(e),n=this._pathRoot;o.DomUtil.setPosition(n,e),n.width=i.x,n.height=i.y,n.getContext("2d").translate(-e.x,-e.y)}}}),o.LineUtil={simplify:function(t,e){if(!e||!t.length)return t.slice();var i=e*e;return t=this._reducePoints(t,i),t=this._simplifyDP(t,i)},pointToSegmentDistance:function(t,e,i){return Math.sqrt(this._sqClosestPointOnSegment(t,e,i,!0))},closestPointOnSegment:function(t,e,i){return this._sqClosestPointOnSegment(t,e,i)},_simplifyDP:function(t,e){var n=t.length,o=typeof Uint8Array!=i+""?Uint8Array:Array,s=new o(n);s[0]=s[n-1]=1,this._simplifyDPStep(t,s,e,0,n-1);var a,r=[];for(a=0;n>a;a++)s[a]&&r.push(t[a]);return r},_simplifyDPStep:function(t,e,i,n,o){var s,a,r,h=0;for(a=n+1;o-1>=a;a++)r=this._sqClosestPointOnSegment(t[a],t[n],t[o],!0),r>h&&(s=a,h=r);h>i&&(e[s]=1,this._simplifyDPStep(t,e,i,n,s),this._simplifyDPStep(t,e,i,s,o))},_reducePoints:function(t,e){for(var i=[t[0]],n=1,o=0,s=t.length;s>n;n++)this._sqDist(t[n],t[o])>e&&(i.push(t[n]),o=n);return s-1>o&&i.push(t[s-1]),i},clipSegment:function(t,e,i,n){var o,s,a,r=n?this._lastCode:this._getBitCode(t,i),h=this._getBitCode(e,i);for(this._lastCode=h;;){if(!(r|h))return[t,e];if(r&h)return!1;o=r||h,s=this._getEdgeIntersection(t,e,o,i),a=this._getBitCode(s,i),o===r?(t=s,r=a):(e=s,h=a)}},_getEdgeIntersection:function(t,e,i,n){var s=e.x-t.x,a=e.y-t.y,r=n.min,h=n.max;return 8&i?new o.Point(t.x+s*(h.y-t.y)/a,h.y):4&i?new o.Point(t.x+s*(r.y-t.y)/a,r.y):2&i?new o.Point(h.x,t.y+a*(h.x-t.x)/s):1&i?new o.Point(r.x,t.y+a*(r.x-t.x)/s):void 0},_getBitCode:function(t,e){var i=0;return t.x<e.min.x?i|=1:t.x>e.max.x&&(i|=2),t.y<e.min.y?i|=4:t.y>e.max.y&&(i|=8),i},_sqDist:function(t,e){var i=e.x-t.x,n=e.y-t.y;return i*i+n*n},_sqClosestPointOnSegment:function(t,e,i,n){var s,a=e.x,r=e.y,h=i.x-a,l=i.y-r,u=h*h+l*l;return u>0&&(s=((t.x-a)*h+(t.y-r)*l)/u,s>1?(a=i.x,r=i.y):s>0&&(a+=h*s,r+=l*s)),h=t.x-a,l=t.y-r,n?h*h+l*l:new o.Point(a,r)}},o.Polyline=o.Path.extend({initialize:function(t,e){o.Path.prototype.initialize.call(this,e),this._latlngs=this._convertLatLngs(t)},options:{smoothFactor:1,noClip:!1},projectLatlngs:function(){this._originalPoints=[];for(var t=0,e=this._latlngs.length;e>t;t++)this._originalPoints[t]=this._map.latLngToLayerPoint(this._latlngs[t])},getPathString:function(){for(var t=0,e=this._parts.length,i="";e>t;t++)i+=this._getPathPartStr(this._parts[t]);return i},getLatLngs:function(){return this._latlngs},setLatLngs:function(t){return this._latlngs=this._convertLatLngs(t),this.redraw()},addLatLng:function(t){return this._latlngs.push(o.latLng(t)),this.redraw()},spliceLatLngs:function(){var t=[].splice.apply(this._latlngs,arguments);return this._convertLatLngs(this._latlngs,!0),this.redraw(),t},closestLayerPoint:function(t){for(var e,i,n=1/0,s=this._parts,a=null,r=0,h=s.length;h>r;r++)for(var l=s[r],u=1,c=l.length;c>u;u++){e=l[u-1],i=l[u];var d=o.LineUtil._sqClosestPointOnSegment(t,e,i,!0);n>d&&(n=d,a=o.LineUtil._sqClosestPointOnSegment(t,e,i))}return a&&(a.distance=Math.sqrt(n)),a},getBounds:function(){return new o.LatLngBounds(this.getLatLngs())},_convertLatLngs:function(t,e){var i,n,s=e?t:[];for(i=0,n=t.length;n>i;i++){if(o.Util.isArray(t[i])&&"number"!=typeof t[i][0])return;s[i]=o.latLng(t[i])}return s},_initEvents:function(){o.Path.prototype._initEvents.call(this)},_getPathPartStr:function(t){for(var e,i=o.Path.VML,n=0,s=t.length,a="";s>n;n++)e=t[n],i&&e._round(),a+=(n?"L":"M")+e.x+" "+e.y;return a},_clipPoints:function(){var t,e,i,n=this._originalPoints,s=n.length;if(this.options.noClip)return void(this._parts=[n]);this._parts=[];var a=this._parts,r=this._map._pathViewport,h=o.LineUtil;for(t=0,e=0;s-1>t;t++)i=h.clipSegment(n[t],n[t+1],r,t),i&&(a[e]=a[e]||[],a[e].push(i[0]),(i[1]!==n[t+1]||t===s-2)&&(a[e].push(i[1]),e++))},_simplifyPoints:function(){for(var t=this._parts,e=o.LineUtil,i=0,n=t.length;n>i;i++)t[i]=e.simplify(t[i],this.options.smoothFactor)},_updatePath:function(){this._map&&(this._clipPoints(),this._simplifyPoints(),o.Path.prototype._updatePath.call(this))}}),o.polyline=function(t,e){return new o.Polyline(t,e)},o.PolyUtil={},o.PolyUtil.clipPolygon=function(t,e){var i,n,s,a,r,h,l,u,c,d=[1,4,2,8],p=o.LineUtil;for(n=0,l=t.length;l>n;n++)t[n]._code=p._getBitCode(t[n],e);for(a=0;4>a;a++){for(u=d[a],i=[],n=0,l=t.length,s=l-1;l>n;s=n++)r=t[n],h=t[s],r._code&u?h._code&u||(c=p._getEdgeIntersection(h,r,u,e),c._code=p._getBitCode(c,e),i.push(c)):(h._code&u&&(c=p._getEdgeIntersection(h,r,u,e),c._code=p._getBitCode(c,e),i.push(c)),i.push(r));t=i}return t},o.Polygon=o.Polyline.extend({options:{fill:!0},initialize:function(t,e){o.Polyline.prototype.initialize.call(this,t,e),this._initWithHoles(t)},_initWithHoles:function(t){var e,i,n;if(t&&o.Util.isArray(t[0])&&"number"!=typeof t[0][0])for(this._latlngs=this._convertLatLngs(t[0]),this._holes=t.slice(1),e=0,i=this._holes.length;i>e;e++)n=this._holes[e]=this._convertLatLngs(this._holes[e]),n[0].equals(n[n.length-1])&&n.pop();t=this._latlngs,t.length>=2&&t[0].equals(t[t.length-1])&&t.pop()},projectLatlngs:function(){if(o.Polyline.prototype.projectLatlngs.call(this),this._holePoints=[],this._holes){var t,e,i,n;for(t=0,i=this._holes.length;i>t;t++)for(this._holePoints[t]=[],e=0,n=this._holes[t].length;n>e;e++)this._holePoints[t][e]=this._map.latLngToLayerPoint(this._holes[t][e])}},setLatLngs:function(t){return t&&o.Util.isArray(t[0])&&"number"!=typeof t[0][0]?(this._initWithHoles(t),this.redraw()):o.Polyline.prototype.setLatLngs.call(this,t)},_clipPoints:function(){var t=this._originalPoints,e=[];if(this._parts=[t].concat(this._holePoints),!this.options.noClip){for(var i=0,n=this._parts.length;n>i;i++){var s=o.PolyUtil.clipPolygon(this._parts[i],this._map._pathViewport);s.length&&e.push(s)}this._parts=e}},_getPathPartStr:function(t){var e=o.Polyline.prototype._getPathPartStr.call(this,t);return e+(o.Browser.svg?"z":"x")}}),o.polygon=function(t,e){return new o.Polygon(t,e)},function(){function t(t){return o.FeatureGroup.extend({initialize:function(t,e){this._layers={},this._options=e,this.setLatLngs(t)},setLatLngs:function(e){var i=0,n=e.length;for(this.eachLayer(function(t){n>i?t.setLatLngs(e[i++]):this.removeLayer(t)},this);n>i;)this.addLayer(new t(e[i++],this._options));return this},getLatLngs:function(){var t=[];return this.eachLayer(function(e){t.push(e.getLatLngs())}),t}})}o.MultiPolyline=t(o.Polyline),o.MultiPolygon=t(o.Polygon),o.multiPolyline=function(t,e){return new o.MultiPolyline(t,e)},o.multiPolygon=function(t,e){return new o.MultiPolygon(t,e)}}(),o.Rectangle=o.Polygon.extend({initialize:function(t,e){o.Polygon.prototype.initialize.call(this,this._boundsToLatLngs(t),e)},setBounds:function(t){this.setLatLngs(this._boundsToLatLngs(t))},_boundsToLatLngs:function(t){return t=o.latLngBounds(t),[t.getSouthWest(),t.getNorthWest(),t.getNorthEast(),t.getSouthEast()]}}),o.rectangle=function(t,e){return new o.Rectangle(t,e)},o.Circle=o.Path.extend({initialize:function(t,e,i){o.Path.prototype.initialize.call(this,i),this._latlng=o.latLng(t),this._mRadius=e},options:{fill:!0},setLatLng:function(t){return this._latlng=o.latLng(t),this.redraw()},setRadius:function(t){return this._mRadius=t,this.redraw()},projectLatlngs:function(){var t=this._getLngRadius(),e=this._latlng,i=this._map.latLngToLayerPoint([e.lat,e.lng-t]);this._point=this._map.latLngToLayerPoint(e),this._radius=Math.max(this._point.x-i.x,1)},getBounds:function(){var t=this._getLngRadius(),e=this._mRadius/40075017*360,i=this._latlng;return new o.LatLngBounds([i.lat-e,i.lng-t],[i.lat+e,i.lng+t])},getLatLng:function(){return this._latlng},getPathString:function(){var t=this._point,e=this._radius;return this._checkIfEmpty()?"":o.Browser.svg?"M"+t.x+","+(t.y-e)+"A"+e+","+e+",0,1,1,"+(t.x-.1)+","+(t.y-e)+" z":(t._round(),e=Math.round(e),"AL "+t.x+","+t.y+" "+e+","+e+" 0,23592600")},getRadius:function(){return this._mRadius},_getLatRadius:function(){return this._mRadius/40075017*360},_getLngRadius:function(){return this._getLatRadius()/Math.cos(o.LatLng.DEG_TO_RAD*this._latlng.lat)},_checkIfEmpty:function(){if(!this._map)return!1;var t=this._map._pathViewport,e=this._radius,i=this._point;return i.x-e>t.max.x||i.y-e>t.max.y||i.x+e<t.min.x||i.y+e<t.min.y}}),o.circle=function(t,e,i){return new o.Circle(t,e,i)},o.CircleMarker=o.Circle.extend({options:{radius:10,weight:2},initialize:function(t,e){o.Circle.prototype.initialize.call(this,t,null,e),this._radius=this.options.radius},projectLatlngs:function(){this._point=this._map.latLngToLayerPoint(this._latlng)},_updateStyle:function(){o.Circle.prototype._updateStyle.call(this),this.setRadius(this.options.radius)},setLatLng:function(t){return o.Circle.prototype.setLatLng.call(this,t),this._popup&&this._popup._isOpen&&this._popup.setLatLng(t),this},setRadius:function(t){return this.options.radius=this._radius=t,this.redraw()},getRadius:function(){return this._radius}}),o.circleMarker=function(t,e){return new o.CircleMarker(t,e)},o.Polyline.include(o.Path.CANVAS?{_containsPoint:function(t,e){var i,n,s,a,r,h,l,u=this.options.weight/2;for(o.Browser.touch&&(u+=10),i=0,a=this._parts.length;a>i;i++)for(l=this._parts[i],n=0,r=l.length,s=r-1;r>n;s=n++)if((e||0!==n)&&(h=o.LineUtil.pointToSegmentDistance(t,l[s],l[n]),u>=h))return!0;return!1}}:{}),o.Polygon.include(o.Path.CANVAS?{_containsPoint:function(t){var e,i,n,s,a,r,h,l,u=!1;if(o.Polyline.prototype._containsPoint.call(this,t,!0))return!0;for(s=0,h=this._parts.length;h>s;s++)for(e=this._parts[s],a=0,l=e.length,r=l-1;l>a;r=a++)i=e[a],n=e[r],i.y>t.y!=n.y>t.y&&t.x<(n.x-i.x)*(t.y-i.y)/(n.y-i.y)+i.x&&(u=!u);return u}}:{}),o.Circle.include(o.Path.CANVAS?{_drawPath:function(){var t=this._point;this._ctx.beginPath(),this._ctx.arc(t.x,t.y,this._radius,0,2*Math.PI,!1)},_containsPoint:function(t){var e=this._point,i=this.options.stroke?this.options.weight/2:0;return t.distanceTo(e)<=this._radius+i}}:{}),o.CircleMarker.include(o.Path.CANVAS?{_updateStyle:function(){o.Path.prototype._updateStyle.call(this)}}:{}),o.GeoJSON=o.FeatureGroup.extend({initialize:function(t,e){o.setOptions(this,e),this._layers={},t&&this.addData(t)},addData:function(t){var e,i,n,s=o.Util.isArray(t)?t:t.features;if(s){for(e=0,i=s.length;i>e;e++)n=s[e],(n.geometries||n.geometry||n.features||n.coordinates)&&this.addData(s[e]);return this}var a=this.options;if(!a.filter||a.filter(t)){var r=o.GeoJSON.geometryToLayer(t,a.pointToLayer,a.coordsToLatLng,a);return r.feature=o.GeoJSON.asFeature(t),r.defaultOptions=r.options,this.resetStyle(r),a.onEachFeature&&a.onEachFeature(t,r),this.addLayer(r)}},resetStyle:function(t){var e=this.options.style;e&&(o.Util.extend(t.options,t.defaultOptions),this._setLayerStyle(t,e))},setStyle:function(t){this.eachLayer(function(e){this._setLayerStyle(e,t)},this)},_setLayerStyle:function(t,e){"function"==typeof e&&(e=e(t.feature)),t.setStyle&&t.setStyle(e)}}),o.extend(o.GeoJSON,{geometryToLayer:function(t,e,i,n){var s,a,r,h,l="Feature"===t.type?t.geometry:t,u=l.coordinates,c=[];switch(i=i||this.coordsToLatLng,l.type){case"Point":return s=i(u),e?e(t,s):new o.Marker(s);case"MultiPoint":for(r=0,h=u.length;h>r;r++)s=i(u[r]),c.push(e?e(t,s):new o.Marker(s));return new o.FeatureGroup(c);case"LineString":return a=this.coordsToLatLngs(u,0,i),new o.Polyline(a,n);case"Polygon":if(2===u.length&&!u[1].length)throw new Error("Invalid GeoJSON object.");return a=this.coordsToLatLngs(u,1,i),new o.Polygon(a,n);case"MultiLineString":return a=this.coordsToLatLngs(u,1,i),new o.MultiPolyline(a,n);case"MultiPolygon":return a=this.coordsToLatLngs(u,2,i),new o.MultiPolygon(a,n);case"GeometryCollection":for(r=0,h=l.geometries.length;h>r;r++)c.push(this.geometryToLayer({geometry:l.geometries[r],type:"Feature",properties:t.properties},e,i,n));return new o.FeatureGroup(c);default:throw new Error("Invalid GeoJSON object.")}},coordsToLatLng:function(t){return new o.LatLng(t[1],t[0],t[2])},coordsToLatLngs:function(t,e,i){var n,o,s,a=[];for(o=0,s=t.length;s>o;o++)n=e?this.coordsToLatLngs(t[o],e-1,i):(i||this.coordsToLatLng)(t[o]),a.push(n);return a},latLngToCoords:function(t){var e=[t.lng,t.lat];return t.alt!==i&&e.push(t.alt),e},latLngsToCoords:function(t){for(var e=[],i=0,n=t.length;n>i;i++)e.push(o.GeoJSON.latLngToCoords(t[i]));return e},getFeature:function(t,e){return t.feature?o.extend({},t.feature,{geometry:e}):o.GeoJSON.asFeature(e)},asFeature:function(t){return"Feature"===t.type?t:{type:"Feature",properties:{},geometry:t}}});var a={toGeoJSON:function(){return o.GeoJSON.getFeature(this,{type:"Point",coordinates:o.GeoJSON.latLngToCoords(this.getLatLng())})}};o.Marker.include(a),o.Circle.include(a),o.CircleMarker.include(a),o.Polyline.include({toGeoJSON:function(){return o.GeoJSON.getFeature(this,{type:"LineString",coordinates:o.GeoJSON.latLngsToCoords(this.getLatLngs())})}}),o.Polygon.include({toGeoJSON:function(){var t,e,i,n=[o.GeoJSON.latLngsToCoords(this.getLatLngs())];if(n[0].push(n[0][0]),this._holes)for(t=0,e=this._holes.length;e>t;t++)i=o.GeoJSON.latLngsToCoords(this._holes[t]),i.push(i[0]),n.push(i);return o.GeoJSON.getFeature(this,{type:"Polygon",coordinates:n})}}),function(){function t(t){return function(){var e=[];return this.eachLayer(function(t){e.push(t.toGeoJSON().geometry.coordinates)}),o.GeoJSON.getFeature(this,{type:t,coordinates:e})}}o.MultiPolyline.include({toGeoJSON:t("MultiLineString")}),o.MultiPolygon.include({toGeoJSON:t("MultiPolygon")}),o.LayerGroup.include({toGeoJSON:function(){var e,i=this.feature&&this.feature.geometry,n=[];if(i&&"MultiPoint"===i.type)return t("MultiPoint").call(this);var s=i&&"GeometryCollection"===i.type;return this.eachLayer(function(t){t.toGeoJSON&&(e=t.toGeoJSON(),n.push(s?e.geometry:o.GeoJSON.asFeature(e)))}),s?o.GeoJSON.getFeature(this,{geometries:n,type:"GeometryCollection"}):{type:"FeatureCollection",features:n}}})}(),o.geoJson=function(t,e){return new o.GeoJSON(t,e)},o.DomEvent={addListener:function(t,e,i,n){var s,a,r,h=o.stamp(i),l="_leaflet_"+e+h;return t[l]?this:(s=function(e){return i.call(n||t,e||o.DomEvent._getEvent())},o.Browser.pointer&&0===e.indexOf("touch")?this.addPointerListener(t,e,s,h):(o.Browser.touch&&"dblclick"===e&&this.addDoubleTapListener&&this.addDoubleTapListener(t,s,h),"addEventListener"in t?"mousewheel"===e?(t.addEventListener("DOMMouseScroll",s,!1),t.addEventListener(e,s,!1)):"mouseenter"===e||"mouseleave"===e?(a=s,r="mouseenter"===e?"mouseover":"mouseout",s=function(e){return o.DomEvent._checkMouse(t,e)?a(e):void 0},t.addEventListener(r,s,!1)):"click"===e&&o.Browser.android?(a=s,s=function(t){return o.DomEvent._filterClick(t,a)},t.addEventListener(e,s,!1)):t.addEventListener(e,s,!1):"attachEvent"in t&&t.attachEvent("on"+e,s),t[l]=s,this))},removeListener:function(t,e,i){var n=o.stamp(i),s="_leaflet_"+e+n,a=t[s];return a?(o.Browser.pointer&&0===e.indexOf("touch")?this.removePointerListener(t,e,n):o.Browser.touch&&"dblclick"===e&&this.removeDoubleTapListener?this.removeDoubleTapListener(t,n):"removeEventListener"in t?"mousewheel"===e?(t.removeEventListener("DOMMouseScroll",a,!1),t.removeEventListener(e,a,!1)):"mouseenter"===e||"mouseleave"===e?t.removeEventListener("mouseenter"===e?"mouseover":"mouseout",a,!1):t.removeEventListener(e,a,!1):"detachEvent"in t&&t.detachEvent("on"+e,a),t[s]=null,this):this},stopPropagation:function(t){return t.stopPropagation?t.stopPropagation():t.cancelBubble=!0,o.DomEvent._skipped(t),this},disableScrollPropagation:function(t){var e=o.DomEvent.stopPropagation;return o.DomEvent.on(t,"mousewheel",e).on(t,"MozMousePixelScroll",e)},disableClickPropagation:function(t){for(var e=o.DomEvent.stopPropagation,i=o.Draggable.START.length-1;i>=0;i--)o.DomEvent.on(t,o.Draggable.START[i],e);return o.DomEvent.on(t,"click",o.DomEvent._fakeStop).on(t,"dblclick",e)},preventDefault:function(t){return t.preventDefault?t.preventDefault():t.returnValue=!1,this},stop:function(t){return o.DomEvent.preventDefault(t).stopPropagation(t)},getMousePosition:function(t,e){if(!e)return new o.Point(t.clientX,t.clientY);var i=e.getBoundingClientRect();return new o.Point(t.clientX-i.left-e.clientLeft,t.clientY-i.top-e.clientTop)},getWheelDelta:function(t){var e=0;return t.wheelDelta&&(e=t.wheelDelta/120),t.detail&&(e=-t.detail/3),e},_skipEvents:{},_fakeStop:function(t){o.DomEvent._skipEvents[t.type]=!0},_skipped:function(t){var e=this._skipEvents[t.type];return this._skipEvents[t.type]=!1,e},_checkMouse:function(t,e){var i=e.relatedTarget;if(!i)return!0;try{for(;i&&i!==t;)i=i.parentNode}catch(n){return!1}return i!==t},_getEvent:function(){var e=t.event;if(!e)for(var i=arguments.callee.caller;i&&(e=i.arguments[0],!e||t.Event!==e.constructor);)i=i.caller;return e},_filterClick:function(t,e){var i=t.timeStamp||t.originalEvent.timeStamp,n=o.DomEvent._lastClick&&i-o.DomEvent._lastClick;return n&&n>100&&500>n||t.target._simulatedClick&&!t._simulated?void o.DomEvent.stop(t):(o.DomEvent._lastClick=i,e(t))}},o.DomEvent.on=o.DomEvent.addListener,o.DomEvent.off=o.DomEvent.removeListener,o.Draggable=o.Class.extend({includes:o.Mixin.Events,statics:{START:o.Browser.touch?["touchstart","mousedown"]:["mousedown"],END:{mousedown:"mouseup",touchstart:"touchend",pointerdown:"touchend",MSPointerDown:"touchend"},MOVE:{mousedown:"mousemove",touchstart:"touchmove",pointerdown:"touchmove",MSPointerDown:"touchmove"}},initialize:function(t,e){this._element=t,this._dragStartTarget=e||t},enable:function(){if(!this._enabled){for(var t=o.Draggable.START.length-1;t>=0;t--)o.DomEvent.on(this._dragStartTarget,o.Draggable.START[t],this._onDown,this);this._enabled=!0}},disable:function(){if(this._enabled){for(var t=o.Draggable.START.length-1;t>=0;t--)o.DomEvent.off(this._dragStartTarget,o.Draggable.START[t],this._onDown,this);this._enabled=!1,this._moved=!1}},_onDown:function(t){if(this._moved=!1,!t.shiftKey&&(1===t.which||1===t.button||t.touches)&&(o.DomEvent.stopPropagation(t),!o.Draggable._disabled&&(o.DomUtil.disableImageDrag(),o.DomUtil.disableTextSelection(),!this._moving))){var i=t.touches?t.touches[0]:t;this._startPoint=new o.Point(i.clientX,i.clientY),this._startPos=this._newPos=o.DomUtil.getPosition(this._element),o.DomEvent.on(e,o.Draggable.MOVE[t.type],this._onMove,this).on(e,o.Draggable.END[t.type],this._onUp,this)}},_onMove:function(t){if(t.touches&&t.touches.length>1)return void(this._moved=!0);var i=t.touches&&1===t.touches.length?t.touches[0]:t,n=new o.Point(i.clientX,i.clientY),s=n.subtract(this._startPoint);(s.x||s.y)&&(o.Browser.touch&&Math.abs(s.x)+Math.abs(s.y)<3||(o.DomEvent.preventDefault(t),this._moved||(this.fire("dragstart"),this._moved=!0,this._startPos=o.DomUtil.getPosition(this._element).subtract(s),o.DomUtil.addClass(e.body,"leaflet-dragging"),this._lastTarget=t.target||t.srcElement,o.DomUtil.addClass(this._lastTarget,"leaflet-drag-target")),this._newPos=this._startPos.add(s),this._moving=!0,o.Util.cancelAnimFrame(this._animRequest),this._animRequest=o.Util.requestAnimFrame(this._updatePosition,this,!0,this._dragStartTarget)))},_updatePosition:function(){this.fire("predrag"),o.DomUtil.setPosition(this._element,this._newPos),this.fire("drag")},_onUp:function(){o.DomUtil.removeClass(e.body,"leaflet-dragging"),this._lastTarget&&(o.DomUtil.removeClass(this._lastTarget,"leaflet-drag-target"),this._lastTarget=null);for(var t in o.Draggable.MOVE)o.DomEvent.off(e,o.Draggable.MOVE[t],this._onMove).off(e,o.Draggable.END[t],this._onUp);o.DomUtil.enableImageDrag(),o.DomUtil.enableTextSelection(),this._moved&&this._moving&&(o.Util.cancelAnimFrame(this._animRequest),this.fire("dragend",{distance:this._newPos.distanceTo(this._startPos)})),this._moving=!1}}),o.Handler=o.Class.extend({initialize:function(t){this._map=t},enable:function(){this._enabled||(this._enabled=!0,this.addHooks())},disable:function(){this._enabled&&(this._enabled=!1,this.removeHooks())},enabled:function(){return!!this._enabled}}),o.Map.mergeOptions({dragging:!0,inertia:!o.Browser.android23,inertiaDeceleration:3400,inertiaMaxSpeed:1/0,inertiaThreshold:o.Browser.touch?32:18,easeLinearity:.25,worldCopyJump:!1}),o.Map.Drag=o.Handler.extend({addHooks:function(){if(!this._draggable){var t=this._map;this._draggable=new o.Draggable(t._mapPane,t._container),this._draggable.on({dragstart:this._onDragStart,drag:this._onDrag,dragend:this._onDragEnd},this),t.options.worldCopyJump&&(this._draggable.on("predrag",this._onPreDrag,this),t.on("viewreset",this._onViewReset,this),t.whenReady(this._onViewReset,this))}this._draggable.enable()},removeHooks:function(){this._draggable.disable()},moved:function(){return this._draggable&&this._draggable._moved},_onDragStart:function(){var t=this._map;t._panAnim&&t._panAnim.stop(),t.fire("movestart").fire("dragstart"),t.options.inertia&&(this._positions=[],this._times=[])},_onDrag:function(){if(this._map.options.inertia){var t=this._lastTime=+new Date,e=this._lastPos=this._draggable._newPos;this._positions.push(e),this._times.push(t),t-this._times[0]>200&&(this._positions.shift(),this._times.shift())}this._map.fire("move").fire("drag")},_onViewReset:function(){var t=this._map.getSize()._divideBy(2),e=this._map.latLngToLayerPoint([0,0]);this._initialWorldOffset=e.subtract(t).x,this._worldWidth=this._map.project([0,180]).x},_onPreDrag:function(){var t=this._worldWidth,e=Math.round(t/2),i=this._initialWorldOffset,n=this._draggable._newPos.x,o=(n-e+i)%t+e-i,s=(n+e+i)%t-e-i,a=Math.abs(o+i)<Math.abs(s+i)?o:s;this._draggable._newPos.x=a},_onDragEnd:function(t){var e=this._map,i=e.options,n=+new Date-this._lastTime,s=!i.inertia||n>i.inertiaThreshold||!this._positions[0];if(e.fire("dragend",t),s)e.fire("moveend");else{var a=this._lastPos.subtract(this._positions[0]),r=(this._lastTime+n-this._times[0])/1e3,h=i.easeLinearity,l=a.multiplyBy(h/r),u=l.distanceTo([0,0]),c=Math.min(i.inertiaMaxSpeed,u),d=l.multiplyBy(c/u),p=c/(i.inertiaDeceleration*h),_=d.multiplyBy(-p/2).round();_.x&&_.y?(_=e._limitOffset(_,e.options.maxBounds),o.Util.requestAnimFrame(function(){e.panBy(_,{duration:p,easeLinearity:h,noMoveStart:!0})})):e.fire("moveend")}}}),o.Map.addInitHook("addHandler","dragging",o.Map.Drag),o.Map.mergeOptions({doubleClickZoom:!0}),o.Map.DoubleClickZoom=o.Handler.extend({addHooks:function(){this._map.on("dblclick",this._onDoubleClick,this)},removeHooks:function(){this._map.off("dblclick",this._onDoubleClick,this)},_onDoubleClick:function(t){var e=this._map,i=e.getZoom()+(t.originalEvent.shiftKey?-1:1);"center"===e.options.doubleClickZoom?e.setZoom(i):e.setZoomAround(t.containerPoint,i)}}),o.Map.addInitHook("addHandler","doubleClickZoom",o.Map.DoubleClickZoom),o.Map.mergeOptions({scrollWheelZoom:!0}),o.Map.ScrollWheelZoom=o.Handler.extend({addHooks:function(){o.DomEvent.on(this._map._container,"mousewheel",this._onWheelScroll,this),o.DomEvent.on(this._map._container,"MozMousePixelScroll",o.DomEvent.preventDefault),this._delta=0},removeHooks:function(){o.DomEvent.off(this._map._container,"mousewheel",this._onWheelScroll),o.DomEvent.off(this._map._container,"MozMousePixelScroll",o.DomEvent.preventDefault)},_onWheelScroll:function(t){var e=o.DomEvent.getWheelDelta(t);this._delta+=e,this._lastMousePos=this._map.mouseEventToContainerPoint(t),this._startTime||(this._startTime=+new Date);var i=Math.max(40-(+new Date-this._startTime),0);clearTimeout(this._timer),this._timer=setTimeout(o.bind(this._performZoom,this),i),o.DomEvent.preventDefault(t),o.DomEvent.stopPropagation(t)},_performZoom:function(){var t=this._map,e=this._delta,i=t.getZoom();e=e>0?Math.ceil(e):Math.floor(e),e=Math.max(Math.min(e,4),-4),e=t._limitZoom(i+e)-i,this._delta=0,this._startTime=null,e&&("center"===t.options.scrollWheelZoom?t.setZoom(i+e):t.setZoomAround(this._lastMousePos,i+e))}}),o.Map.addInitHook("addHandler","scrollWheelZoom",o.Map.ScrollWheelZoom),o.extend(o.DomEvent,{_touchstart:o.Browser.msPointer?"MSPointerDown":o.Browser.pointer?"pointerdown":"touchstart",_touchend:o.Browser.msPointer?"MSPointerUp":o.Browser.pointer?"pointerup":"touchend",addDoubleTapListener:function(t,i,n){function s(t){var e;if(o.Browser.pointer?(_.push(t.pointerId),e=_.length):e=t.touches.length,!(e>1)){var i=Date.now(),n=i-(r||i);h=t.touches?t.touches[0]:t,l=n>0&&u>=n,r=i}}function a(t){if(o.Browser.pointer){var e=_.indexOf(t.pointerId);if(-1===e)return;_.splice(e,1)}if(l){if(o.Browser.pointer){var n,s={};for(var a in h)n=h[a],"function"==typeof n?s[a]=n.bind(h):s[a]=n;h=s}h.type="dblclick",i(h),r=null}}var r,h,l=!1,u=250,c="_leaflet_",d=this._touchstart,p=this._touchend,_=[];t[c+d+n]=s,t[c+p+n]=a;var m=o.Browser.pointer?e.documentElement:t;return t.addEventListener(d,s,!1),m.addEventListener(p,a,!1),o.Browser.pointer&&m.addEventListener(o.DomEvent.POINTER_CANCEL,a,!1),this},removeDoubleTapListener:function(t,i){var n="_leaflet_";return t.removeEventListener(this._touchstart,t[n+this._touchstart+i],!1),(o.Browser.pointer?e.documentElement:t).removeEventListener(this._touchend,t[n+this._touchend+i],!1),o.Browser.pointer&&e.documentElement.removeEventListener(o.DomEvent.POINTER_CANCEL,t[n+this._touchend+i],!1),this}}),o.extend(o.DomEvent,{POINTER_DOWN:o.Browser.msPointer?"MSPointerDown":"pointerdown",POINTER_MOVE:o.Browser.msPointer?"MSPointerMove":"pointermove",POINTER_UP:o.Browser.msPointer?"MSPointerUp":"pointerup",POINTER_CANCEL:o.Browser.msPointer?"MSPointerCancel":"pointercancel",_pointers:[],_pointerDocumentListener:!1,addPointerListener:function(t,e,i,n){switch(e){case"touchstart":return this.addPointerListenerStart(t,e,i,n);
 case"touchend":return this.addPointerListenerEnd(t,e,i,n);case"touchmove":return this.addPointerListenerMove(t,e,i,n);default:throw"Unknown touch event type"}},addPointerListenerStart:function(t,i,n,s){var a="_leaflet_",r=this._pointers,h=function(t){"mouse"!==t.pointerType&&t.pointerType!==t.MSPOINTER_TYPE_MOUSE&&o.DomEvent.preventDefault(t);for(var e=!1,i=0;i<r.length;i++)if(r[i].pointerId===t.pointerId){e=!0;break}e||r.push(t),t.touches=r.slice(),t.changedTouches=[t],n(t)};if(t[a+"touchstart"+s]=h,t.addEventListener(this.POINTER_DOWN,h,!1),!this._pointerDocumentListener){var l=function(t){for(var e=0;e<r.length;e++)if(r[e].pointerId===t.pointerId){r.splice(e,1);break}};e.documentElement.addEventListener(this.POINTER_UP,l,!1),e.documentElement.addEventListener(this.POINTER_CANCEL,l,!1),this._pointerDocumentListener=!0}return this},addPointerListenerMove:function(t,e,i,n){function o(t){if(t.pointerType!==t.MSPOINTER_TYPE_MOUSE&&"mouse"!==t.pointerType||0!==t.buttons){for(var e=0;e<a.length;e++)if(a[e].pointerId===t.pointerId){a[e]=t;break}t.touches=a.slice(),t.changedTouches=[t],i(t)}}var s="_leaflet_",a=this._pointers;return t[s+"touchmove"+n]=o,t.addEventListener(this.POINTER_MOVE,o,!1),this},addPointerListenerEnd:function(t,e,i,n){var o="_leaflet_",s=this._pointers,a=function(t){for(var e=0;e<s.length;e++)if(s[e].pointerId===t.pointerId){s.splice(e,1);break}t.touches=s.slice(),t.changedTouches=[t],i(t)};return t[o+"touchend"+n]=a,t.addEventListener(this.POINTER_UP,a,!1),t.addEventListener(this.POINTER_CANCEL,a,!1),this},removePointerListener:function(t,e,i){var n="_leaflet_",o=t[n+e+i];switch(e){case"touchstart":t.removeEventListener(this.POINTER_DOWN,o,!1);break;case"touchmove":t.removeEventListener(this.POINTER_MOVE,o,!1);break;case"touchend":t.removeEventListener(this.POINTER_UP,o,!1),t.removeEventListener(this.POINTER_CANCEL,o,!1)}return this}}),o.Map.mergeOptions({touchZoom:o.Browser.touch&&!o.Browser.android23,bounceAtZoomLimits:!0}),o.Map.TouchZoom=o.Handler.extend({addHooks:function(){o.DomEvent.on(this._map._container,"touchstart",this._onTouchStart,this)},removeHooks:function(){o.DomEvent.off(this._map._container,"touchstart",this._onTouchStart,this)},_onTouchStart:function(t){var i=this._map;if(t.touches&&2===t.touches.length&&!i._animatingZoom&&!this._zooming){var n=i.mouseEventToLayerPoint(t.touches[0]),s=i.mouseEventToLayerPoint(t.touches[1]),a=i._getCenterLayerPoint();this._startCenter=n.add(s)._divideBy(2),this._startDist=n.distanceTo(s),this._moved=!1,this._zooming=!0,this._centerOffset=a.subtract(this._startCenter),i._panAnim&&i._panAnim.stop(),o.DomEvent.on(e,"touchmove",this._onTouchMove,this).on(e,"touchend",this._onTouchEnd,this),o.DomEvent.preventDefault(t)}},_onTouchMove:function(t){var e=this._map;if(t.touches&&2===t.touches.length&&this._zooming){var i=e.mouseEventToLayerPoint(t.touches[0]),n=e.mouseEventToLayerPoint(t.touches[1]);this._scale=i.distanceTo(n)/this._startDist,this._delta=i._add(n)._divideBy(2)._subtract(this._startCenter),1!==this._scale&&(e.options.bounceAtZoomLimits||!(e.getZoom()===e.getMinZoom()&&this._scale<1||e.getZoom()===e.getMaxZoom()&&this._scale>1))&&(this._moved||(o.DomUtil.addClass(e._mapPane,"leaflet-touching"),e.fire("movestart").fire("zoomstart"),this._moved=!0),o.Util.cancelAnimFrame(this._animRequest),this._animRequest=o.Util.requestAnimFrame(this._updateOnMove,this,!0,this._map._container),o.DomEvent.preventDefault(t))}},_updateOnMove:function(){var t=this._map,e=this._getScaleOrigin(),i=t.layerPointToLatLng(e),n=t.getScaleZoom(this._scale);t._animateZoom(i,n,this._startCenter,this._scale,this._delta,!1,!0)},_onTouchEnd:function(){if(!this._moved||!this._zooming)return void(this._zooming=!1);var t=this._map;this._zooming=!1,o.DomUtil.removeClass(t._mapPane,"leaflet-touching"),o.Util.cancelAnimFrame(this._animRequest),o.DomEvent.off(e,"touchmove",this._onTouchMove).off(e,"touchend",this._onTouchEnd);var i=this._getScaleOrigin(),n=t.layerPointToLatLng(i),s=t.getZoom(),a=t.getScaleZoom(this._scale)-s,r=a>0?Math.ceil(a):Math.floor(a),h=t._limitZoom(s+r),l=t.getZoomScale(h)/this._scale;t._animateZoom(n,h,i,l)},_getScaleOrigin:function(){var t=this._centerOffset.subtract(this._delta).divideBy(this._scale);return this._startCenter.add(t)}}),o.Map.addInitHook("addHandler","touchZoom",o.Map.TouchZoom),o.Map.mergeOptions({tap:!0,tapTolerance:15}),o.Map.Tap=o.Handler.extend({addHooks:function(){o.DomEvent.on(this._map._container,"touchstart",this._onDown,this)},removeHooks:function(){o.DomEvent.off(this._map._container,"touchstart",this._onDown,this)},_onDown:function(t){if(t.touches){if(o.DomEvent.preventDefault(t),this._fireClick=!0,t.touches.length>1)return this._fireClick=!1,void clearTimeout(this._holdTimeout);var i=t.touches[0],n=i.target;this._startPos=this._newPos=new o.Point(i.clientX,i.clientY),n.tagName&&"a"===n.tagName.toLowerCase()&&o.DomUtil.addClass(n,"leaflet-active"),this._holdTimeout=setTimeout(o.bind(function(){this._isTapValid()&&(this._fireClick=!1,this._onUp(),this._simulateEvent("contextmenu",i))},this),1e3),o.DomEvent.on(e,"touchmove",this._onMove,this).on(e,"touchend",this._onUp,this)}},_onUp:function(t){if(clearTimeout(this._holdTimeout),o.DomEvent.off(e,"touchmove",this._onMove,this).off(e,"touchend",this._onUp,this),this._fireClick&&t&&t.changedTouches){var i=t.changedTouches[0],n=i.target;n&&n.tagName&&"a"===n.tagName.toLowerCase()&&o.DomUtil.removeClass(n,"leaflet-active"),this._isTapValid()&&this._simulateEvent("click",i)}},_isTapValid:function(){return this._newPos.distanceTo(this._startPos)<=this._map.options.tapTolerance},_onMove:function(t){var e=t.touches[0];this._newPos=new o.Point(e.clientX,e.clientY)},_simulateEvent:function(i,n){var o=e.createEvent("MouseEvents");o._simulated=!0,n.target._simulatedClick=!0,o.initMouseEvent(i,!0,!0,t,1,n.screenX,n.screenY,n.clientX,n.clientY,!1,!1,!1,!1,0,null),n.target.dispatchEvent(o)}}),o.Browser.touch&&!o.Browser.pointer&&o.Map.addInitHook("addHandler","tap",o.Map.Tap),o.Map.mergeOptions({boxZoom:!0}),o.Map.BoxZoom=o.Handler.extend({initialize:function(t){this._map=t,this._container=t._container,this._pane=t._panes.overlayPane,this._moved=!1},addHooks:function(){o.DomEvent.on(this._container,"mousedown",this._onMouseDown,this)},removeHooks:function(){o.DomEvent.off(this._container,"mousedown",this._onMouseDown),this._moved=!1},moved:function(){return this._moved},_onMouseDown:function(t){return this._moved=!1,!t.shiftKey||1!==t.which&&1!==t.button?!1:(o.DomUtil.disableTextSelection(),o.DomUtil.disableImageDrag(),this._startLayerPoint=this._map.mouseEventToLayerPoint(t),void o.DomEvent.on(e,"mousemove",this._onMouseMove,this).on(e,"mouseup",this._onMouseUp,this).on(e,"keydown",this._onKeyDown,this))},_onMouseMove:function(t){this._moved||(this._box=o.DomUtil.create("div","leaflet-zoom-box",this._pane),o.DomUtil.setPosition(this._box,this._startLayerPoint),this._container.style.cursor="crosshair",this._map.fire("boxzoomstart"));var e=this._startLayerPoint,i=this._box,n=this._map.mouseEventToLayerPoint(t),s=n.subtract(e),a=new o.Point(Math.min(n.x,e.x),Math.min(n.y,e.y));o.DomUtil.setPosition(i,a),this._moved=!0,i.style.width=Math.max(0,Math.abs(s.x)-4)+"px",i.style.height=Math.max(0,Math.abs(s.y)-4)+"px"},_finish:function(){this._moved&&(this._pane.removeChild(this._box),this._container.style.cursor=""),o.DomUtil.enableTextSelection(),o.DomUtil.enableImageDrag(),o.DomEvent.off(e,"mousemove",this._onMouseMove).off(e,"mouseup",this._onMouseUp).off(e,"keydown",this._onKeyDown)},_onMouseUp:function(t){this._finish();var e=this._map,i=e.mouseEventToLayerPoint(t);if(!this._startLayerPoint.equals(i)){var n=new o.LatLngBounds(e.layerPointToLatLng(this._startLayerPoint),e.layerPointToLatLng(i));e.fitBounds(n),e.fire("boxzoomend",{boxZoomBounds:n})}},_onKeyDown:function(t){27===t.keyCode&&this._finish()}}),o.Map.addInitHook("addHandler","boxZoom",o.Map.BoxZoom),o.Map.mergeOptions({keyboard:!0,keyboardPanOffset:80,keyboardZoomOffset:1}),o.Map.Keyboard=o.Handler.extend({keyCodes:{left:[37],right:[39],down:[40],up:[38],zoomIn:[187,107,61,171],zoomOut:[189,109,173]},initialize:function(t){this._map=t,this._setPanOffset(t.options.keyboardPanOffset),this._setZoomOffset(t.options.keyboardZoomOffset)},addHooks:function(){var t=this._map._container;-1===t.tabIndex&&(t.tabIndex="0"),o.DomEvent.on(t,"focus",this._onFocus,this).on(t,"blur",this._onBlur,this).on(t,"mousedown",this._onMouseDown,this),this._map.on("focus",this._addHooks,this).on("blur",this._removeHooks,this)},removeHooks:function(){this._removeHooks();var t=this._map._container;o.DomEvent.off(t,"focus",this._onFocus,this).off(t,"blur",this._onBlur,this).off(t,"mousedown",this._onMouseDown,this),this._map.off("focus",this._addHooks,this).off("blur",this._removeHooks,this)},_onMouseDown:function(){if(!this._focused){var i=e.body,n=e.documentElement,o=i.scrollTop||n.scrollTop,s=i.scrollLeft||n.scrollLeft;this._map._container.focus(),t.scrollTo(s,o)}},_onFocus:function(){this._focused=!0,this._map.fire("focus")},_onBlur:function(){this._focused=!1,this._map.fire("blur")},_setPanOffset:function(t){var e,i,n=this._panKeys={},o=this.keyCodes;for(e=0,i=o.left.length;i>e;e++)n[o.left[e]]=[-1*t,0];for(e=0,i=o.right.length;i>e;e++)n[o.right[e]]=[t,0];for(e=0,i=o.down.length;i>e;e++)n[o.down[e]]=[0,t];for(e=0,i=o.up.length;i>e;e++)n[o.up[e]]=[0,-1*t]},_setZoomOffset:function(t){var e,i,n=this._zoomKeys={},o=this.keyCodes;for(e=0,i=o.zoomIn.length;i>e;e++)n[o.zoomIn[e]]=t;for(e=0,i=o.zoomOut.length;i>e;e++)n[o.zoomOut[e]]=-t},_addHooks:function(){o.DomEvent.on(e,"keydown",this._onKeyDown,this)},_removeHooks:function(){o.DomEvent.off(e,"keydown",this._onKeyDown,this)},_onKeyDown:function(t){var e=t.keyCode,i=this._map;if(e in this._panKeys){if(i._panAnim&&i._panAnim._inProgress)return;i.panBy(this._panKeys[e]),i.options.maxBounds&&i.panInsideBounds(i.options.maxBounds)}else{if(!(e in this._zoomKeys))return;i.setZoom(i.getZoom()+this._zoomKeys[e])}o.DomEvent.stop(t)}}),o.Map.addInitHook("addHandler","keyboard",o.Map.Keyboard),o.Handler.MarkerDrag=o.Handler.extend({initialize:function(t){this._marker=t},addHooks:function(){var t=this._marker._icon;this._draggable||(this._draggable=new o.Draggable(t,t)),this._draggable.on("dragstart",this._onDragStart,this).on("drag",this._onDrag,this).on("dragend",this._onDragEnd,this),this._draggable.enable(),o.DomUtil.addClass(this._marker._icon,"leaflet-marker-draggable")},removeHooks:function(){this._draggable.off("dragstart",this._onDragStart,this).off("drag",this._onDrag,this).off("dragend",this._onDragEnd,this),this._draggable.disable(),o.DomUtil.removeClass(this._marker._icon,"leaflet-marker-draggable")},moved:function(){return this._draggable&&this._draggable._moved},_onDragStart:function(){this._marker.closePopup().fire("movestart").fire("dragstart")},_onDrag:function(){var t=this._marker,e=t._shadow,i=o.DomUtil.getPosition(t._icon),n=t._map.layerPointToLatLng(i);e&&o.DomUtil.setPosition(e,i),t._latlng=n,t.fire("move",{latlng:n}).fire("drag")},_onDragEnd:function(t){this._marker.fire("moveend").fire("dragend",t)}}),o.Control=o.Class.extend({options:{position:"topright"},initialize:function(t){o.setOptions(this,t)},getPosition:function(){return this.options.position},setPosition:function(t){var e=this._map;return e&&e.removeControl(this),this.options.position=t,e&&e.addControl(this),this},getContainer:function(){return this._container},addTo:function(t){this._map=t;var e=this._container=this.onAdd(t),i=this.getPosition(),n=t._controlCorners[i];return o.DomUtil.addClass(e,"leaflet-control"),-1!==i.indexOf("bottom")?n.insertBefore(e,n.firstChild):n.appendChild(e),this},removeFrom:function(t){var e=this.getPosition(),i=t._controlCorners[e];return i.removeChild(this._container),this._map=null,this.onRemove&&this.onRemove(t),this},_refocusOnMap:function(){this._map&&this._map.getContainer().focus()}}),o.control=function(t){return new o.Control(t)},o.Map.include({addControl:function(t){return t.addTo(this),this},removeControl:function(t){return t.removeFrom(this),this},_initControlPos:function(){function t(t,s){var a=i+t+" "+i+s;e[t+s]=o.DomUtil.create("div",a,n)}var e=this._controlCorners={},i="leaflet-",n=this._controlContainer=o.DomUtil.create("div",i+"control-container",this._container);t("top","left"),t("top","right"),t("bottom","left"),t("bottom","right")},_clearControlPos:function(){this._container.removeChild(this._controlContainer)}}),o.Control.Zoom=o.Control.extend({options:{position:"topleft",zoomInText:"+",zoomInTitle:"Zoom in",zoomOutText:"-",zoomOutTitle:"Zoom out"},onAdd:function(t){var e="leaflet-control-zoom",i=o.DomUtil.create("div",e+" leaflet-bar");return this._map=t,this._zoomInButton=this._createButton(this.options.zoomInText,this.options.zoomInTitle,e+"-in",i,this._zoomIn,this),this._zoomOutButton=this._createButton(this.options.zoomOutText,this.options.zoomOutTitle,e+"-out",i,this._zoomOut,this),this._updateDisabled(),t.on("zoomend zoomlevelschange",this._updateDisabled,this),i},onRemove:function(t){t.off("zoomend zoomlevelschange",this._updateDisabled,this)},_zoomIn:function(t){this._map.zoomIn(t.shiftKey?3:1)},_zoomOut:function(t){this._map.zoomOut(t.shiftKey?3:1)},_createButton:function(t,e,i,n,s,a){var r=o.DomUtil.create("a",i,n);r.innerHTML=t,r.href="#",r.title=e;var h=o.DomEvent.stopPropagation;return o.DomEvent.on(r,"click",h).on(r,"mousedown",h).on(r,"dblclick",h).on(r,"click",o.DomEvent.preventDefault).on(r,"click",s,a).on(r,"click",this._refocusOnMap,a),r},_updateDisabled:function(){var t=this._map,e="leaflet-disabled";o.DomUtil.removeClass(this._zoomInButton,e),o.DomUtil.removeClass(this._zoomOutButton,e),t._zoom===t.getMinZoom()&&o.DomUtil.addClass(this._zoomOutButton,e),t._zoom===t.getMaxZoom()&&o.DomUtil.addClass(this._zoomInButton,e)}}),o.Map.mergeOptions({zoomControl:!0}),o.Map.addInitHook(function(){this.options.zoomControl&&(this.zoomControl=new o.Control.Zoom,this.addControl(this.zoomControl))}),o.control.zoom=function(t){return new o.Control.Zoom(t)},o.Control.Attribution=o.Control.extend({options:{position:"bottomright",prefix:'<a href="http://leafletjs.com" title="A JS library for interactive maps">Leaflet</a>'},initialize:function(t){o.setOptions(this,t),this._attributions={}},onAdd:function(t){this._container=o.DomUtil.create("div","leaflet-control-attribution"),o.DomEvent.disableClickPropagation(this._container);for(var e in t._layers)t._layers[e].getAttribution&&this.addAttribution(t._layers[e].getAttribution());return t.on("layeradd",this._onLayerAdd,this).on("layerremove",this._onLayerRemove,this),this._update(),this._container},onRemove:function(t){t.off("layeradd",this._onLayerAdd).off("layerremove",this._onLayerRemove)},setPrefix:function(t){return this.options.prefix=t,this._update(),this},addAttribution:function(t){return t?(this._attributions[t]||(this._attributions[t]=0),this._attributions[t]++,this._update(),this):void 0},removeAttribution:function(t){return t?(this._attributions[t]&&(this._attributions[t]--,this._update()),this):void 0},_update:function(){if(this._map){var t=[];for(var e in this._attributions)this._attributions[e]&&t.push(e);var i=[];this.options.prefix&&i.push(this.options.prefix),t.length&&i.push(t.join(", ")),this._container.innerHTML=i.join(" | ")}},_onLayerAdd:function(t){t.layer.getAttribution&&this.addAttribution(t.layer.getAttribution())},_onLayerRemove:function(t){t.layer.getAttribution&&this.removeAttribution(t.layer.getAttribution())}}),o.Map.mergeOptions({attributionControl:!0}),o.Map.addInitHook(function(){this.options.attributionControl&&(this.attributionControl=(new o.Control.Attribution).addTo(this))}),o.control.attribution=function(t){return new o.Control.Attribution(t)},o.Control.Scale=o.Control.extend({options:{position:"bottomleft",maxWidth:100,metric:!0,imperial:!0,updateWhenIdle:!1},onAdd:function(t){this._map=t;var e="leaflet-control-scale",i=o.DomUtil.create("div",e),n=this.options;return this._addScales(n,e,i),t.on(n.updateWhenIdle?"moveend":"move",this._update,this),t.whenReady(this._update,this),i},onRemove:function(t){t.off(this.options.updateWhenIdle?"moveend":"move",this._update,this)},_addScales:function(t,e,i){t.metric&&(this._mScale=o.DomUtil.create("div",e+"-line",i)),t.imperial&&(this._iScale=o.DomUtil.create("div",e+"-line",i))},_update:function(){var t=this._map.getBounds(),e=t.getCenter().lat,i=6378137*Math.PI*Math.cos(e*Math.PI/180),n=i*(t.getNorthEast().lng-t.getSouthWest().lng)/180,o=this._map.getSize(),s=this.options,a=0;o.x>0&&(a=n*(s.maxWidth/o.x)),this._updateScales(s,a)},_updateScales:function(t,e){t.metric&&e&&this._updateMetric(e),t.imperial&&e&&this._updateImperial(e)},_updateMetric:function(t){var e=this._getRoundNum(t);this._mScale.style.width=this._getScaleWidth(e/t)+"px",this._mScale.innerHTML=1e3>e?e+" m":e/1e3+" km"},_updateImperial:function(t){var e,i,n,o=3.2808399*t,s=this._iScale;o>5280?(e=o/5280,i=this._getRoundNum(e),s.style.width=this._getScaleWidth(i/e)+"px",s.innerHTML=i+" mi"):(n=this._getRoundNum(o),s.style.width=this._getScaleWidth(n/o)+"px",s.innerHTML=n+" ft")},_getScaleWidth:function(t){return Math.round(this.options.maxWidth*t)-10},_getRoundNum:function(t){var e=Math.pow(10,(Math.floor(t)+"").length-1),i=t/e;return i=i>=10?10:i>=5?5:i>=3?3:i>=2?2:1,e*i}}),o.control.scale=function(t){return new o.Control.Scale(t)},o.Control.Layers=o.Control.extend({options:{collapsed:!0,position:"topright",autoZIndex:!0},initialize:function(t,e,i){o.setOptions(this,i),this._layers={},this._lastZIndex=0,this._handlingClick=!1;for(var n in t)this._addLayer(t[n],n);for(n in e)this._addLayer(e[n],n,!0)},onAdd:function(t){return this._initLayout(),this._update(),t.on("layeradd",this._onLayerChange,this).on("layerremove",this._onLayerChange,this),this._container},onRemove:function(t){t.off("layeradd",this._onLayerChange,this).off("layerremove",this._onLayerChange,this)},addBaseLayer:function(t,e){return this._addLayer(t,e),this._update(),this},addOverlay:function(t,e){return this._addLayer(t,e,!0),this._update(),this},removeLayer:function(t){var e=o.stamp(t);return delete this._layers[e],this._update(),this},_initLayout:function(){var t="leaflet-control-layers",e=this._container=o.DomUtil.create("div",t);e.setAttribute("aria-haspopup",!0),o.Browser.touch?o.DomEvent.on(e,"click",o.DomEvent.stopPropagation):o.DomEvent.disableClickPropagation(e).disableScrollPropagation(e);var i=this._form=o.DomUtil.create("form",t+"-list");if(this.options.collapsed){o.Browser.android||o.DomEvent.on(e,"mouseover",this._expand,this).on(e,"mouseout",this._collapse,this);var n=this._layersLink=o.DomUtil.create("a",t+"-toggle",e);n.href="#",n.title="Layers",o.Browser.touch?o.DomEvent.on(n,"click",o.DomEvent.stop).on(n,"click",this._expand,this):o.DomEvent.on(n,"focus",this._expand,this),o.DomEvent.on(i,"click",function(){setTimeout(o.bind(this._onInputClick,this),0)},this),this._map.on("click",this._collapse,this)}else this._expand();this._baseLayersList=o.DomUtil.create("div",t+"-base",i),this._separator=o.DomUtil.create("div",t+"-separator",i),this._overlaysList=o.DomUtil.create("div",t+"-overlays",i),e.appendChild(i)},_addLayer:function(t,e,i){var n=o.stamp(t);this._layers[n]={layer:t,name:e,overlay:i},this.options.autoZIndex&&t.setZIndex&&(this._lastZIndex++,t.setZIndex(this._lastZIndex))},_update:function(){if(this._container){this._baseLayersList.innerHTML="",this._overlaysList.innerHTML="";var t,e,i=!1,n=!1;for(t in this._layers)e=this._layers[t],this._addItem(e),n=n||e.overlay,i=i||!e.overlay;this._separator.style.display=n&&i?"":"none"}},_onLayerChange:function(t){var e=this._layers[o.stamp(t.layer)];if(e){this._handlingClick||this._update();var i=e.overlay?"layeradd"===t.type?"overlayadd":"overlayremove":"layeradd"===t.type?"baselayerchange":null;i&&this._map.fire(i,e)}},_createRadioElement:function(t,i){var n='<input type="radio" class="leaflet-control-layers-selector" name="'+t+'"';i&&(n+=' checked="checked"'),n+="/>";var o=e.createElement("div");return o.innerHTML=n,o.firstChild},_addItem:function(t){var i,n=e.createElement("label"),s=this._map.hasLayer(t.layer);t.overlay?(i=e.createElement("input"),i.type="checkbox",i.className="leaflet-control-layers-selector",i.defaultChecked=s):i=this._createRadioElement("leaflet-base-layers",s),i.layerId=o.stamp(t.layer),o.DomEvent.on(i,"click",this._onInputClick,this);var a=e.createElement("span");a.innerHTML=" "+t.name,n.appendChild(i),n.appendChild(a);var r=t.overlay?this._overlaysList:this._baseLayersList;return r.appendChild(n),n},_onInputClick:function(){var t,e,i,n=this._form.getElementsByTagName("input"),o=n.length;for(this._handlingClick=!0,t=0;o>t;t++)e=n[t],i=this._layers[e.layerId],e.checked&&!this._map.hasLayer(i.layer)?this._map.addLayer(i.layer):!e.checked&&this._map.hasLayer(i.layer)&&this._map.removeLayer(i.layer);this._handlingClick=!1,this._refocusOnMap()},_expand:function(){o.DomUtil.addClass(this._container,"leaflet-control-layers-expanded")},_collapse:function(){this._container.className=this._container.className.replace(" leaflet-control-layers-expanded","")}}),o.control.layers=function(t,e,i){return new o.Control.Layers(t,e,i)},o.PosAnimation=o.Class.extend({includes:o.Mixin.Events,run:function(t,e,i,n){this.stop(),this._el=t,this._inProgress=!0,this._newPos=e,this.fire("start"),t.style[o.DomUtil.TRANSITION]="all "+(i||.25)+"s cubic-bezier(0,0,"+(n||.5)+",1)",o.DomEvent.on(t,o.DomUtil.TRANSITION_END,this._onTransitionEnd,this),o.DomUtil.setPosition(t,e),o.Util.falseFn(t.offsetWidth),this._stepTimer=setInterval(o.bind(this._onStep,this),50)},stop:function(){this._inProgress&&(o.DomUtil.setPosition(this._el,this._getPos()),this._onTransitionEnd(),o.Util.falseFn(this._el.offsetWidth))},_onStep:function(){var t=this._getPos();return t?(this._el._leaflet_pos=t,void this.fire("step")):void this._onTransitionEnd()},_transformRe:/([-+]?(?:\d*\.)?\d+)\D*, ([-+]?(?:\d*\.)?\d+)\D*\)/,_getPos:function(){var e,i,n,s=this._el,a=t.getComputedStyle(s);if(o.Browser.any3d){if(n=a[o.DomUtil.TRANSFORM].match(this._transformRe),!n)return;e=parseFloat(n[1]),i=parseFloat(n[2])}else e=parseFloat(a.left),i=parseFloat(a.top);return new o.Point(e,i,!0)},_onTransitionEnd:function(){o.DomEvent.off(this._el,o.DomUtil.TRANSITION_END,this._onTransitionEnd,this),this._inProgress&&(this._inProgress=!1,this._el.style[o.DomUtil.TRANSITION]="",this._el._leaflet_pos=this._newPos,clearInterval(this._stepTimer),this.fire("step").fire("end"))}}),o.Map.include({setView:function(t,e,n){if(e=e===i?this._zoom:this._limitZoom(e),t=this._limitCenter(o.latLng(t),e,this.options.maxBounds),n=n||{},this._panAnim&&this._panAnim.stop(),this._loaded&&!n.reset&&n!==!0){n.animate!==i&&(n.zoom=o.extend({animate:n.animate},n.zoom),n.pan=o.extend({animate:n.animate},n.pan));var s=this._zoom!==e?this._tryAnimatedZoom&&this._tryAnimatedZoom(t,e,n.zoom):this._tryAnimatedPan(t,n.pan);if(s)return clearTimeout(this._sizeTimer),this}return this._resetView(t,e),this},panBy:function(t,e){if(t=o.point(t).round(),e=e||{},!t.x&&!t.y)return this;if(this._panAnim||(this._panAnim=new o.PosAnimation,this._panAnim.on({step:this._onPanTransitionStep,end:this._onPanTransitionEnd},this)),e.noMoveStart||this.fire("movestart"),e.animate!==!1){o.DomUtil.addClass(this._mapPane,"leaflet-pan-anim");var i=this._getMapPanePos().subtract(t);this._panAnim.run(this._mapPane,i,e.duration||.25,e.easeLinearity)}else this._rawPanBy(t),this.fire("move").fire("moveend");return this},_onPanTransitionStep:function(){this.fire("move")},_onPanTransitionEnd:function(){o.DomUtil.removeClass(this._mapPane,"leaflet-pan-anim"),this.fire("moveend")},_tryAnimatedPan:function(t,e){var i=this._getCenterOffset(t)._floor();return(e&&e.animate)===!0||this.getSize().contains(i)?(this.panBy(i,e),!0):!1}}),o.PosAnimation=o.DomUtil.TRANSITION?o.PosAnimation:o.PosAnimation.extend({run:function(t,e,i,n){this.stop(),this._el=t,this._inProgress=!0,this._duration=i||.25,this._easeOutPower=1/Math.max(n||.5,.2),this._startPos=o.DomUtil.getPosition(t),this._offset=e.subtract(this._startPos),this._startTime=+new Date,this.fire("start"),this._animate()},stop:function(){this._inProgress&&(this._step(),this._complete())},_animate:function(){this._animId=o.Util.requestAnimFrame(this._animate,this),this._step()},_step:function(){var t=+new Date-this._startTime,e=1e3*this._duration;e>t?this._runFrame(this._easeOut(t/e)):(this._runFrame(1),this._complete())},_runFrame:function(t){var e=this._startPos.add(this._offset.multiplyBy(t));o.DomUtil.setPosition(this._el,e),this.fire("step")},_complete:function(){o.Util.cancelAnimFrame(this._animId),this._inProgress=!1,this.fire("end")},_easeOut:function(t){return 1-Math.pow(1-t,this._easeOutPower)}}),o.Map.mergeOptions({zoomAnimation:!0,zoomAnimationThreshold:4}),o.DomUtil.TRANSITION&&o.Map.addInitHook(function(){this._zoomAnimated=this.options.zoomAnimation&&o.DomUtil.TRANSITION&&o.Browser.any3d&&!o.Browser.android23&&!o.Browser.mobileOpera,this._zoomAnimated&&o.DomEvent.on(this._mapPane,o.DomUtil.TRANSITION_END,this._catchTransitionEnd,this)}),o.Map.include(o.DomUtil.TRANSITION?{_catchTransitionEnd:function(t){this._animatingZoom&&t.propertyName.indexOf("transform")>=0&&this._onZoomTransitionEnd()},_nothingToAnimate:function(){return!this._container.getElementsByClassName("leaflet-zoom-animated").length},_tryAnimatedZoom:function(t,e,i){if(this._animatingZoom)return!0;if(i=i||{},!this._zoomAnimated||i.animate===!1||this._nothingToAnimate()||Math.abs(e-this._zoom)>this.options.zoomAnimationThreshold)return!1;var n=this.getZoomScale(e),o=this._getCenterOffset(t)._divideBy(1-1/n),s=this._getCenterLayerPoint()._add(o);return i.animate===!0||this.getSize().contains(o)?(this.fire("movestart").fire("zoomstart"),this._animateZoom(t,e,s,n,null,!0),!0):!1},_animateZoom:function(t,e,i,n,s,a,r){r||(this._animatingZoom=!0),o.DomUtil.addClass(this._mapPane,"leaflet-zoom-anim"),this._animateToCenter=t,this._animateToZoom=e,o.Draggable&&(o.Draggable._disabled=!0),o.Util.requestAnimFrame(function(){this.fire("zoomanim",{center:t,zoom:e,origin:i,scale:n,delta:s,backwards:a}),setTimeout(o.bind(this._onZoomTransitionEnd,this),250)},this)},_onZoomTransitionEnd:function(){this._animatingZoom&&(this._animatingZoom=!1,o.DomUtil.removeClass(this._mapPane,"leaflet-zoom-anim"),o.Util.requestAnimFrame(function(){this._resetView(this._animateToCenter,this._animateToZoom,!0,!0),o.Draggable&&(o.Draggable._disabled=!1)},this))}}:{}),o.TileLayer.include({_animateZoom:function(t){this._animating||(this._animating=!0,this._prepareBgBuffer());var e=this._bgBuffer,i=o.DomUtil.TRANSFORM,n=t.delta?o.DomUtil.getTranslateString(t.delta):e.style[i],s=o.DomUtil.getScaleString(t.scale,t.origin);e.style[i]=t.backwards?s+" "+n:n+" "+s},_endZoomAnim:function(){var t=this._tileContainer,e=this._bgBuffer;t.style.visibility="",t.parentNode.appendChild(t),o.Util.falseFn(e.offsetWidth);var i=this._map.getZoom();(i>this.options.maxZoom||i<this.options.minZoom)&&this._clearBgBuffer(),this._animating=!1},_clearBgBuffer:function(){var t=this._map;!t||t._animatingZoom||t.touchZoom._zooming||(this._bgBuffer.innerHTML="",this._bgBuffer.style[o.DomUtil.TRANSFORM]="")},_prepareBgBuffer:function(){var t=this._tileContainer,e=this._bgBuffer,i=this._getLoadedTilesPercentage(e),n=this._getLoadedTilesPercentage(t);return e&&i>.5&&.5>n?(t.style.visibility="hidden",void this._stopLoadingImages(t)):(e.style.visibility="hidden",e.style[o.DomUtil.TRANSFORM]="",this._tileContainer=e,e=this._bgBuffer=t,this._stopLoadingImages(e),void clearTimeout(this._clearBgBufferTimer))},_getLoadedTilesPercentage:function(t){var e,i,n=t.getElementsByTagName("img"),o=0;for(e=0,i=n.length;i>e;e++)n[e].complete&&o++;return o/i},_stopLoadingImages:function(t){var e,i,n,s=Array.prototype.slice.call(t.getElementsByTagName("img"));for(e=0,i=s.length;i>e;e++)n=s[e],n.complete||(n.onload=o.Util.falseFn,n.onerror=o.Util.falseFn,n.src=o.Util.emptyImageUrl,n.parentNode.removeChild(n))}}),o.Map.include({_defaultLocateOptions:{watch:!1,setView:!1,maxZoom:1/0,timeout:1e4,maximumAge:0,enableHighAccuracy:!1},locate:function(t){if(t=this._locateOptions=o.extend(this._defaultLocateOptions,t),!navigator.geolocation)return this._handleGeolocationError({code:0,message:"Geolocation not supported."}),this;var e=o.bind(this._handleGeolocationResponse,this),i=o.bind(this._handleGeolocationError,this);return t.watch?this._locationWatchId=navigator.geolocation.watchPosition(e,i,t):navigator.geolocation.getCurrentPosition(e,i,t),this},stopLocate:function(){return navigator.geolocation&&navigator.geolocation.clearWatch(this._locationWatchId),this._locateOptions&&(this._locateOptions.setView=!1),this},_handleGeolocationError:function(t){var e=t.code,i=t.message||(1===e?"permission denied":2===e?"position unavailable":"timeout");this._locateOptions.setView&&!this._loaded&&this.fitWorld(),this.fire("locationerror",{code:e,message:"Geolocation error: "+i+"."})},_handleGeolocationResponse:function(t){var e=t.coords.latitude,i=t.coords.longitude,n=new o.LatLng(e,i),s=180*t.coords.accuracy/40075017,a=s/Math.cos(o.LatLng.DEG_TO_RAD*e),r=o.latLngBounds([e-s,i-a],[e+s,i+a]),h=this._locateOptions;if(h.setView){var l=Math.min(this.getBoundsZoom(r),h.maxZoom);this.setView(n,l)}var u={latlng:n,bounds:r,timestamp:t.timestamp};for(var c in t.coords)"number"==typeof t.coords[c]&&(u[c]=t.coords[c]);this.fire("locationfound",u)}})}(window,document);
+/**!
+ * The MIT License
+ *
+ * Copyright (c) 2013 the angular-leaflet-directive Team, http://tombatossals.github.io/angular-leaflet-directive
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ *
+ * angular-leaflet-directive
+ * https://github.com/tombatossals/angular-leaflet-directive
+ *
+ * @authors https://github.com/tombatossals/angular-leaflet-directive/graphs/contributors
+ */
+
 /*!
-*  angular-leaflet-directive 0.8.8 2015-09-04
+*  angular-leaflet-directive  2015-11-06
 *  angular-leaflet-directive - An AngularJS directive to easily interact with Leaflet maps
 *  git: https://github.com/tombatossals/angular-leaflet-directive
 */
 (function(angular){
 'use strict';
-angular.module("leaflet-directive", ['nemLogging']).directive('leaflet',
-    ["$q", "leafletData", "leafletMapDefaults", "leafletHelpers", "leafletEvents", function ($q, leafletData, leafletMapDefaults, leafletHelpers, leafletEvents) {
-    return {
-        restrict: "EA",
-        replace: true,
-        scope: {
-            center         : '=',
-            lfCenter       : '=',
-            defaults       : '=',
-            maxbounds      : '=',
-            bounds         : '=',
-            markers        : '=',
-            legend         : '=',
-            geojson        : '=',
-            paths          : '=',
-            tiles          : '=',
-            layers         : '=',
-            controls       : '=',
-            decorations    : '=',
-            eventBroadcast : '=',
-            markersWatchOptions : '=',
-            geojsonWatchOptions : '='
-        },
-        transclude: true,
-        template: '<div class="angular-leaflet-map"><div ng-transclude></div></div>',
-        controller: ["$scope", function ($scope) {
-            this._leafletMap = $q.defer();
-            this.getMap = function () {
-                return this._leafletMap.promise;
-            };
+angular.module('leaflet-directive', []).directive('leaflet', ["$q", "leafletData", "leafletMapDefaults", "leafletHelpers", "leafletMapEvents", function($q, leafletData, leafletMapDefaults, leafletHelpers, leafletMapEvents) {
+  return {
+    restrict: 'EA',
+    replace: true,
+    scope: {
+      center: '=',
+      lfCenter: '=',
+      defaults: '=',
+      maxbounds: '=',
+      bounds: '=',
+      markers: '=',
+      legend: '=',
+      geojson: '=',
+      paths: '=',
+      tiles: '=',
+      layers: '=',
+      controls: '=',
+      decorations: '=',
+      eventBroadcast: '=',
+      markersWatchOptions: '=',
+      geojsonWatchOptions: '=',
+    },
+    transclude: true,
+    template: '<div class="angular-leaflet-map"><div ng-transclude></div></div>',
+    controller: ["$scope", function($scope) {
+      this._leafletMap = $q.defer();
+      this.getMap = function() {
+        return this._leafletMap.promise;
+      };
 
-            this.getLeafletScope = function() {
-                return $scope;
-            };
-        }],
+      this.getLeafletScope = function() {
+        return $scope;
+      };
+    }],
 
-        link: function(scope, element, attrs, ctrl) {
-            var isDefined = leafletHelpers.isDefined,
-                defaults = leafletMapDefaults.setDefaults(scope.defaults, attrs.id),
-                mapEvents = leafletEvents.getAvailableMapEvents(),
-                addEvents = leafletEvents.addEvents;
+    link: function(scope, element, attrs, ctrl) {
+      var isDefined = leafletHelpers.isDefined;
+      var defaults  = leafletMapDefaults.setDefaults(scope.defaults, attrs.id);
+      var mapEvents = leafletMapEvents.getAvailableMapEvents();
+      var addEvents = leafletMapEvents.addEvents;
 
-            scope.mapId =  attrs.id;
-            leafletData.setDirectiveControls({}, attrs.id);
+      scope.mapId =  attrs.id;
+      leafletData.setDirectiveControls({}, attrs.id);
 
-            // Set width and height utility functions
-            function updateWidth() {
-                if (isNaN(attrs.width)) {
-                    element.css('width', attrs.width);
-                } else {
-                    element.css('width', attrs.width + 'px');
-                }
-            }
-
-            function updateHeight() {
-                if (isNaN(attrs.height)) {
-                    element.css('height', attrs.height);
-                } else {
-                    element.css('height', attrs.height + 'px');
-                }
-            }
-
-            // If the width attribute defined update css
-            // Then watch if bound property changes and update css
-            if (isDefined(attrs.width)) {
-                updateWidth();
-
-                scope.$watch(
-                    function () {
-                        return element[0].getAttribute('width');
-                    },
-                    function () {
-                        updateWidth();
-                        map.invalidateSize();
-                    });
-            }
-
-            // If the height attribute defined update css
-            // Then watch if bound property changes and update css
-            if (isDefined(attrs.height)) {
-                updateHeight();
-
-                scope.$watch(
-                    function () {
-                        return element[0].getAttribute('height');
-                    },
-                    function () {
-                        updateHeight();
-                        map.invalidateSize();
-                    });
-            }
-
-            // Create the Leaflet Map Object with the options
-            var map = new L.Map(element[0], leafletMapDefaults.getMapCreationDefaults(attrs.id));
-            ctrl._leafletMap.resolve(map);
-
-            if (!isDefined(attrs.center) && !isDefined(attrs.lfCenter)) {
-                map.setView([defaults.center.lat, defaults.center.lng], defaults.center.zoom);
-            }
-
-            // If no layers nor tiles defined, set the default tileLayer
-            if (!isDefined(attrs.tiles) && (!isDefined(attrs.layers))) {
-                var tileLayerObj = L.tileLayer(defaults.tileLayer, defaults.tileLayerOptions);
-                tileLayerObj.addTo(map);
-                leafletData.setTiles(tileLayerObj, attrs.id);
-            }
-
-            // Set zoom control configuration
-            if (isDefined(map.zoomControl) &&
-                isDefined(defaults.zoomControlPosition)) {
-                map.zoomControl.setPosition(defaults.zoomControlPosition);
-            }
-
-            if (isDefined(map.zoomControl) &&
-                defaults.zoomControl===false) {
-                map.zoomControl.removeFrom(map);
-            }
-
-            if (isDefined(map.zoomsliderControl) &&
-                isDefined(defaults.zoomsliderControl) &&
-                defaults.zoomsliderControl===false) {
-                map.zoomsliderControl.removeFrom(map);
-            }
-
-
-            // if no event-broadcast attribute, all events are broadcasted
-            if (!isDefined(attrs.eventBroadcast)) {
-                var logic = "broadcast";
-                addEvents(map, mapEvents, "eventName", scope, logic);
-            }
-
-            // Resolve the map object to the promises
-            map.whenReady(function() {
-                leafletData.setMap(map, attrs.id);
-            });
-
-            scope.$on('$destroy', function () {
-                leafletMapDefaults.reset();
-                map.remove();
-                leafletData.unresolveMap(attrs.id);
-            });
-
-            //Handle request to invalidate the map size
-            //Up scope using $scope.$emit('invalidateSize')
-            //Down scope using $scope.$broadcast('invalidateSize')
-            scope.$on('invalidateSize', function() {
-                map.invalidateSize();
-            });
+      // Set width and height utility functions
+      function updateWidth() {
+        if (isNaN(attrs.width)) {
+          element.css('width', attrs.width);
+        } else {
+          element.css('width', attrs.width + 'px');
         }
-    };
+      }
+
+      function updateHeight() {
+        if (isNaN(attrs.height)) {
+          element.css('height', attrs.height);
+        } else {
+          element.css('height', attrs.height + 'px');
+        }
+      }
+
+      // If the width attribute defined update css
+      // Then watch if bound property changes and update css
+      if (isDefined(attrs.width)) {
+        updateWidth();
+
+        scope.$watch(
+          function() {
+            return element[0].getAttribute('width');
+          },
+
+          function() {
+            updateWidth();
+            map.invalidateSize();
+          });
+      }
+
+      // If the height attribute defined update css
+      // Then watch if bound property changes and update css
+      if (isDefined(attrs.height)) {
+        updateHeight();
+
+        scope.$watch(
+          function() {
+            return element[0].getAttribute('height');
+          },
+
+          function() {
+            updateHeight();
+            map.invalidateSize();
+          });
+      }
+
+      // Create the Leaflet Map Object with the options
+      var map = new L.Map(element[0], leafletMapDefaults.getMapCreationDefaults(attrs.id));
+      ctrl._leafletMap.resolve(map);
+
+      if (!isDefined(attrs.center) && !isDefined(attrs.lfCenter)) {
+        map.setView([defaults.center.lat, defaults.center.lng], defaults.center.zoom);
+      }
+
+      // If no layers nor tiles defined, set the default tileLayer
+      if (!isDefined(attrs.tiles) && (!isDefined(attrs.layers))) {
+        var tileLayerObj = L.tileLayer(defaults.tileLayer, defaults.tileLayerOptions);
+        tileLayerObj.addTo(map);
+        leafletData.setTiles(tileLayerObj, attrs.id);
+      }
+
+      // Set zoom control configuration
+      if (isDefined(map.zoomControl) &&
+          isDefined(defaults.zoomControlPosition)) {
+        map.zoomControl.setPosition(defaults.zoomControlPosition);
+      }
+
+      if (isDefined(map.zoomControl) && defaults.zoomControl === false) {
+        map.zoomControl.removeFrom(map);
+      }
+
+      if (isDefined(map.zoomsliderControl) &&
+          isDefined(defaults.zoomsliderControl) &&
+          defaults.zoomsliderControl === false) {
+        map.zoomsliderControl.removeFrom(map);
+      }
+
+      // if no event-broadcast attribute, all events are broadcasted
+      if (!isDefined(attrs.eventBroadcast)) {
+        var logic = 'broadcast';
+        addEvents(map, mapEvents, 'eventName', scope, logic);
+      }
+
+      // Resolve the map object to the promises
+      map.whenReady(function() {
+        leafletData.setMap(map, attrs.id);
+      });
+
+      scope.$on('$destroy', function() {
+        leafletMapDefaults.reset();
+        map.remove();
+        leafletData.unresolveMap(attrs.id);
+      });
+
+      //Handle request to invalidate the map size
+      //Up scope using $scope.$emit('invalidateSize')
+      //Down scope using $scope.$broadcast('invalidateSize')
+      scope.$on('invalidateSize', function() {
+        map.invalidateSize();
+      });
+    },
+  };
 }]);
 
-angular.module("leaflet-directive").factory('leafletBoundsHelpers', ["leafletLogger", "leafletHelpers", function (leafletLogger, leafletHelpers) {
+angular.module('leaflet-directive').factory('leafletBoundsHelpers', ["$log", "leafletHelpers", function($log, leafletHelpers) {
 
-    var isArray = leafletHelpers.isArray,
-        isNumber = leafletHelpers.isNumber,
-        isFunction = leafletHelpers.isFunction,
-        isDefined = leafletHelpers.isDefined,
-        $log = leafletLogger;
+  var isArray = leafletHelpers.isArray;
+  var isNumber = leafletHelpers.isNumber;
+  var isFunction = leafletHelpers.isFunction;
+  var isDefined = leafletHelpers.isDefined;
 
-    function _isValidBounds(bounds) {
-        return angular.isDefined(bounds) && angular.isDefined(bounds.southWest) &&
-               angular.isDefined(bounds.northEast) && angular.isNumber(bounds.southWest.lat) &&
-               angular.isNumber(bounds.southWest.lng) && angular.isNumber(bounds.northEast.lat) &&
-               angular.isNumber(bounds.northEast.lng);
+  function _isValidBounds(bounds) {
+    return angular.isDefined(bounds) && angular.isDefined(bounds.southWest) &&
+           angular.isDefined(bounds.northEast) && angular.isNumber(bounds.southWest.lat) &&
+           angular.isNumber(bounds.southWest.lng) && angular.isNumber(bounds.northEast.lat) &&
+           angular.isNumber(bounds.northEast.lng);
+  }
+
+  return {
+    createLeafletBounds: function(bounds) {
+      if (_isValidBounds(bounds)) {
+        return L.latLngBounds([bounds.southWest.lat, bounds.southWest.lng],
+                              [bounds.northEast.lat, bounds.northEast.lng]);
+      }
+    },
+
+    isValidBounds: _isValidBounds,
+
+    createBoundsFromArray: function(boundsArray) {
+      if (!(isArray(boundsArray) && boundsArray.length === 2 &&
+            isArray(boundsArray[0]) && isArray(boundsArray[1]) &&
+            boundsArray[0].length === 2 && boundsArray[1].length === 2 &&
+            isNumber(boundsArray[0][0]) && isNumber(boundsArray[0][1]) &&
+            isNumber(boundsArray[1][0]) && isNumber(boundsArray[1][1]))) {
+        $log.error('[AngularJS - Leaflet] The bounds array is not valid.');
+        return;
+      }
+
+      return {
+        northEast: {
+          lat: boundsArray[0][0],
+          lng: boundsArray[0][1],
+        },
+        southWest: {
+          lat: boundsArray[1][0],
+          lng: boundsArray[1][1],
+        },
+      };
+    },
+
+    createBoundsFromLeaflet: function(lfBounds) {
+      if (!(isDefined(lfBounds) && isFunction(lfBounds.getNorthEast) && isFunction(lfBounds.getSouthWest))) {
+        $log.error('[AngularJS - Leaflet] The leaflet bounds is not valid object.');
+        return;
+      }
+
+      var northEast = lfBounds.getNorthEast();
+      var southWest = lfBounds.getSouthWest();
+
+      return {
+        northEast: {
+          lat: northEast.lat,
+          lng: northEast.lng,
+        },
+        southWest: {
+          lat: southWest.lat,
+          lng: southWest.lng,
+        },
+      };
+    },
+  };
+}]);
+
+angular.module('leaflet-directive').factory('leafletControlHelpers', ["$rootScope", "$log", "leafletHelpers", "leafletLayerHelpers", "leafletMapDefaults", function($rootScope, $log, leafletHelpers, leafletLayerHelpers, leafletMapDefaults) {
+  var isDefined = leafletHelpers.isDefined;
+  var isObject = leafletHelpers.isObject;
+  var createLayer = leafletLayerHelpers.createLayer;
+  var _controls = {};
+  var errorHeader = leafletHelpers.errorHeader + ' [Controls] ';
+
+  var _controlLayersMustBeVisible = function(baselayers, overlays, mapId) {
+    var defaults = leafletMapDefaults.getDefaults(mapId);
+    if (!defaults.controls.layers.visible) {
+      return false;
     }
 
-    return {
-        createLeafletBounds: function(bounds) {
-            if (_isValidBounds(bounds)) {
-                return L.latLngBounds([bounds.southWest.lat, bounds.southWest.lng],
-                                      [bounds.northEast.lat, bounds.northEast.lng ]);
-            }
-        },
+    var atLeastOneControlItemMustBeShown = false;
 
-        isValidBounds: _isValidBounds,
-
-        createBoundsFromArray: function(boundsArray) {
-            if (!(isArray(boundsArray) && boundsArray.length === 2 &&
-                  isArray(boundsArray[0]) && isArray(boundsArray[1]) &&
-                  boundsArray[0].length === 2 && boundsArray[1].length === 2 &&
-                  isNumber(boundsArray[0][0]) && isNumber(boundsArray[0][1]) &&
-                  isNumber(boundsArray[1][0]) && isNumber(boundsArray[1][1]))) {
-                $log.error("[AngularJS - Leaflet] The bounds array is not valid.");
-                return;
-            }
-
-            return {
-                northEast: {
-                    lat: boundsArray[0][0],
-                    lng: boundsArray[0][1]
-                },
-                southWest: {
-                    lat: boundsArray[1][0],
-                    lng: boundsArray[1][1]
-                }
-            };
-        },
-
-        createBoundsFromLeaflet: function(lfBounds) {
-            if (!(isDefined(lfBounds) && isFunction(lfBounds.getNorthEast) && isFunction(lfBounds.getSouthWest))) {
-                $log.error("[AngularJS - Leaflet] The leaflet bounds is not valid object.");
-                return;
-            }
-
-            var northEast = lfBounds.getNorthEast(),
-                southWest = lfBounds.getSouthWest();
-
-            return {
-                northEast: {
-                    lat: northEast.lat,
-                    lng: northEast.lng
-                },
-                southWest: {
-                    lat: southWest.lat,
-                    lng: southWest.lng
-                }
-            };
+    if (isObject(baselayers)) {
+      Object.keys(baselayers).forEach(function(key) {
+        var layer = baselayers[key];
+        if (!isDefined(layer.layerOptions) || layer.layerOptions.showOnSelector !== false) {
+          atLeastOneControlItemMustBeShown = true;
         }
+      });
+    }
+
+    if (isObject(overlays)) {
+      Object.keys(overlays).forEach(function(key) {
+        var layer = overlays[key];
+        if (!isDefined(layer.layerParams) || layer.layerParams.showOnSelector !== false) {
+          atLeastOneControlItemMustBeShown = true;
+        }
+      });
+    }
+
+    return atLeastOneControlItemMustBeShown;
+  };
+
+  var _createLayersControl = function(mapId) {
+    var defaults = leafletMapDefaults.getDefaults(mapId);
+    var controlOptions = {
+      collapsed: defaults.controls.layers.collapsed,
+      position: defaults.controls.layers.position,
+      autoZIndex: false,
     };
+
+    angular.extend(controlOptions, defaults.controls.layers.options);
+
+    var control;
+    if (defaults.controls.layers && isDefined(defaults.controls.layers.control)) {
+      control = defaults.controls.layers.control.apply(this, [[], [], controlOptions]);
+    } else {
+      control = new L.control.layers([], [], controlOptions);
+    }
+
+    return control;
+  };
+
+  var controlTypes = {
+    draw: {
+      isPluginLoaded: function() {
+        if (!angular.isDefined(L.Control.Draw)) {
+          $log.error(errorHeader + ' Draw plugin is not loaded.');
+          return false;
+        }
+
+        return true;
+      },
+
+      checkValidParams: function(/* params */) {
+        return true;
+      },
+
+      createControl: function(params) {
+        return new L.Control.Draw(params);
+      },
+    },
+    scale: {
+      isPluginLoaded: function() {
+        return true;
+      },
+
+      checkValidParams: function(/* params */) {
+        return true;
+      },
+
+      createControl: function(params) {
+        return new L.control.scale(params);
+      },
+    },
+    fullscreen: {
+      isPluginLoaded: function() {
+        if (!angular.isDefined(L.Control.Fullscreen)) {
+          $log.error(errorHeader + ' Fullscreen plugin is not loaded.');
+          return false;
+        }
+
+        return true;
+      },
+
+      checkValidParams: function(/* params */) {
+        return true;
+      },
+
+      createControl: function(params) {
+        return new L.Control.Fullscreen(params);
+      },
+    },
+    search: {
+      isPluginLoaded: function() {
+        if (!angular.isDefined(L.Control.Search)) {
+          $log.error(errorHeader + ' Search plugin is not loaded.');
+          return false;
+        }
+
+        return true;
+      },
+
+      checkValidParams: function(/* params */) {
+        return true;
+      },
+
+      createControl: function(params) {
+        return new L.Control.Search(params);
+      },
+    },
+    custom: {},
+    minimap: {
+      isPluginLoaded: function() {
+        if (!angular.isDefined(L.Control.MiniMap)) {
+          $log.error(errorHeader + ' Minimap plugin is not loaded.');
+          return false;
+        }
+
+        return true;
+      },
+
+      checkValidParams: function(params) {
+        if (!isDefined(params.layer)) {
+          $log.warn(errorHeader + ' minimap "layer" option should be defined.');
+          return false;
+        }
+
+        return true;
+      },
+
+      createControl: function(params) {
+        var layer = createLayer(params.layer);
+
+        if (!isDefined(layer)) {
+          $log.warn(errorHeader + ' minimap control "layer" could not be created.');
+          return;
+        }
+
+        return new L.Control.MiniMap(layer, params);
+      },
+    },
+  };
+
+  return {
+    layersControlMustBeVisible: _controlLayersMustBeVisible,
+
+    isValidControlType: function(type) {
+      return Object.keys(controlTypes).indexOf(type) !== -1;
+    },
+
+    createControl: function(type, params) {
+      if (!controlTypes[type].checkValidParams(params)) {
+        return;
+      }
+
+      return controlTypes[type].createControl(params);
+    },
+
+    updateLayersControl: function(map, mapId, loaded, baselayers, overlays, leafletLayers) {
+      var i;
+      var _layersControl = _controls[mapId];
+      var mustBeLoaded = _controlLayersMustBeVisible(baselayers, overlays, mapId);
+
+      if (isDefined(_layersControl) && loaded) {
+        for (i in leafletLayers.baselayers) {
+          _layersControl.removeLayer(leafletLayers.baselayers[i]);
+        }
+
+        for (i in leafletLayers.overlays) {
+          _layersControl.removeLayer(leafletLayers.overlays[i]);
+        }
+
+        map.removeControl(_layersControl);
+        delete _controls[mapId];
+      }
+
+      if (mustBeLoaded) {
+        _layersControl = _createLayersControl(mapId);
+        _controls[mapId] = _layersControl;
+        for (i in baselayers) {
+          var hideOnSelector = isDefined(baselayers[i].layerOptions) &&
+                               baselayers[i].layerOptions.showOnSelector === false;
+          if (!hideOnSelector && isDefined(leafletLayers.baselayers[i])) {
+            _layersControl.addBaseLayer(leafletLayers.baselayers[i], baselayers[i].name);
+          }
+        }
+
+        for (i in overlays) {
+          var hideOverlayOnSelector = isDefined(overlays[i].layerParams) &&
+                      overlays[i].layerParams.showOnSelector === false;
+          if (!hideOverlayOnSelector && isDefined(leafletLayers.overlays[i])) {
+            _layersControl.addOverlay(leafletLayers.overlays[i], overlays[i].name);
+          }
+        }
+
+        map.addControl(_layersControl);
+      }
+
+      return mustBeLoaded;
+    },
+  };
 }]);
 
-angular.module("leaflet-directive").factory('leafletControlHelpers', ["$rootScope", "leafletLogger", "leafletHelpers", "leafletLayerHelpers", "leafletMapDefaults", function ($rootScope, leafletLogger, leafletHelpers, leafletLayerHelpers, leafletMapDefaults) {
-    var isDefined = leafletHelpers.isDefined,
-        isObject = leafletHelpers.isObject,
-        createLayer = leafletLayerHelpers.createLayer,
-        _controls = {},
-        errorHeader = leafletHelpers.errorHeader + ' [Controls] ',
-        $log = leafletLogger;
+angular.module('leaflet-directive').service('leafletData', ["$log", "$q", "leafletHelpers", function($log, $q, leafletHelpers) {
+  var getDefer = leafletHelpers.getDefer,
+      getUnresolvedDefer = leafletHelpers.getUnresolvedDefer,
+      setResolvedDefer = leafletHelpers.setResolvedDefer;
 
-    var _controlLayersMustBeVisible = function(baselayers, overlays, mapId) {
-        var defaults = leafletMapDefaults.getDefaults(mapId);
-        if(!defaults.controls.layers.visible) {
-            return false;
-        }
+  var _private = {};
+  var self = this;
 
-        var atLeastOneControlItemMustBeShown = false;
+  var upperFirst = function(string) {
+    return string.charAt(0).toUpperCase() + string.slice(1);
+  };
 
-        if (isObject(baselayers)) {
-            Object.keys(baselayers).forEach(function(key) {
-                var layer = baselayers[key];
-                if (!isDefined(layer.layerOptions) || layer.layerOptions.showOnSelector !== false) {
-                    atLeastOneControlItemMustBeShown = true;
-                }
-            });
-        }
+  var _privateItems = [
+      'map',
+      'tiles',
+      'layers',
+      'paths',
+      'markers',
+      'geoJSON',
+      'UTFGrid', //odd ball on naming convention keeping to not break
+      'decorations',
+      'directiveControls',];
 
-        if (isObject(overlays)) {
-            Object.keys(overlays).forEach(function(key) {
-                var layer = overlays[key];
-                if (!isDefined(layer.layerParams) || layer.layerParams.showOnSelector !== false) {
-                    atLeastOneControlItemMustBeShown = true;
-                }
-            });
-        }
+  //init
+  _privateItems.forEach(function(itemName) {
+    _private[itemName] = {};
+  });
 
-        return atLeastOneControlItemMustBeShown;
+  this.unresolveMap = function(scopeId) {
+    var id = leafletHelpers.obtainEffectiveMapId(_private.map, scopeId);
+    _privateItems.forEach(function(itemName) {
+      _private[itemName][id] = undefined;
+    });
+  };
+
+  //int repetitive stuff (get and sets)
+  _privateItems.forEach(function(itemName) {
+    var name = upperFirst(itemName);
+    self['set' + name] = function(lObject, scopeId) {
+      var defer = getUnresolvedDefer(_private[itemName], scopeId);
+      defer.resolve(lObject);
+      setResolvedDefer(_private[itemName], scopeId);
     };
 
-    var _createLayersControl = function(mapId) {
-        var defaults = leafletMapDefaults.getDefaults(mapId);
-        var controlOptions = {
-            collapsed: defaults.controls.layers.collapsed,
-            position: defaults.controls.layers.position,
-            autoZIndex: false
-        };
-
-        angular.extend(controlOptions, defaults.controls.layers.options);
-
-        var control;
-        if(defaults.controls.layers && isDefined(defaults.controls.layers.control)) {
-			control = defaults.controls.layers.control.apply(this, [[], [], controlOptions]);
-		} else {
-			control = new L.control.layers([], [], controlOptions);
-		}
-
-        return control;
+    self['get' + name] = function(scopeId) {
+      var defer = getDefer(_private[itemName], scopeId);
+      return defer.promise;
     };
-
-    var controlTypes = {
-        draw: {
-            isPluginLoaded: function() {
-                if (!angular.isDefined(L.Control.Draw)) {
-                    $log.error(errorHeader + ' Draw plugin is not loaded.');
-                    return false;
-                }
-                return true;
-            },
-            checkValidParams: function(/* params */) {
-                return true;
-            },
-            createControl: function(params) {
-                return new L.Control.Draw(params);
-            }
-        },
-        scale: {
-            isPluginLoaded: function() {
-                return true;
-            },
-            checkValidParams: function(/* params */) {
-                return true;
-            },
-            createControl: function(params) {
-                return new L.control.scale(params);
-            }
-        },
-        fullscreen: {
-            isPluginLoaded: function() {
-                if (!angular.isDefined(L.Control.Fullscreen)) {
-                    $log.error(errorHeader + ' Fullscreen plugin is not loaded.');
-                    return false;
-                }
-                return true;
-            },
-            checkValidParams: function(/* params */) {
-                return true;
-            },
-            createControl: function(params) {
-                return new L.Control.Fullscreen(params);
-            }
-        },
-        search: {
-            isPluginLoaded: function() {
-                if (!angular.isDefined(L.Control.Search)) {
-                    $log.error(errorHeader + ' Search plugin is not loaded.');
-                    return false;
-                }
-                return true;
-            },
-            checkValidParams: function(/* params */) {
-                return true;
-            },
-            createControl: function(params) {
-                return new L.Control.Search(params);
-            }
-        },
-        custom: {},
-        minimap: {
-            isPluginLoaded: function() {
-                if (!angular.isDefined(L.Control.MiniMap)) {
-                    $log.error(errorHeader + ' Minimap plugin is not loaded.');
-                    return false;
-                }
-
-                return true;
-            },
-            checkValidParams: function(params) {
-                if(!isDefined(params.layer)) {
-                    $log.warn(errorHeader +' minimap "layer" option should be defined.');
-                    return false;
-                }
-                return true;
-            },
-            createControl: function(params) {
-                var layer = createLayer(params.layer);
-
-                if (!isDefined(layer)) {
-                    $log.warn(errorHeader + ' minimap control "layer" could not be created.');
-                    return;
-                }
-
-                return new L.Control.MiniMap(layer, params);
-            }
-        }
-    };
-
-    return {
-        layersControlMustBeVisible: _controlLayersMustBeVisible,
-
-        isValidControlType: function(type) {
-            return Object.keys(controlTypes).indexOf(type) !== -1;
-        },
-
-        createControl: function (type, params) {
-            if (!controlTypes[type].checkValidParams(params)) {
-                return;
-            }
-
-            return controlTypes[type].createControl(params);
-        },
-
-        updateLayersControl: function(map, mapId, loaded, baselayers, overlays, leafletLayers) {
-            var i;
-            var _layersControl = _controls[mapId];
-            var mustBeLoaded = _controlLayersMustBeVisible(baselayers, overlays, mapId);
-
-            if (isDefined(_layersControl) && loaded) {
-                for (i in leafletLayers.baselayers) {
-                    _layersControl.removeLayer(leafletLayers.baselayers[i]);
-                }
-                for (i in leafletLayers.overlays) {
-                    _layersControl.removeLayer(leafletLayers.overlays[i]);
-                }
-                map.removeControl(_layersControl);
-                delete _controls[mapId];
-            }
-
-            if (mustBeLoaded) {
-                _layersControl = _createLayersControl(mapId);
-                _controls[mapId] = _layersControl;
-                for (i in baselayers) {
-                    var hideOnSelector = isDefined(baselayers[i].layerOptions) &&
-                                         baselayers[i].layerOptions.showOnSelector === false;
-                    if (!hideOnSelector && isDefined(leafletLayers.baselayers[i])) {
-                        _layersControl.addBaseLayer(leafletLayers.baselayers[i], baselayers[i].name);
-                    }
-                }
-                for (i in overlays) {
-                	var hideOverlayOnSelector = isDefined(overlays[i].layerParams) &&
-                            overlays[i].layerParams.showOnSelector === false;
-                    if (!hideOverlayOnSelector && isDefined(leafletLayers.overlays[i])) {
-                        _layersControl.addOverlay(leafletLayers.overlays[i], overlays[i].name);
-                    }
-                }
-
-                map.addControl(_layersControl);
-            }
-            return mustBeLoaded;
-        }
-    };
+  });
 }]);
 
-angular.module("leaflet-directive").service('leafletData', ["leafletLogger", "$q", "leafletHelpers", function (leafletLogger, $q, leafletHelpers) {
-    var getDefer = leafletHelpers.getDefer,
-        getUnresolvedDefer = leafletHelpers.getUnresolvedDefer,
-        setResolvedDefer = leafletHelpers.setResolvedDefer;
-        // $log = leafletLogger;
+angular.module('leaflet-directive')
+.service('leafletDirectiveControlsHelpers', ["$log", "leafletData", "leafletHelpers", function($log, leafletData, leafletHelpers) {
+  var _isDefined = leafletHelpers.isDefined;
+  var _isString = leafletHelpers.isString;
+  var _isObject = leafletHelpers.isObject;
+  var _mainErrorHeader = leafletHelpers.errorHeader;
 
-    var _private = {};
-    var self = this;
+  var _errorHeader = _mainErrorHeader + '[leafletDirectiveControlsHelpers';
 
-    var upperFirst = function (string) {
-        return string.charAt(0).toUpperCase() + string.slice(1);
-    };
+  var _extend = function(id, thingToAddName, createFn, cleanFn) {
+    var _fnHeader = _errorHeader + '.extend] ';
+    var extender = {};
+    if (!_isDefined(thingToAddName)) {
+      $log.error(_fnHeader + 'thingToAddName cannot be undefined');
+      return;
+    }
 
-    var _privateItems = [
-        'map',
-        'tiles',
-        'layers',
-        'paths',
-        'markers',
-        'geoJSON',
-        'UTFGrid', //odd ball on naming convention keeping to not break
-        'decorations',
-        'directiveControls'];
+    if (_isString(thingToAddName) && _isDefined(createFn) && _isDefined(cleanFn)) {
+      extender[thingToAddName] = {
+        create: createFn,
+        clean: cleanFn,
+      };
+    }    else if (_isObject(thingToAddName) && !_isDefined(createFn) && !_isDefined(cleanFn)) {
+      extender = thingToAddName;
+    }    else {
+      $log.error(_fnHeader + 'incorrect arguments');
+      return;
+    }
 
-    //init
-    _privateItems.forEach(function(itemName){
-        _private[itemName] = {};
+    //add external control to create / destroy markers without a watch
+    leafletData.getDirectiveControls().then(function(controls) {
+      angular.extend(controls, extender);
+      leafletData.setDirectiveControls(controls, id);
+    });
+  };
+
+  return {
+    extend: _extend,
+  };
+}]);
+
+angular.module('leaflet-directive')
+.service('leafletGeoJsonHelpers', ["leafletHelpers", "leafletIterators", function(leafletHelpers, leafletIterators) {
+  var lHlp = leafletHelpers;
+  var lIt = leafletIterators;
+  var Point = function(lat, lng) {
+    this.lat = lat;
+    this.lng = lng;
+    return this;
+  };
+
+  var _getLat = function(value) {
+    if (Array.isArray(value) && value.length === 2) {
+      return value[1];
+    } else if (lHlp.isDefined(value.type) && value.type === 'Point') {
+      return +value.coordinates[1];
+    } else {
+      return +value.lat;
+    }
+  };
+
+  var _getLng = function(value) {
+    if (Array.isArray(value) && value.length === 2) {
+      return value[0];
+    } else if (lHlp.isDefined(value.type) && value.type === 'Point') {
+      return +value.coordinates[0];
+    } else {
+      return +value.lng;
+    }
+  };
+
+  var _validateCoords = function(coords) {
+    if (lHlp.isUndefined(coords)) {
+      return false;
+    }
+
+    if (lHlp.isArray(coords)) {
+      if (coords.length === 2 && lHlp.isNumber(coords[0]) && lHlp.isNumber(coords[1])) {
+        return true;
+      }
+    } else if (lHlp.isDefined(coords.type)) {
+      if (
+          coords.type === 'Point' && lHlp.isArray(coords.coordinates) &&
+          coords.coordinates.length === 2  &&
+          lHlp.isNumber(coords.coordinates[0]) &&
+          lHlp.isNumber(coords.coordinates[1])) {
+        return true;
+      }
+    }
+
+    var ret = lIt.all(['lat', 'lng'], function(pos) {
+      return lHlp.isDefined(coords[pos]) && lHlp.isNumber(coords[pos]);
     });
 
-    this.unresolveMap = function (scopeId) {
-        var id = leafletHelpers.obtainEffectiveMapId(_private.map, scopeId);
-        _privateItems.forEach(function (itemName) {
-            _private[itemName][id] = undefined;
-        });
-    };
+    return ret;
+  };
 
-    //int repetitive stuff (get and sets)
-    _privateItems.forEach(function (itemName) {
-        var name = upperFirst(itemName);
-        self['set' + name] = function (lObject, scopeId) {
-            var defer = getUnresolvedDefer(_private[itemName], scopeId);
-            defer.resolve(lObject);
-            setResolvedDefer(_private[itemName], scopeId);
-        };
+  var _getCoords = function(value) {
+    if (!value || !_validateCoords(value)) {
+      return;
+    }
 
-        self['get' + name] = function (scopeId) {
-            var defer = getDefer(_private[itemName], scopeId);
-            return defer.promise;
-        };
+    var p =  null;
+    if (Array.isArray(value) && value.length === 2) {
+      p = new Point(value[1], value[0]);
+    } else if (lHlp.isDefined(value.type) && value.type === 'Point') {
+      p = new Point(value.coordinates[1], value.coordinates[0]);
+    } else {
+      return value;
+    }
+
+    //note angular.merge is avail in angular 1.4.X we might want to fill it here
+    return angular.extend(value, p);//tap on lat, lng if it doesnt exist
+  };
+
+  return {
+    getLat: _getLat,
+    getLng: _getLng,
+    validateCoords: _validateCoords,
+    getCoords: _getCoords,
+  };
+}]);
+
+angular.module('leaflet-directive').service('leafletHelpers', ["$q", "$log", function($q, $log) {
+  var _errorHeader = '[AngularJS - Leaflet] ';
+  var _copy = angular.copy;
+  var _clone = _copy;
+  /*
+  For parsing paths to a field in an object
+
+  Example:
+  var obj = {
+      bike:{
+       1: 'hi'
+       2: 'foo'
+      }
+  };
+  _getObjectValue(obj,"bike.1") returns 'hi'
+  this is getPath in ui-gmap
+   */
+  var _getObjectValue = function(object, pathStr) {
+    var obj;
+    if (!object || !angular.isObject(object))
+        return;
+
+    //if the key is not a sting then we already have the value
+    if ((pathStr === null) || !angular.isString(pathStr)) {
+      return pathStr;
+    }
+
+    obj = object;
+    pathStr.split('.').forEach(function(value) {
+      if (obj) {
+        obj = obj[value];
+      }
     });
-}]);
 
-angular.module("leaflet-directive")
-.service('leafletDirectiveControlsHelpers', ["leafletLogger", "leafletData", "leafletHelpers", function (leafletLogger, leafletData, leafletHelpers) {
-    var _isDefined = leafletHelpers.isDefined,
-        _isString = leafletHelpers.isString,
-        _isObject = leafletHelpers.isObject,
-        _mainErrorHeader = leafletHelpers.errorHeader,
-        $log = leafletLogger;
+    return obj;
+  };
 
-    var _errorHeader = _mainErrorHeader + '[leafletDirectiveControlsHelpers';
+  /*
+   Object Array Notation
+   _getObjectArrayPath("bike.one.two")
+   returns:
+   'bike["one"]["two"]'
+   */
+  var _getObjectArrayPath = function(pathStr) {
+    return pathStr.split('.').reduce(function(previous, current) {
+      return previous + '["' + current + '"]';
+    });
+  };
 
-    var _extend = function(id, thingToAddName, createFn, cleanFn){
-        var _fnHeader = _errorHeader + '.extend] ';
-        var extender = {};
-        if(!_isDefined(thingToAddName)){
-            $log.error(_fnHeader + 'thingToAddName cannot be undefined');
-            return;
+  /* Object Dot Notation
+   _getObjectPath(["bike","one","two"])
+   returns:
+   "bike.one.two"
+   */
+  var _getObjectDotPath = function(arrayOfStrings) {
+    return arrayOfStrings.reduce(function(previous, current) {
+      return previous + '.' + current;
+    });
+  };
+
+  function _obtainEffectiveMapId(d, mapId) {
+    var id;
+    var i;
+    if (!angular.isDefined(mapId)) {
+      if (Object.keys(d).length === 0) {
+        id = 'main';
+      } else if (Object.keys(d).length >= 1) {
+        for (i in d) {
+          if (d.hasOwnProperty(i)) {
+            id = i;
+          }
         }
-
-        if(_isString(thingToAddName) && _isDefined(createFn) && _isDefined(cleanFn)){
-            extender[thingToAddName] = {
-                create: createFn,
-                clean: cleanFn
-            };
-        }
-        else if(_isObject(thingToAddName) && !_isDefined(createFn) && !_isDefined(cleanFn)){
-            extender = thingToAddName;
-        }
-        else{
-            $log.error(_fnHeader + 'incorrect arguments');
-            return;
-        }
-
-        //add external control to create / destroy markers without a watch
-        leafletData.getDirectiveControls().then(function(controls){
-            angular.extend(controls, extender);
-            leafletData.setDirectiveControls(controls, id);
-        });
-    };
-
-    return {
-        extend: _extend
-    };
-}]);
-
-angular.module("leaflet-directive").factory('leafletEvents',
-    ["leafletMapEvents", "leafletMarkerEvents", "leafletPathEvents", "leafletIterators", function (leafletMapEvents, leafletMarkerEvents, leafletPathEvents, leafletIterators) {
-        //NOTE THIS SHOULD BE DEPRECATED infavor of getting a specific events helper
-        var instance = angular.extend({},
-            leafletMapEvents, {
-                bindMarkerEvents: leafletMarkerEvents.bindEvents,
-                getAvailableMarkerEvents: leafletMarkerEvents.getAvailableEvents
-            }, leafletPathEvents);
-
-        var genDispatchMapEvent = instance.genDispatchMapEvent;
-
-        instance.addEvents =  function(map, mapEvents, contextName, scope, logic){
-            leafletIterators.each(mapEvents, function(eventName) {
-                var context = {};
-                context[contextName] = eventName;
-                map.on(eventName, genDispatchMapEvent(scope, eventName, logic), context);
-            });
-        };
-
-        return instance;
-}]);
-
-angular.module("leaflet-directive")
-.service('leafletGeoJsonHelpers', ["leafletHelpers", "leafletIterators", function (leafletHelpers, leafletIterators) {
-    var lHlp = leafletHelpers,
-    lIt = leafletIterators;
-    var Point = function(lat,lng){
-        this.lat = lat;
-        this.lng = lng;
-        return this;
-    };
-
-    var _getLat = function(value) {
-        if (Array.isArray(value) && value.length === 2) {
-            return value[1];
-        } else if (lHlp.isDefined(value.type) && value.type === 'Point') {
-            return +value.coordinates[1];
-        } else {
-            return +value.lat;
-        }
-    };
-
-    var _getLng = function(value) {
-        if (Array.isArray(value) && value.length === 2) {
-            return value[0];
-        } else if (lHlp.isDefined(value.type) && value.type === 'Point') {
-            return +value.coordinates[0];
-        } else {
-            return +value.lng;
-        }
-    };
-
-    var _validateCoords = function(coords) {
-        if (lHlp.isUndefined(coords)) {
-            return false;
-        }
-        if (lHlp.isArray(coords)) {
-            if (coords.length === 2 && lHlp.isNumber(coords[0]) && lHlp.isNumber(coords[1])) {
-                return true;
-            }
-        } else if (lHlp.isDefined(coords.type)) {
-            if (
-                coords.type === 'Point' && lHlp.isArray(coords.coordinates) &&
-                coords.coordinates.length === 2  &&
-                lHlp.isNumber(coords.coordinates[0]) &&
-                lHlp.isNumber(coords.coordinates[1])) {
-                    return true;
-                }
-            }
-
-            var ret = lIt.all(['lat', 'lng'], function(pos){
-                return lHlp.isDefined(coords[pos]) && lHlp.isNumber(coords[pos]);
-            });
-            return ret;
-        };
-
-        var _getCoords = function(value) {
-            if (!value || !_validateCoords(value)) {
-                return;
-            }
-            var p =  null;
-            if (Array.isArray(value) && value.length === 2) {
-                p = new Point(value[1], value[0]);
-            } else if (lHlp.isDefined(value.type) && value.type === 'Point') {
-                p = new Point(value.coordinates[1], value.coordinates[0]);
-            } else {
-                return value;
-            }
-            //note angular.merge is avail in angular 1.4.X we might want to fill it here
-            return angular.extend(value, p);//tap on lat, lng if it doesnt exist
-        };
-
-
-        return {
-            getLat: _getLat,
-            getLng: _getLng,
-            validateCoords: _validateCoords,
-            getCoords: _getCoords
-        };
-    }]);
-
-angular.module("leaflet-directive").service('leafletHelpers', ["$q", "$log", function ($q, $log) {
-    var _errorHeader = '[AngularJS - Leaflet] ';
-    var _copy = angular.copy;
-    var _clone = _copy;
-    /*
-    For parsing paths to a field in an object
-
-    Example:
-    var obj = {
-        bike:{
-         1: 'hi'
-         2: 'foo'
-        }
-    };
-    _getObjectValue(obj,"bike.1") returns 'hi'
-    this is getPath in ui-gmap
-     */
-    var _getObjectValue = function(object, pathStr) {
-        var obj;
-        if(!object || !angular.isObject(object))
-            return;
-        //if the key is not a sting then we already have the value
-        if ((pathStr === null) || !angular.isString(pathStr)) {
-            return pathStr;
-        }
-        obj = object;
-        pathStr.split('.').forEach(function(value) {
-            if (obj) {
-                obj = obj[value];
-            }
-        });
-        return obj;
-    };
-
-    /*
-     Object Array Notation
-     _getObjectArrayPath("bike.one.two")
-     returns:
-     'bike["one"]["two"]'
-     */
-    var _getObjectArrayPath = function(pathStr){
-        return pathStr.split('.').reduce(function(previous, current) {
-            return previous + '["'+ current + '"]';
-        });
-    };
-
-    /* Object Dot Notation
-     _getObjectPath(["bike","one","two"])
-     returns:
-     "bike.one.two"
-     */
-    var _getObjectDotPath = function(arrayOfStrings){
-        return arrayOfStrings.reduce(function(previous, current) {
-            return previous + '.' + current;
-        });
-    };
-
-    function _obtainEffectiveMapId(d, mapId) {
-        var id, i;
-        if (!angular.isDefined(mapId)) {
-        if (Object.keys(d).length === 0) {
-            id = "main";
-        } else if (Object.keys(d).length >= 1) {
-            for (i in d) {
-                if (d.hasOwnProperty(i)) {
-                    id = i;
-                }
-            }
-        } else {
-                $log.error(_errorHeader + "- You have more than 1 map on the DOM, you must provide the map ID to the leafletData.getXXX call");
-            }
-        } else {
-            id = mapId;
-        }
-
-        return id;
+      } else {
+        $log.error(_errorHeader + '- You have more than 1 map on the DOM, you must provide the map ID to the leafletData.getXXX call');
+      }
+    } else {
+      id = mapId;
     }
 
-    function _getUnresolvedDefer(d, mapId) {
-        var id = _obtainEffectiveMapId(d, mapId),
-            defer;
+    return id;
+  }
 
-        if (!angular.isDefined(d[id]) || d[id].resolvedDefer === true) {
-            defer = $q.defer();
-            d[id] = {
-                defer: defer,
-                resolvedDefer: false
-            };
-        } else {
-            defer = d[id].defer;
-        }
+  function _getUnresolvedDefer(d, mapId) {
+    var id = _obtainEffectiveMapId(d, mapId);
+    var defer;
 
-        return defer;
+    if (!angular.isDefined(d[id]) || d[id].resolvedDefer === true) {
+      defer = $q.defer();
+      d[id] = {
+        defer: defer,
+        resolvedDefer: false,
+      };
+    } else {
+      defer = d[id].defer;
     }
 
-    var _isDefined = function(value) {
-        return angular.isDefined(value) && value !== null;
-    };
-    var _isUndefined = function(value){
-        return !_isDefined(value);
-    };
+    return defer;
+  }
 
-    // BEGIN DIRECT PORT FROM AngularJS code base
+  var _isDefined = function(value) {
+    return angular.isDefined(value) && value !== null;
+  };
 
-    var SPECIAL_CHARS_REGEXP = /([\:\-\_]+(.))/g;
+  var _isUndefined = function(value) {
+    return !_isDefined(value);
+  };
 
-    var MOZ_HACK_REGEXP = /^moz([A-Z])/;
+  // BEGIN DIRECT PORT FROM AngularJS code base
 
-    var PREFIX_REGEXP = /^((?:x|data)[\:\-_])/i;
+  var SPECIAL_CHARS_REGEXP = /([\:\-\_]+(.))/g;
 
-    /**
-    Converts snake_case to camelCase.
-    Also there is special case for Moz prefix starting with upper case letter.
-    @param name Name to normalize
-     */
+  var MOZ_HACK_REGEXP = /^moz([A-Z])/;
 
-    var camelCase = function(name) {
+  var PREFIX_REGEXP = /^((?:x|data)[\:\-_])/i;
+
+  /**
+  Converts snake_case to camelCase.
+  Also there is special case for Moz prefix starting with upper case letter.
+  @param name Name to normalize
+   */
+
+  var camelCase = function(name) {
       return name.replace(SPECIAL_CHARS_REGEXP, function(_, separator, letter, offset) {
         if (offset) {
           return letter.toUpperCase();
         } else {
           return letter;
         }
-      }).replace(MOZ_HACK_REGEXP, "Moz$1");
+      }).replace(MOZ_HACK_REGEXP, 'Moz$1');
     };
 
+  /**
+  Converts all accepted directives format into proper directive name.
+  @param name Name to normalize
+   */
 
-    /**
-    Converts all accepted directives format into proper directive name.
-    @param name Name to normalize
+  var directiveNormalize = function(name) {
+      return camelCase(name.replace(PREFIX_REGEXP, ''));
+    };
+
+  // END AngularJS port
+
+  return {
+    camelCase: camelCase,
+    directiveNormalize: directiveNormalize,
+    copy:_copy,
+    clone:_clone,
+    errorHeader: _errorHeader,
+    getObjectValue: _getObjectValue,
+    getObjectArrayPath:_getObjectArrayPath,
+    getObjectDotPath: _getObjectDotPath,
+    defaultTo: function(val, _default) {
+      return _isDefined(val) ? val : _default;
+    },
+
+    //mainly for checking attributes of directives lets keep this minimal (on what we accept)
+    isTruthy: function(val) {
+      return val === 'true' || val === true;
+    },
+
+    //Determine if a reference is {}
+    isEmpty: function(value) {
+      return Object.keys(value).length === 0;
+    },
+
+    //Determine if a reference is undefined or {}
+    isUndefinedOrEmpty: function(value) {
+      return (angular.isUndefined(value) || value === null) || Object.keys(value).length === 0;
+    },
+
+    // Determine if a reference is defined
+    isDefined: _isDefined,
+    isUndefined:_isUndefined,
+    isNumber: angular.isNumber,
+    isString: angular.isString,
+    isArray: angular.isArray,
+    isObject: angular.isObject,
+    isFunction: angular.isFunction,
+    equals: angular.equals,
+
+    isValidCenter: function(center) {
+      return angular.isDefined(center) && angular.isNumber(center.lat) &&
+             angular.isNumber(center.lng) && angular.isNumber(center.zoom);
+    },
+
+    isValidPoint: function(point) {
+      if (!angular.isDefined(point)) {
+        return false;
+      }
+
+      if (angular.isArray(point)) {
+        return point.length === 2 && angular.isNumber(point[0]) && angular.isNumber(point[1]);
+      }
+
+      return angular.isNumber(point.lat) && angular.isNumber(point.lng);
+    },
+
+    isSameCenterOnMap: function(centerModel, map) {
+      var mapCenter = map.getCenter();
+      var zoom = map.getZoom();
+      if (centerModel.lat && centerModel.lng &&
+          mapCenter.lat.toFixed(4) === centerModel.lat.toFixed(4) &&
+          mapCenter.lng.toFixed(4) === centerModel.lng.toFixed(4) &&
+          zoom === centerModel.zoom) {
+        return true;
+      }
+
+      return false;
+    },
+
+    safeApply: function($scope, fn) {
+      var phase = $scope.$root.$$phase;
+      if (phase === '$apply' || phase === '$digest') {
+        $scope.$eval(fn);
+      } else {
+        $scope.$evalAsync(fn);
+      }
+    },
+
+    obtainEffectiveMapId: _obtainEffectiveMapId,
+
+    getDefer: function(d, mapId) {
+      var id = _obtainEffectiveMapId(d, mapId);
+      var defer;
+      if (!angular.isDefined(d[id]) || d[id].resolvedDefer === false) {
+        defer = _getUnresolvedDefer(d, mapId);
+      } else {
+        defer = d[id].defer;
+      }
+
+      return defer;
+    },
+
+    getUnresolvedDefer: _getUnresolvedDefer,
+
+    setResolvedDefer: function(d, mapId) {
+      var id = _obtainEffectiveMapId(d, mapId);
+      d[id].resolvedDefer = true;
+    },
+
+    rangeIsSupported: function() {
+      var testrange = document.createElement('input');
+      testrange.setAttribute('type', 'range');
+      return testrange.type === 'range';
+    },
+
+    FullScreenControlPlugin: {
+      isLoaded: function() {
+        return angular.isDefined(L.Control.Fullscreen);
+      },
+    },
+
+    MiniMapControlPlugin: {
+      isLoaded: function() {
+        return angular.isDefined(L.Control.MiniMap);
+      },
+    },
+
+    AwesomeMarkersPlugin: {
+      isLoaded: function() {
+        return angular.isDefined(L.AwesomeMarkers) && angular.isDefined(L.AwesomeMarkers.Icon);
+      },
+
+      is: function(icon) {
+        if (this.isLoaded()) {
+          return icon instanceof L.AwesomeMarkers.Icon;
+        } else {
+          return false;
+        }
+      },
+
+      equal: function(iconA, iconB) {
+        if (!this.isLoaded()) {
+          return false;
+        }
+
+        if (this.is(iconA)) {
+          return angular.equals(iconA, iconB);
+        } else {
+          return false;
+        }
+      },
+    },
+
+    VectorMarkersPlugin: {
+      isLoaded: function() {
+        return angular.isDefined(L.VectorMarkers) && angular.isDefined(L.VectorMarkers.Icon);
+      },
+
+      is: function(icon) {
+        if (this.isLoaded()) {
+          return icon instanceof L.VectorMarkers.Icon;
+        } else {
+          return false;
+        }
+      },
+
+      equal: function(iconA, iconB) {
+        if (!this.isLoaded()) {
+          return false;
+        }
+
+        if (this.is(iconA)) {
+          return angular.equals(iconA, iconB);
+        } else {
+          return false;
+        }
+      },
+    },
+
+    DomMarkersPlugin: {
+      isLoaded: function() {
+        if (angular.isDefined(L.DomMarkers) && angular.isDefined(L.DomMarkers.Icon)) {
+          return true;
+        } else {
+          return false;
+        }
+      },
+
+      is: function(icon) {
+        if (this.isLoaded()) {
+          return icon instanceof L.DomMarkers.Icon;
+        } else {
+          return false;
+        }
+      },
+
+      equal: function(iconA, iconB) {
+        if (!this.isLoaded()) {
+          return false;
+        }
+
+        if (this.is(iconA)) {
+          return angular.equals(iconA, iconB);
+        } else {
+          return false;
+        }
+      },
+    },
+
+    PolylineDecoratorPlugin: {
+      isLoaded: function() {
+        if (angular.isDefined(L.PolylineDecorator)) {
+          return true;
+        } else {
+          return false;
+        }
+      },
+
+      is: function(decoration) {
+        if (this.isLoaded()) {
+          return decoration instanceof L.PolylineDecorator;
+        } else {
+          return false;
+        }
+      },
+
+      equal: function(decorationA, decorationB) {
+        if (!this.isLoaded()) {
+          return false;
+        }
+
+        if (this.is(decorationA)) {
+          return angular.equals(decorationA, decorationB);
+        } else {
+          return false;
+        }
+      },
+    },
+
+    MakiMarkersPlugin: {
+      isLoaded: function() {
+        if (angular.isDefined(L.MakiMarkers) && angular.isDefined(L.MakiMarkers.Icon)) {
+          return true;
+        } else {
+          return false;
+        }
+      },
+
+      is: function(icon) {
+        if (this.isLoaded()) {
+          return icon instanceof L.MakiMarkers.Icon;
+        } else {
+          return false;
+        }
+      },
+
+      equal: function(iconA, iconB) {
+        if (!this.isLoaded()) {
+          return false;
+        }
+
+        if (this.is(iconA)) {
+          return angular.equals(iconA, iconB);
+        } else {
+          return false;
+        }
+      },
+    },
+    ExtraMarkersPlugin: {
+      isLoaded: function() {
+        if (angular.isDefined(L.ExtraMarkers) && angular.isDefined(L.ExtraMarkers.Icon)) {
+          return true;
+        } else {
+          return false;
+        }
+      },
+
+      is: function(icon) {
+        if (this.isLoaded()) {
+          return icon instanceof L.ExtraMarkers.Icon;
+        } else {
+          return false;
+        }
+      },
+
+      equal: function(iconA, iconB) {
+        if (!this.isLoaded()) {
+          return false;
+        }
+
+        if (this.is(iconA)) {
+          return angular.equals(iconA, iconB);
+        } else {
+          return false;
+        }
+      },
+    },
+    LabelPlugin: {
+      isLoaded: function() {
+        return angular.isDefined(L.Label);
+      },
+
+      is: function(layer) {
+        if (this.isLoaded()) {
+          return layer instanceof L.MarkerClusterGroup;
+        } else {
+          return false;
+        }
+      },
+    },
+    MarkerClusterPlugin: {
+      isLoaded: function() {
+        return angular.isDefined(L.MarkerClusterGroup);
+      },
+
+      is: function(layer) {
+        if (this.isLoaded()) {
+          return layer instanceof L.MarkerClusterGroup;
+        } else {
+          return false;
+        }
+      },
+    },
+    GoogleLayerPlugin: {
+      isLoaded: function() {
+        return angular.isDefined(L.Google);
+      },
+
+      is: function(layer) {
+        if (this.isLoaded()) {
+          return layer instanceof L.Google;
+        } else {
+          return false;
+        }
+      },
+    },
+    LeafletProviderPlugin: {
+      isLoaded: function() {
+        return angular.isDefined(L.TileLayer.Provider);
+      },
+
+      is: function(layer) {
+        if (this.isLoaded()) {
+          return layer instanceof L.TileLayer.Provider;
+        } else {
+          return false;
+        }
+      },
+    },
+    ChinaLayerPlugin: {
+      isLoaded: function() {
+        return angular.isDefined(L.tileLayer.chinaProvider);
+      },
+    },
+    HeatLayerPlugin: {
+      isLoaded: function() {
+        return angular.isDefined(L.heatLayer);
+      },
+    },
+    WebGLHeatMapLayerPlugin: {
+      isLoaded: function() {
+        return angular.isDefined(L.TileLayer.WebGLHeatMap);
+      },
+    },
+    BingLayerPlugin: {
+      isLoaded: function() {
+        return angular.isDefined(L.BingLayer);
+      },
+
+      is: function(layer) {
+        if (this.isLoaded()) {
+          return layer instanceof L.BingLayer;
+        } else {
+          return false;
+        }
+      },
+    },
+    WFSLayerPlugin: {
+      isLoaded: function() {
+        return L.GeoJSON.WFS !== undefined;
+      },
+
+      is: function(layer) {
+        if (this.isLoaded()) {
+          return layer instanceof L.GeoJSON.WFS;
+        } else {
+          return false;
+        }
+      },
+    },
+    AGSBaseLayerPlugin: {
+      isLoaded: function() {
+        return L.esri !== undefined && L.esri.basemapLayer !== undefined;
+      },
+
+      is: function(layer) {
+        if (this.isLoaded()) {
+          return layer instanceof L.esri.basemapLayer;
+        } else {
+          return false;
+        }
+      },
+    },
+    AGSLayerPlugin: {
+      isLoaded: function() {
+        return lvector !== undefined && lvector.AGS !== undefined;
+      },
+
+      is: function(layer) {
+        if (this.isLoaded()) {
+          return layer instanceof lvector.AGS;
+        } else {
+          return false;
+        }
+      },
+    },
+    AGSFeatureLayerPlugin: {
+      isLoaded: function() {
+        return L.esri !== undefined && L.esri.featureLayer !== undefined;
+      },
+
+      is: function(layer) {
+        if (this.isLoaded()) {
+          return layer instanceof L.esri.featureLayer;
+        } else {
+          return false;
+        }
+      },
+    },
+    AGSTiledMapLayerPlugin: {
+      isLoaded: function() {
+        return L.esri !== undefined && L.esri.tiledMapLayer !== undefined;
+      },
+
+      is: function(layer) {
+        if (this.isLoaded()) {
+          return layer instanceof L.esri.tiledMapLayer;
+        } else {
+          return false;
+        }
+      },
+    },
+    AGSDynamicMapLayerPlugin: {
+      isLoaded: function() {
+        return L.esri !== undefined && L.esri.dynamicMapLayer !== undefined;
+      },
+
+      is: function(layer) {
+        if (this.isLoaded()) {
+          return layer instanceof L.esri.dynamicMapLayer;
+        } else {
+          return false;
+        }
+      },
+    },
+    AGSImageMapLayerPlugin: {
+      isLoaded: function() {
+        return L.esri !== undefined && L.esri.imageMapLayer !== undefined;
+      },
+
+      is: function(layer) {
+        if (this.isLoaded()) {
+          return layer instanceof L.esri.imageMapLayer;
+        } else {
+          return false;
+        }
+      },
+    },
+    AGSClusteredLayerPlugin: {
+      isLoaded: function() {
+        return L.esri !== undefined && L.esri.clusteredFeatureLayer !== undefined;
+      },
+
+      is: function(layer) {
+        if (this.isLoaded()) {
+          return layer instanceof L.esri.clusteredFeatureLayer;
+        } else {
+          return false;
+        }
+      },
+    },
+    AGSHeatmapLayerPlugin: {
+      isLoaded: function() {
+        return L.esri !== undefined && L.esri.heatmapFeatureLayer !== undefined;
+      },
+
+      is: function(layer) {
+        if (this.isLoaded()) {
+          return layer instanceof L.esri.heatmapFeatureLayer;
+        } else {
+          return false;
+        }
+      },
+    },
+    YandexLayerPlugin: {
+      isLoaded: function() {
+        return angular.isDefined(L.Yandex);
+      },
+
+      is: function(layer) {
+        if (this.isLoaded()) {
+          return layer instanceof L.Yandex;
+        } else {
+          return false;
+        }
+      },
+    },
+    GeoJSONPlugin: {
+      isLoaded: function() {
+        return angular.isDefined(L.TileLayer.GeoJSON);
+      },
+
+      is: function(layer) {
+        if (this.isLoaded()) {
+          return layer instanceof L.TileLayer.GeoJSON;
+        } else {
+          return false;
+        }
+      },
+    },
+    UTFGridPlugin: {
+      isLoaded: function() {
+        return angular.isDefined(L.UtfGrid);
+      },
+
+      is: function(layer) {
+        if (this.isLoaded()) {
+          return layer instanceof L.UtfGrid;
+        } else {
+          $log.error('[AngularJS - Leaflet] No UtfGrid plugin found.');
+          return false;
+        }
+      },
+    },
+    CartoDB: {
+      isLoaded: function() {
+        return cartodb;
+      },
+
+      is: function(/*layer*/) {
+        return true;
+        /*
+        if (this.isLoaded()) {
+            return layer instanceof L.TileLayer.GeoJSON;
+        } else {
+            return false;
+        }*/
+      },
+    },
+    Leaflet: {
+      DivIcon: {
+        is: function(icon) {
+          return icon instanceof L.DivIcon;
+        },
+
+        equal: function(iconA, iconB) {
+          if (this.is(iconA)) {
+            return angular.equals(iconA, iconB);
+          } else {
+            return false;
+          }
+        },
+      },
+      Icon: {
+        is: function(icon) {
+          return icon instanceof L.Icon;
+        },
+
+        equal: function(iconA, iconB) {
+          if (this.is(iconA)) {
+            return angular.equals(iconA, iconB);
+          } else {
+            return false;
+          }
+        },
+      },
+    },
+    /*
+     watchOptions - object to set deep nested watches and turn off watches all together
+     (rely on control / functional updates)
+     watchOptions - Object
+         doWatch:boolean
+         isDeep:boolean (sets $watch(function,isDeep))
+         individual
+             doWatch:boolean
+             isDeep:boolean
      */
 
-     var directiveNormalize = function(name) {
-      return camelCase(name.replace(PREFIX_REGEXP, ""));
-    };
-
-    // END AngularJS port
-
-    return {
-        camelCase: camelCase,
-        directiveNormalize: directiveNormalize,
-        copy:_copy,
-        clone:_clone,
-        errorHeader: _errorHeader,
-        getObjectValue: _getObjectValue,
-        getObjectArrayPath:_getObjectArrayPath,
-        getObjectDotPath: _getObjectDotPath,
-        defaultTo: function(val, _default){
-            return _isDefined(val) ? val : _default;
-        },
-        //mainly for checking attributes of directives lets keep this minimal (on what we accept)
-        isTruthy: function(val){
-            return val === 'true' || val === true;
-        },
-        //Determine if a reference is {}
-        isEmpty: function(value) {
-            return Object.keys(value).length === 0;
-        },
-
-        //Determine if a reference is undefined or {}
-        isUndefinedOrEmpty: function (value) {
-            return (angular.isUndefined(value) || value === null) || Object.keys(value).length === 0;
-        },
-
-        // Determine if a reference is defined
-        isDefined: _isDefined,
-        isUndefined:_isUndefined,
-        isNumber: angular.isNumber,
-        isString: angular.isString,
-        isArray: angular.isArray,
-        isObject: angular.isObject,
-        isFunction: angular.isFunction,
-        equals: angular.equals,
-
-        isValidCenter: function(center) {
-            return angular.isDefined(center) && angular.isNumber(center.lat) &&
-                   angular.isNumber(center.lng) && angular.isNumber(center.zoom);
-        },
-
-        isValidPoint: function(point) {
-            if (!angular.isDefined(point)) {
-                return false;
-            }
-            if (angular.isArray(point)) {
-                return point.length === 2 && angular.isNumber(point[0]) && angular.isNumber(point[1]);
-            }
-            return angular.isNumber(point.lat) && angular.isNumber(point.lng);
-        },
-
-        isSameCenterOnMap: function(centerModel, map) {
-            var mapCenter = map.getCenter();
-            var zoom = map.getZoom();
-            if (centerModel.lat && centerModel.lng &&
-                mapCenter.lat.toFixed(4) === centerModel.lat.toFixed(4) &&
-                mapCenter.lng.toFixed(4) === centerModel.lng.toFixed(4) &&
-                zoom === centerModel.zoom) {
-                    return true;
-            }
-            return false;
-        },
-
-        safeApply: function($scope, fn) {
-            var phase = $scope.$root.$$phase;
-            if (phase === '$apply' || phase === '$digest') {
-                $scope.$eval(fn);
-            } else {
-                $scope.$evalAsync(fn);
-            }
-        },
-
-        obtainEffectiveMapId: _obtainEffectiveMapId,
-
-        getDefer: function(d, mapId) {
-            var id = _obtainEffectiveMapId(d, mapId),
-                defer;
-            if (!angular.isDefined(d[id]) || d[id].resolvedDefer === false) {
-                defer = _getUnresolvedDefer(d, mapId);
-            } else {
-                defer = d[id].defer;
-            }
-            return defer;
-        },
-
-        getUnresolvedDefer: _getUnresolvedDefer,
-
-        setResolvedDefer: function(d, mapId) {
-            var id = _obtainEffectiveMapId(d, mapId);
-            d[id].resolvedDefer = true;
-        },
-
-        rangeIsSupported: function() {
-            var testrange = document.createElement('input');
-            testrange.setAttribute('type', 'range');
-            return testrange.type === 'range';
-        },
-
-        FullScreenControlPlugin: {
-            isLoaded: function() {
-                return angular.isDefined(L.Control.Fullscreen);
-            }
-        },
-
-        MiniMapControlPlugin: {
-            isLoaded: function() {
-                return angular.isDefined(L.Control.MiniMap);
-            }
-        },
-
-        AwesomeMarkersPlugin: {
-            isLoaded: function() {
-                return angular.isDefined(L.AwesomeMarkers) && angular.isDefined(L.AwesomeMarkers.Icon);
-            },
-            is: function(icon) {
-                if (this.isLoaded()) {
-                    return icon instanceof L.AwesomeMarkers.Icon;
-                } else {
-                    return false;
-                }
-            },
-            equal: function (iconA, iconB) {
-                if (!this.isLoaded()) {
-                    return false;
-                }
-                if (this.is(iconA)) {
-                    return angular.equals(iconA, iconB);
-                } else {
-                    return false;
-                }
-            }
-        },
-
-        DomMarkersPlugin: {
-            isLoaded: function () {
-                if (angular.isDefined(L.DomMarkers) && angular.isDefined(L.DomMarkers.Icon)) {
-                    return true;
-                } else {
-                    return false;
-                }
-            },
-            is: function (icon) {
-                if (this.isLoaded()) {
-                    return icon instanceof L.DomMarkers.Icon;
-                } else {
-                    return false;
-                }
-            },
-            equal: function (iconA, iconB) {
-                if (!this.isLoaded()) {
-                    return false;
-                }
-                if (this.is(iconA)) {
-                    return angular.equals(iconA, iconB);
-                } else {
-                    return false;
-                }
-            }
-        },
-
-        PolylineDecoratorPlugin: {
-            isLoaded: function() {
-                if (angular.isDefined(L.PolylineDecorator)) {
-                    return true;
-                } else {
-                    return false;
-                }
-            },
-            is: function(decoration) {
-                if (this.isLoaded()) {
-                    return decoration instanceof L.PolylineDecorator;
-                } else {
-                    return false;
-                }
-            },
-            equal: function(decorationA, decorationB) {
-                if (!this.isLoaded()) {
-                    return false;
-                }
-                if (this.is(decorationA)) {
-                    return angular.equals(decorationA, decorationB);
-                } else {
-                    return false;
-                }
-            }
-        },
-
-        MakiMarkersPlugin: {
-            isLoaded: function() {
-                if (angular.isDefined(L.MakiMarkers) && angular.isDefined(L.MakiMarkers.Icon)) {
-                    return true;
-                } else {
-                    return false;
-                }
-            },
-            is: function(icon) {
-                if (this.isLoaded()) {
-                    return icon instanceof L.MakiMarkers.Icon;
-                } else {
-                    return false;
-                }
-            },
-            equal: function (iconA, iconB) {
-                if (!this.isLoaded()) {
-                    return false;
-                }
-                if (this.is(iconA)) {
-                    return angular.equals(iconA, iconB);
-                } else {
-                    return false;
-                }
-            }
-        },
-        ExtraMarkersPlugin: {
-            isLoaded: function () {
-                if (angular.isDefined(L.ExtraMarkers) && angular.isDefined(L.ExtraMarkers.Icon)) {
-                    return true;
-                } else {
-                    return false;
-                }
-            },
-            is: function (icon) {
-                if (this.isLoaded()) {
-                    return icon instanceof L.ExtraMarkers.Icon;
-                } else {
-                    return false;
-                }
-            },
-            equal: function (iconA, iconB) {
-                if (!this.isLoaded()) {
-                    return false;
-                }
-                if (this.is(iconA)) {
-                    return angular.equals(iconA, iconB);
-                } else {
-                    return false;
-                }
-            }
-        },
-        LabelPlugin: {
-            isLoaded: function() {
-                return angular.isDefined(L.Label);
-            },
-            is: function(layer) {
-                if (this.isLoaded()) {
-                    return layer instanceof L.MarkerClusterGroup;
-                } else {
-                    return false;
-                }
-            }
-        },
-        MarkerClusterPlugin: {
-            isLoaded: function() {
-                return angular.isDefined(L.MarkerClusterGroup);
-            },
-            is: function(layer) {
-                if (this.isLoaded()) {
-                    return layer instanceof L.MarkerClusterGroup;
-                } else {
-                    return false;
-                }
-            }
-        },
-        GoogleLayerPlugin: {
-            isLoaded: function() {
-                return angular.isDefined(L.Google);
-            },
-            is: function(layer) {
-                if (this.isLoaded()) {
-                    return layer instanceof L.Google;
-                } else {
-                    return false;
-                }
-            }
-        },
-        ChinaLayerPlugin: {
-            isLoaded: function() {
-                return angular.isDefined(L.tileLayer.chinaProvider);
-            }
-        },
-        HeatLayerPlugin: {
-            isLoaded: function() {
-                return angular.isDefined(L.heatLayer);
-            }
-        },
-        WebGLHeatMapLayerPlugin: {
-            isLoaded: function() {
-                return angular.isDefined(L.TileLayer.WebGLHeatMap);
-            }
-        },
-        BingLayerPlugin: {
-            isLoaded: function() {
-                return angular.isDefined(L.BingLayer);
-            },
-            is: function(layer) {
-                if (this.isLoaded()) {
-                    return layer instanceof L.BingLayer;
-                } else {
-                    return false;
-                }
-            }
-        },
-        WFSLayerPlugin: {
-            isLoaded: function() {
-                return L.GeoJSON.WFS !== undefined;
-            },
-            is: function(layer) {
-                if (this.isLoaded()) {
-                    return layer instanceof L.GeoJSON.WFS;
-                } else {
-                    return false;
-                }
-            }
-        },
-        AGSBaseLayerPlugin: {
-            isLoaded: function() {
-                return L.esri !== undefined && L.esri.basemapLayer !== undefined;
-            },
-            is: function (layer) {
-                if (this.isLoaded()) {
-                    return layer instanceof L.esri.basemapLayer;
-                } else {
-                    return false;
-                }
-            }
-        },
-        AGSLayerPlugin: {
-            isLoaded: function() {
-                return lvector !== undefined && lvector.AGS !== undefined;
-            },
-            is: function(layer) {
-                if (this.isLoaded()) {
-                    return layer instanceof lvector.AGS;
-                } else {
-                    return false;
-                }
-            }
-        },
-        AGSFeatureLayerPlugin: {
-            isLoaded: function() {
-                return L.esri !== undefined && L.esri.featureLayer !== undefined;
-            },
-            is: function (layer) {
-                if (this.isLoaded()) {
-                    return layer instanceof L.esri.featureLayer;
-                } else {
-                    return false;
-                }
-            }
-        },
-        AGSTiledMapLayerPlugin: {
-            isLoaded: function() {
-                return L.esri !== undefined && L.esri.tiledMapLayer !== undefined;
-            },
-            is: function (layer) {
-                if (this.isLoaded()) {
-                    return layer instanceof L.esri.tiledMapLayer;
-                } else {
-                    return false;
-                }
-            }
-        },
-        AGSDynamicMapLayerPlugin: {
-            isLoaded: function () {
-                return L.esri !== undefined && L.esri.dynamicMapLayer !== undefined;
-            },
-            is: function (layer) {
-                if (this.isLoaded()) {
-                    return layer instanceof L.esri.dynamicMapLayer;
-                } else {
-                    return false;
-                }
-            }
-        },
-        AGSImageMapLayerPlugin: {
-            isLoaded: function () {
-                return L.esri !== undefined && L.esri.imageMapLayer !== undefined;
-            },
-            is: function (layer) {
-                if (this.isLoaded()) {
-                    return layer instanceof L.esri.imageMapLayer;
-                } else {
-                    return false;
-                }
-            }
-        },
-        AGSClusteredLayerPlugin: {
-            isLoaded: function () {
-                return L.esri !== undefined && L.esri.clusteredFeatureLayer !== undefined;
-            },
-            is: function (layer) {
-                if (this.isLoaded()) {
-                    return layer instanceof L.esri.clusteredFeatureLayer;
-                } else {
-                    return false;
-                }
-            }
-        },
-        AGSHeatmapLayerPlugin: {
-            isLoaded: function () {
-                return L.esri !== undefined && L.esri.heatmapFeatureLayer !== undefined;
-            },
-            is: function (layer) {
-                if (this.isLoaded()) {
-                    return layer instanceof L.esri.heatmapFeatureLayer;
-                } else {
-                    return false;
-                }
-            }
-        },
-        YandexLayerPlugin: {
-            isLoaded: function() {
-                return angular.isDefined(L.Yandex);
-            },
-            is: function(layer) {
-                if (this.isLoaded()) {
-                    return layer instanceof L.Yandex;
-                } else {
-                    return false;
-                }
-            }
-        },
-        GeoJSONPlugin: {
-            isLoaded: function(){
-                return angular.isDefined(L.TileLayer.GeoJSON);
-            },
-            is: function(layer) {
-                if (this.isLoaded()) {
-                    return layer instanceof L.TileLayer.GeoJSON;
-                } else {
-                    return false;
-                }
-            }
-        },
-        UTFGridPlugin: {
-            isLoaded: function(){
-                return angular.isDefined(L.UtfGrid);
-            },
-            is: function(layer) {
-                if (this.isLoaded()) {
-                    return layer instanceof L.UtfGrid;
-                } else {
-                    $log.error('[AngularJS - Leaflet] No UtfGrid plugin found.');
-                    return false;
-                }
-            }
-        },
-        CartoDB: {
-            isLoaded: function(){
-                return cartodb;
-            },
-            is: function(/*layer*/) {
-                return true;
-                /*
-                if (this.isLoaded()) {
-                    return layer instanceof L.TileLayer.GeoJSON;
-                } else {
-                    return false;
-                }*/
-            }
-        },
-        Leaflet: {
-            DivIcon: {
-                is: function(icon) {
-                    return icon instanceof L.DivIcon;
-                },
-                equal: function(iconA, iconB) {
-                    if (this.is(iconA)) {
-                        return angular.equals(iconA, iconB);
-                    } else {
-                        return false;
-                    }
-                }
-            },
-            Icon: {
-                is: function(icon) {
-                    return icon instanceof L.Icon;
-                },
-                equal: function(iconA, iconB) {
-                    if (this.is(iconA)) {
-                        return angular.equals(iconA, iconB);
-                    } else {
-                        return false;
-                    }
-                }
-            }
-        },
-        /*
-         watchOptions - object to set deep nested watches and turn off watches all together
-         (rely on control / functional updates)
-         watchOptions - Object
-             doWatch:boolean
-             isDeep:boolean (sets $watch(function,isDeep))
-             individual
-                 doWatch:boolean
-                 isDeep:boolean
-         */
-        //legacy defaults
-        watchOptions: {
-            doWatch:true,
-            isDeep: true,
-            individual:{
-                doWatch:true,
-                isDeep: true
-            }
-        }
-    };
+    //legacy defaults
+    watchOptions: {
+      doWatch:true,
+      isDeep: true,
+      individual:{
+        doWatch:true,
+        isDeep: true,
+      },
+    },
+  };
 }]);
 
-angular.module('leaflet-directive').service('leafletIterators', ["leafletLogger", "leafletHelpers", function (leafletLogger, leafletHelpers) {
+angular.module('leaflet-directive').service('leafletIterators', ["$log", "leafletHelpers", function($log, leafletHelpers) {
 
-  var lHlp = leafletHelpers,
-  errorHeader = leafletHelpers.errorHeader + 'leafletIterators: ';
+  var lHlp = leafletHelpers;
+  var errorHeader = leafletHelpers.errorHeader + 'leafletIterators: ';
 
   //BEGIN COPY from underscore
   var _keys = Object.keys;
   var _isFunction = lHlp.isFunction;
   var _isObject = lHlp.isObject;
-  var $log = leafletLogger;
 
   // Helper for collection methods to determine whether a collection
   // should be iterated as an array or as an object
@@ -15620,7 +14305,7 @@ angular.module('leaflet-directive').service('leafletIterators', ["leafletLogger"
 
   var _isArrayLike = function(collection) {
     var length = collection !== null && collection.length;
-    return  lHlp.isNumber(length) && length >= 0 && length <= MAX_ARRAY_INDEX;
+    return lHlp.isNumber(length) && length >= 0 && length <= MAX_ARRAY_INDEX;
   };
 
   // Keep the identity function around for default iteratees.
@@ -15643,12 +14328,15 @@ angular.module('leaflet-directive').service('leafletIterators', ["leafletLogger"
       case 1: return function(value) {
         return func.call(context, value);
       };
+
       case 2: return function(value, other) {
         return func.call(context, value, other);
       };
+
       case 3: return function(value, index, collection) {
         return func.call(context, value, index, collection);
       };
+
       case 4: return function(accumulator, value, index, collection) {
         return func.call(context, accumulator, value, index, collection);
       };
@@ -15664,45 +14352,50 @@ angular.module('leaflet-directive').service('leafletIterators', ["leafletLogger"
       var length = arguments.length;
       if (length < 2 || obj === null) return obj;
       for (var index = 1; index < length; index++) {
-        var source = arguments[index],
-            keys = keysFunc(source),
-            l = keys.length;
+        var source = arguments[index];
+        var keys = keysFunc(source);
+        var l = keys.length;
+
         for (var i = 0; i < l; i++) {
           var key = keys[i];
           if (!undefinedOnly || obj[key] === void 0) obj[key] = source[key];
         }
       }
+
       return obj;
     };
   };
 
   // Assigns a given object with all the own properties in the passed-in object(s)
   // (https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/Object/assign)
-  var _extendOwn, _assign = null;
+  var _extendOwn;
+  var _assign = null;
   _extendOwn = _assign = createAssigner(_keys);
 
   // Returns whether an object has a given set of `key:value` pairs.
   var _isMatch = function(object, attrs) {
-    var keys = _keys(attrs), length = keys.length;
+    var keys = _keys(attrs);
+    var length = keys.length;
     if (object === null) return !length;
     var obj = Object(object);
     for (var i = 0; i < length; i++) {
       var key = keys[i];
       if (attrs[key] !== obj[key] || !(key in obj)) return false;
     }
+
     return true;
   };
 
   // Returns a predicate for checking whether an object has a given set of
   // `key:value` pairs.
-  var _matcher, _matches = null;
+  var _matcher;
+  var _matches = null;
   _matcher = _matches = function(attrs) {
     attrs = _extendOwn({}, attrs);
     return function(obj) {
       return _isMatch(obj, attrs);
     };
   };
-
 
   // A mostly-internal function to generate callbacks that can be applied
   // to each element in a collection, returning the desired result — either
@@ -15714,51 +14407,56 @@ angular.module('leaflet-directive').service('leafletIterators', ["leafletLogger"
     return _property(value);
   };
 
-  var _every, _all = null;
+  var _every;
+  var _all = null;
   _every = _all = function(obj, predicate, context) {
     predicate = cb(predicate, context);
-    var keys = !_isArrayLike(obj) && _keys(obj),
-    length = (keys || obj).length;
+    var keys = !_isArrayLike(obj) && _keys(obj);
+    var length = (keys || obj).length;
     for (var index = 0; index < length; index++) {
       var currentKey = keys ? keys[index] : index;
       if (!predicate(obj[currentKey], currentKey, obj)) return false;
     }
+
     return true;
   };
 
   //END COPY fron underscore
 
-  var _hasErrors = function(collection, cb, ignoreCollection, cbName){
-    if(!ignoreCollection) {
+  var _hasErrors = function(collection, cb, ignoreCollection, cbName) {
+    if (!ignoreCollection) {
       if (!lHlp.isDefined(collection) || !lHlp.isDefined(cb)) {
         return true;
       }
     }
-    if(!lHlp.isFunction(cb)){
-      cbName = lHlp.defaultTo(cb,'cb');
+
+    if (!lHlp.isFunction(cb)) {
+      cbName = lHlp.defaultTo(cb, 'cb');
       $log.error(errorHeader + cbName + ' is not a function');
       return true;
     }
+
     return false;
   };
 
-  var _iterate = function(collection, externalCb, internalCb){
-    if(_hasErrors(undefined, internalCb, true, 'internalCb')){
+  var _iterate = function(collection, externalCb, internalCb) {
+    if (_hasErrors(undefined, internalCb, true, 'internalCb')) {
       return;
     }
-    if(!_hasErrors(collection, externalCb)){
-      for(var key in collection){
-          if (collection.hasOwnProperty(key)) {
-              internalCb(collection[key], key);
-          }
+
+    if (!_hasErrors(collection, externalCb)) {
+      for (var key in collection) {
+        if (collection.hasOwnProperty(key)) {
+          internalCb(collection[key], key);
+        }
       }
     }
   };
 
   //see http://jsperf.com/iterators/3
   //utilizing for in is way faster
-  var _each = function(collection, cb){
-    _iterate(collection, cb, function(val, key){
+  var _each = function(collection, cb) {
+    _iterate(collection, cb, function(val, key) {
       cb(val, key);
     });
   };
@@ -15767,1568 +14465,1677 @@ angular.module('leaflet-directive').service('leafletIterators', ["leafletLogger"
     each:_each,
     forEach: _each,
     every: _every,
-    all: _all
+    all: _all,
   };
 }]);
 
-angular.module("leaflet-directive")
-.factory('leafletLayerHelpers', ["$rootScope", "$q", "leafletLogger", "leafletHelpers", "leafletIterators", function ($rootScope, $q, leafletLogger, leafletHelpers, leafletIterators) {
-    var Helpers = leafletHelpers;
-    var isString = leafletHelpers.isString;
-    var isObject = leafletHelpers.isObject;
-    var isArray = leafletHelpers.isArray;
-    var isDefined = leafletHelpers.isDefined;
-    var errorHeader = leafletHelpers.errorHeader;
-    var $it = leafletIterators;
-    var $log = leafletLogger;
+angular.module('leaflet-directive')
+.factory('leafletLayerHelpers', ["$rootScope", "$log", "$q", "leafletHelpers", "leafletIterators", function($rootScope, $log, $q, leafletHelpers, leafletIterators) {
+  var Helpers = leafletHelpers;
+  var isString = leafletHelpers.isString;
+  var isObject = leafletHelpers.isObject;
+  var isArray = leafletHelpers.isArray;
+  var isDefined = leafletHelpers.isDefined;
+  var errorHeader = leafletHelpers.errorHeader;
+  var $it = leafletIterators;
 
-    var utfGridCreateLayer = function(params) {
-        if (!Helpers.UTFGridPlugin.isLoaded()) {
-            $log.error('[AngularJS - Leaflet] The UTFGrid plugin is not loaded.');
-            return;
+  var utfGridCreateLayer = function(params) {
+    if (!Helpers.UTFGridPlugin.isLoaded()) {
+      $log.error('[AngularJS - Leaflet] The UTFGrid plugin is not loaded.');
+      return;
+    }
+
+    var utfgrid = new L.UtfGrid(params.url, params.pluginOptions);
+
+    utfgrid.on('mouseover', function(e) {
+      $rootScope.$broadcast('leafletDirectiveMap.utfgridMouseover', e);
+    });
+
+    utfgrid.on('mouseout', function(e) {
+      $rootScope.$broadcast('leafletDirectiveMap.utfgridMouseout', e);
+    });
+
+    utfgrid.on('click', function(e) {
+      $rootScope.$broadcast('leafletDirectiveMap.utfgridClick', e);
+    });
+
+    utfgrid.on('mousemove', function(e) {
+      $rootScope.$broadcast('leafletDirectiveMap.utfgridMousemove', e);
+    });
+
+    return utfgrid;
+  };
+
+  var layerTypes = {
+    xyz: {
+      mustHaveUrl: true,
+      createLayer: function(params) {
+        return L.tileLayer(params.url, params.options);
+      },
+    },
+    mapbox: {
+      mustHaveKey: true,
+      createLayer: function(params) {
+        var version = 3;
+        if (isDefined(params.options.version) && params.options.version === 4) {
+          version = params.options.version;
         }
-        var utfgrid = new L.UtfGrid(params.url, params.pluginOptions);
 
-        utfgrid.on('mouseover', function(e) {
-            $rootScope.$broadcast('leafletDirectiveMap.utfgridMouseover', e);
+        var url = version === 3 ?
+            '//{s}.tiles.mapbox.com/v3/' + params.key + '/{z}/{x}/{y}.png' :
+            '//api.tiles.mapbox.com/v4/' + params.key + '/{z}/{x}/{y}.png?access_token=' + params.apiKey;
+        return L.tileLayer(url, params.options);
+      },
+    },
+    geoJSON: {
+      mustHaveUrl: true,
+      createLayer: function(params) {
+        if (!Helpers.GeoJSONPlugin.isLoaded()) {
+          return;
+        }
+
+        return new L.TileLayer.GeoJSON(params.url, params.pluginOptions, params.options);
+      },
+    },
+    geoJSONShape: {
+      mustHaveUrl: false,
+      createLayer: function(params) {
+        return new L.GeoJSON(params.data,
+            params.options);
+      },
+    },
+    geoJSONAwesomeMarker: {
+      mustHaveUrl: false,
+      createLayer: function(params) {
+        return new L.geoJson(params.data, {
+          pointToLayer: function(feature, latlng) {
+            return L.marker(latlng, {icon: L.AwesomeMarkers.icon(params.icon)});
+          },
         });
-
-        utfgrid.on('mouseout', function(e) {
-            $rootScope.$broadcast('leafletDirectiveMap.utfgridMouseout', e);
+      },
+    },
+    geoJSONVectorMarker: {
+      mustHaveUrl: false,
+      createLayer: function(params) {
+        return new L.geoJson(params.data, {
+          pointToLayer: function(feature, latlng) {
+            return L.marker(latlng, {icon: L.VectorMarkers.icon(params.icon)});
+          },
         });
+      },
+    },
+    utfGrid: {
+      mustHaveUrl: true,
+      createLayer: utfGridCreateLayer,
+    },
+    cartodbTiles: {
+      mustHaveKey: true,
+      createLayer: function(params) {
+        var url = '//' + params.user + '.cartodb.com/api/v1/map/' + params.key + '/{z}/{x}/{y}.png';
+        return L.tileLayer(url, params.options);
+      },
+    },
+    cartodbUTFGrid: {
+      mustHaveKey: true,
+      mustHaveLayer: true,
+      createLayer: function(params) {
+        params.url = '//' + params.user + '.cartodb.com/api/v1/map/' + params.key + '/' + params.layer + '/{z}/{x}/{y}.grid.json';
+        return utfGridCreateLayer(params);
+      },
+    },
+    cartodbInteractive: {
+      mustHaveKey: true,
+      mustHaveLayer: true,
+      createLayer: function(params) {
+        var tilesURL = '//' + params.user + '.cartodb.com/api/v1/map/' + params.key + '/{z}/{x}/{y}.png';
+        var tileLayer = L.tileLayer(tilesURL, params.options);
+        params.url = '//' + params.user + '.cartodb.com/api/v1/map/' + params.key + '/' + params.layer + '/{z}/{x}/{y}.grid.json';
+        var utfLayer = utfGridCreateLayer(params);
+        return L.layerGroup([tileLayer, utfLayer]);
+      },
+    },
+    wms: {
+      mustHaveUrl: true,
+      createLayer: function(params) {
+        return L.tileLayer.wms(params.url, params.options);
+      },
+    },
+    wmts: {
+      mustHaveUrl: true,
+      createLayer: function(params) {
+        return L.tileLayer.wmts(params.url, params.options);
+      },
+    },
+    wfs: {
+      mustHaveUrl: true,
+      mustHaveLayer: true,
+      createLayer: function(params) {
+        if (!Helpers.WFSLayerPlugin.isLoaded()) {
+          return;
+        }
 
-        utfgrid.on('click', function(e) {
-            $rootScope.$broadcast('leafletDirectiveMap.utfgridClick', e);
-        });
+        var options = angular.copy(params.options);
+        if (options.crs && typeof options.crs === 'string') {
+          /*jshint -W061 */
+          options.crs = eval(options.crs);
+        }
 
-        utfgrid.on('mousemove', function(e) {
-            $rootScope.$broadcast('leafletDirectiveMap.utfgridMousemove', e);
-        });
-
-        return utfgrid;
-    };
-
-    var layerTypes = {
-        xyz: {
-            mustHaveUrl: true,
-            createLayer: function(params) {
-                return L.tileLayer(params.url, params.options);
-            }
-        },
-        mapbox: {
-            mustHaveKey: true,
-            createLayer: function(params) {
-                var version = 3;
-                if(isDefined(params.options.version) && params.options.version === 4) {
-                    version = params.options.version;
-                }
-                var url = version === 3?
-                    '//{s}.tiles.mapbox.com/v3/' + params.key + '/{z}/{x}/{y}.png':
-                    '//api.tiles.mapbox.com/v4/' + params.key + '/{z}/{x}/{y}.png?access_token=' + params.apiKey;
-                return L.tileLayer(url, params.options);
-            }
-        },
-        geoJSON: {
-            mustHaveUrl: true,
-            createLayer: function(params) {
-                if (!Helpers.GeoJSONPlugin.isLoaded()) {
-                    return;
-                }
-                return new L.TileLayer.GeoJSON(params.url, params.pluginOptions, params.options);
-            }
-        },
-        geoJSONShape: {
-            mustHaveUrl: false,
-            createLayer: function(params) {
-                        return new L.GeoJSON(params.data,
-                            params.options);
-            }
-        },
-        geoJSONAwesomeMarker: {
-            mustHaveUrl: false,
-            createLayer: function(params) {
-                    return new L.geoJson(params.data, {
-                        pointToLayer: function (feature, latlng) {
-                            return L.marker(latlng, {icon: L.AwesomeMarkers.icon(params.icon)});
-                    }
-                });
-            }
-        },
-        utfGrid: {
-            mustHaveUrl: true,
-            createLayer: utfGridCreateLayer
-        },
-        cartodbTiles: {
-            mustHaveKey: true,
-            createLayer: function(params) {
-                var url = '//' + params.user + '.cartodb.com/api/v1/map/' + params.key + '/{z}/{x}/{y}.png';
-                return L.tileLayer(url, params.options);
-            }
-        },
-        cartodbUTFGrid: {
-            mustHaveKey: true,
-            mustHaveLayer : true,
-            createLayer: function(params) {
-                params.url = '//' + params.user + '.cartodb.com/api/v1/map/' + params.key + '/' + params.layer + '/{z}/{x}/{y}.grid.json';
-                return utfGridCreateLayer(params);
-            }
-        },
-        cartodbInteractive: {
-            mustHaveKey: true,
-            mustHaveLayer : true,
-            createLayer: function(params) {
-                var tilesURL = '//' + params.user + '.cartodb.com/api/v1/map/' + params.key + '/{z}/{x}/{y}.png';
-                var tileLayer = L.tileLayer(tilesURL, params.options);
-                params.url = '//' + params.user + '.cartodb.com/api/v1/map/' + params.key + '/' + params.layer + '/{z}/{x}/{y}.grid.json';
-                var utfLayer = utfGridCreateLayer(params);
-                return L.layerGroup([tileLayer, utfLayer]);
-            }
-        },
-        wms: {
-            mustHaveUrl: true,
-            createLayer: function(params) {
-                return L.tileLayer.wms(params.url, params.options);
-            }
-        },
-        wmts: {
-            mustHaveUrl: true,
-            createLayer: function(params) {
-                return L.tileLayer.wmts(params.url, params.options);
-            }
-        },
-        wfs: {
-            mustHaveUrl: true,
-            mustHaveLayer : true,
-            createLayer: function(params) {
-                if (!Helpers.WFSLayerPlugin.isLoaded()) {
-                    return;
-                }
-                var options = angular.copy(params.options);
-                if(options.crs && 'string' === typeof options.crs) {
-                    /*jshint -W061 */
-                    options.crs = eval(options.crs);
-                }
-                return new L.GeoJSON.WFS(params.url, params.layer, options);
-            }
-        },
-        group: {
-            mustHaveUrl: false,
-            createLayer: function (params) {
-                var lyrs = [];
-                $it.each(params.options.layers, function(l){
+        return new L.GeoJSON.WFS(params.url, params.layer, options);
+      },
+    },
+    group: {
+      mustHaveUrl: false,
+      createLayer: function(params) {
+        var lyrs = [];
+        $it.each(params.options.layers, function(l) {
                   lyrs.push(createLayer(l));
                 });
-                params.options.loadedDefer = function() {
-                    var defers = [];
-                    for (var i = 0; i < params.options.layers.length; i++) {
-                        var d = params.options.layers[i].layerOptions.loadedDefer;
-                        if(isDefined(d)) {
-                            defers.push(d);
-                        }
-                    }
-                    return defers;
-                };
-                return L.layerGroup(lyrs);
+
+        params.options.loadedDefer = function() {
+          var defers = [];
+          if (isDefined(params.options.layers)) {
+            for (var i = 0; i < params.options.layers.length; i++) {
+              var d = params.options.layers[i].layerOptions.loadedDefer;
+              if (isDefined(d)) {
+                defers.push(d);
+              }
             }
-        },
-        featureGroup: {
-            mustHaveUrl: false,
-            createLayer: function () {
-                return L.featureGroup();
-            }
-        },
-        google: {
-            mustHaveUrl: false,
-            createLayer: function(params) {
-                var type = params.type || 'SATELLITE';
-                if (!Helpers.GoogleLayerPlugin.isLoaded()) {
-                    return;
-                }
-                return new L.Google(type, params.options);
-            }
-        },
-        china:{
-            mustHaveUrl:false,
-            createLayer:function(params){
-                var type = params.type || '';
-                if(!Helpers.ChinaLayerPlugin.isLoaded()){
-                    return;
-                }
-                return L.tileLayer.chinaProvider(type, params.options);
-            }
-        },
-        agsBase: {
-            mustHaveLayer : true,
-            createLayer: function (params) {
-                if (!Helpers.AGSBaseLayerPlugin.isLoaded()) {
-                    return;
-                }
-                return L.esri.basemapLayer(params.layer, params.options);
-            }
-        },
-        ags: {
-            mustHaveUrl: true,
-            createLayer: function(params) {
-                if (!Helpers.AGSLayerPlugin.isLoaded()) {
-                    return;
-                }
+          }
 
-                var options = angular.copy(params.options);
-                angular.extend(options, {
-                    url: params.url
-                });
-                var layer = new lvector.AGS(options);
-                layer.onAdd = function(map) {
-                    this.setMap(map);
-                };
-                layer.onRemove = function() {
-                    this.setMap(null);
-                };
-                return layer;
-            }
-        },
-        agsFeature: {
-            mustHaveUrl: true,
-            createLayer: function(params) {
-                if (!Helpers.AGSFeatureLayerPlugin.isLoaded()) {
-                    $log.warn(errorHeader + ' The esri plugin is not loaded.');
-                    return;
-                }
-
-                params.options.url = params.url;
-
-                var layer = L.esri.featureLayer(params.options);
-                var load = function() {
-                    if(isDefined(params.options.loadedDefer)) {
-                        params.options.loadedDefer.resolve();
-                    }
-                };
-                layer.on('loading', function() {
-                    params.options.loadedDefer = $q.defer();
-                    layer.off('load', load);
-                    layer.on('load', load);
-                });
-
-                return layer;
-            }
-        },
-        agsTiled: {
-            mustHaveUrl: true,
-            createLayer: function(params) {
-                if (!Helpers.AGSTiledMapLayerPlugin.isLoaded()) {
-                    $log.warn(errorHeader + ' The esri plugin is not loaded.');
-                    return;
-                }
-
-                params.options.url = params.url;
-
-                return L.esri.tiledMapLayer(params.options);
-            }
-        },
-        agsDynamic: {
-            mustHaveUrl: true,
-            createLayer: function(params) {
-                if (!Helpers.AGSDynamicMapLayerPlugin.isLoaded()) {
-                    $log.warn(errorHeader + ' The esri plugin is not loaded.');
-                    return;
-                }
-
-                params.options.url = params.url;
-
-                return L.esri.dynamicMapLayer(params.options);
-            }
-        },
-        agsImage: {
-            mustHaveUrl: true,
-            createLayer: function(params) {
-                if (!Helpers.AGSImageMapLayerPlugin.isLoaded()) {
-                    $log.warn(errorHeader + ' The esri plugin is not loaded.');
-                    return;
-                }
-                 params.options.url = params.url;
-
-                return L.esri.imageMapLayer(params.options);
-            }
-        },
-        agsClustered: {
-            mustHaveUrl: true,
-            createLayer: function(params) {
-                if (!Helpers.AGSClusteredLayerPlugin.isLoaded()) {
-                    $log.warn(errorHeader + ' The esri clustered layer plugin is not loaded.');
-                    return;
-                }
-
-                if(!Helpers.MarkerClusterPlugin.isLoaded()) {
-                    $log.warn(errorHeader + ' The markercluster plugin is not loaded.');
-                    return;
-                }
-                return L.esri.clusteredFeatureLayer(params.url, params.options);
-            }
-        },
-        agsHeatmap: {
-            mustHaveUrl: true,
-            createLayer: function(params) {
-                if (!Helpers.AGSHeatmapLayerPlugin.isLoaded()) {
-                    $log.warn(errorHeader + ' The esri heatmap layer plugin is not loaded.');
-                    return;
-                }
-
-                if(!Helpers.HeatLayerPlugin.isLoaded()) {
-                    $log.warn(errorHeader + ' The heatlayer plugin is not loaded.');
-                    return;
-                }
-                return L.esri.heatmapFeatureLayer(params.url, params.options);
-            }
-        },
-        markercluster: {
-            mustHaveUrl: false,
-            createLayer: function(params) {
-                if (!Helpers.MarkerClusterPlugin.isLoaded()) {
-                    $log.warn(errorHeader + ' The markercluster plugin is not loaded.');
-                    return;
-                }
-                return new L.MarkerClusterGroup(params.options);
-            }
-        },
-        bing: {
-            mustHaveUrl: false,
-            createLayer: function(params) {
-                if (!Helpers.BingLayerPlugin.isLoaded()) {
-                    return;
-                }
-                return new L.BingLayer(params.key, params.options);
-            }
-        },
-        webGLHeatmap: {
-            mustHaveUrl: false,
-            mustHaveData: true,
-            createLayer: function(params) {
-                if (!Helpers.WebGLHeatMapLayerPlugin.isLoaded()) {
-                    return;
-                }
-                var layer = new L.TileLayer.WebGLHeatMap(params.options);
-                if (isDefined(params.data)) {
-                    layer.setData(params.data);
-                }
-
-                return layer;
-            }
-        },
-        heat: {
-            mustHaveUrl: false,
-            mustHaveData: true,
-            createLayer: function(params) {
-                if (!Helpers.HeatLayerPlugin.isLoaded()) {
-                    return;
-                }
-                var layer = new L.heatLayer();
-
-                if (isArray(params.data)) {
-                    layer.setLatLngs(params.data);
-                }
-
-                if (isObject(params.options)) {
-                    layer.setOptions(params.options);
-                }
-
-                return layer;
-            }
-        },
-        yandex: {
-            mustHaveUrl: false,
-            createLayer: function(params) {
-                var type = params.type || 'map';
-                if (!Helpers.YandexLayerPlugin.isLoaded()) {
-                    return;
-                }
-                return new L.Yandex(type, params.options);
-            }
-        },
-        imageOverlay: {
-            mustHaveUrl: true,
-            mustHaveBounds : true,
-            createLayer: function(params) {
-                return L.imageOverlay(params.url, params.bounds, params.options);
-            }
-        },
-        iip: {
-            mustHaveUrl: true,
-            createLayer: function(params) {
-                return L.tileLayer.iip(params.url, params.options);
-            }
-        },
-
-        // This "custom" type is used to accept every layer that user want to define himself.
-        // We can wrap these custom layers like heatmap or yandex, but it means a lot of work/code to wrap the world,
-        // so we let user to define their own layer outside the directive,
-        // and pass it on "createLayer" result for next processes
-        custom: {
-            createLayer: function (params) {
-                if (params.layer instanceof L.Class) {
-                    return angular.copy(params.layer);
-                }
-                else {
-                    $log.error('[AngularJS - Leaflet] A custom layer must be a leaflet Class');
-                }
-            }
-        },
-        cartodb: {
-            mustHaveUrl: true,
-            createLayer: function(params) {
-                return cartodb.createLayer(params.map, params.url);
-            }
-        }
-    };
-
-    function isValidLayerType(layerDefinition) {
-        // Check if the baselayer has a valid type
-        if (!isString(layerDefinition.type)) {
-            $log.error('[AngularJS - Leaflet] A layer must have a valid type defined.');
-            return false;
-        }
-
-        if (Object.keys(layerTypes).indexOf(layerDefinition.type) === -1) {
-            $log.error('[AngularJS - Leaflet] A layer must have a valid type: ' + Object.keys(layerTypes));
-            return false;
-        }
-
-        // Check if the layer must have an URL
-        if (layerTypes[layerDefinition.type].mustHaveUrl && !isString(layerDefinition.url)) {
-            $log.error('[AngularJS - Leaflet] A base layer must have an url');
-            return false;
-        }
-
-        if (layerTypes[layerDefinition.type].mustHaveData && !isDefined(layerDefinition.data)) {
-            $log.error('[AngularJS - Leaflet] The base layer must have a "data" array attribute');
-            return false;
-        }
-
-        if(layerTypes[layerDefinition.type].mustHaveLayer && !isDefined(layerDefinition.layer)) {
-            $log.error('[AngularJS - Leaflet] The type of layer ' + layerDefinition.type + ' must have an layer defined');
-            return false;
-        }
-
-        if (layerTypes[layerDefinition.type].mustHaveBounds && !isDefined(layerDefinition.bounds)) {
-            $log.error('[AngularJS - Leaflet] The type of layer ' + layerDefinition.type + ' must have bounds defined');
-            return false ;
-        }
-
-        if (layerTypes[layerDefinition.type].mustHaveKey && !isDefined(layerDefinition.key)) {
-            $log.error('[AngularJS - Leaflet] The type of layer ' + layerDefinition.type + ' must have key defined');
-            return false ;
-        }
-        return true;
-    }
-
-    function createLayer(layerDefinition) {
-        if (!isValidLayerType(layerDefinition)) {
-            return;
-        }
-
-        if (!isString(layerDefinition.name)) {
-            $log.error('[AngularJS - Leaflet] A base layer must have a name');
-            return;
-        }
-        if (!isObject(layerDefinition.layerParams)) {
-            layerDefinition.layerParams = {};
-        }
-        if (!isObject(layerDefinition.layerOptions)) {
-            layerDefinition.layerOptions = {};
-        }
-
-        // Mix the layer specific parameters with the general Leaflet options. Although this is an overhead
-        // the definition of a base layers is more 'clean' if the two types of parameters are differentiated
-        for (var attrname in layerDefinition.layerParams) {
-            layerDefinition.layerOptions[attrname] = layerDefinition.layerParams[attrname];
-        }
-
-        var params = {
-            url: layerDefinition.url,
-            data: layerDefinition.data,
-            options: layerDefinition.layerOptions,
-            layer: layerDefinition.layer,
-            icon: layerDefinition.icon,
-            type: layerDefinition.layerType,
-            bounds: layerDefinition.bounds,
-            key: layerDefinition.key,
-            apiKey: layerDefinition.apiKey,
-            pluginOptions: layerDefinition.pluginOptions,
-            user: layerDefinition.user
+          return defers;
         };
 
-        //TODO Add $watch to the layer properties
-        return layerTypes[layerDefinition.type].createLayer(params);
-    }
-
-    function safeAddLayer(map, layer) {
-        if (layer && typeof layer.addTo === 'function') {
-            layer.addTo(map);
-        } else {
-            map.addLayer(layer);
+        return L.layerGroup(lyrs);
+      },
+    },
+    featureGroup: {
+      mustHaveUrl: false,
+      createLayer: function() {
+        return L.featureGroup();
+      },
+    },
+    google: {
+      mustHaveUrl: false,
+      createLayer: function(params) {
+        var type = params.type || 'SATELLITE';
+        if (!Helpers.GoogleLayerPlugin.isLoaded()) {
+          return;
         }
-    }
 
-    function safeRemoveLayer(map, layer, layerOptions) {
-        if(isDefined(layerOptions) && isDefined(layerOptions.loadedDefer)) {
-            if(angular.isFunction(layerOptions.loadedDefer)) {
-                var defers = layerOptions.loadedDefer();
-                $log.debug('Loaded Deferred', defers);
-                var count = defers.length;
-                var resolve = function() {
-                    count--;
-                    if(count === 0) {
-                        map.removeLayer(layer);
-                    }
-                };
-
-                for(var i = 0; i < defers.length; i++) {
-                    defers[i].promise.then(resolve);
-                }
-            } else {
-                layerOptions.loadedDefer.promise.then(function() {
-                    map.removeLayer(layer);
-                });
-            }
-        } else {
-            map.removeLayer(layer);
+        return new L.Google(type, params.options);
+      },
+    },
+    here: {
+      mustHaveUrl: false,
+      createLayer: function(params) {
+        var provider = params.provider || 'HERE.terrainDay';
+        if (!Helpers.LeafletProviderPlugin.isLoaded()) {
+          return;
         }
+
+        return new L.TileLayer.Provider(provider, params.options);
+      },
+    },
+    china:{
+      mustHaveUrl:false,
+      createLayer:function(params) {
+        var type = params.type || '';
+        if (!Helpers.ChinaLayerPlugin.isLoaded()) {
+          return;
+        }
+
+        return L.tileLayer.chinaProvider(type, params.options);
+      },
+    },
+    agsBase: {
+      mustHaveLayer: true,
+      createLayer: function(params) {
+        if (!Helpers.AGSBaseLayerPlugin.isLoaded()) {
+          return;
+        }
+
+        return L.esri.basemapLayer(params.layer, params.options);
+      },
+    },
+    ags: {
+      mustHaveUrl: true,
+      createLayer: function(params) {
+        if (!Helpers.AGSLayerPlugin.isLoaded()) {
+          return;
+        }
+
+        var options = angular.copy(params.options);
+        angular.extend(options, {
+          url: params.url,
+        });
+        var layer = new lvector.AGS(options);
+        layer.onAdd = function(map) {
+          this.setMap(map);
+        };
+
+        layer.onRemove = function() {
+          this.setMap(null);
+        };
+
+        return layer;
+      },
+    },
+    agsFeature: {
+      mustHaveUrl: true,
+      createLayer: function(params) {
+        if (!Helpers.AGSFeatureLayerPlugin.isLoaded()) {
+          $log.warn(errorHeader + ' The esri plugin is not loaded.');
+          return;
+        }
+
+        params.options.url = params.url;
+
+        var layer = L.esri.featureLayer(params.options);
+        var load = function() {
+          if (isDefined(params.options.loadedDefer)) {
+            params.options.loadedDefer.resolve();
+          }
+        };
+
+        layer.on('loading', function() {
+          params.options.loadedDefer = $q.defer();
+          layer.off('load', load);
+          layer.on('load', load);
+        });
+
+        return layer;
+      },
+    },
+    agsTiled: {
+      mustHaveUrl: true,
+      createLayer: function(params) {
+        if (!Helpers.AGSTiledMapLayerPlugin.isLoaded()) {
+          $log.warn(errorHeader + ' The esri plugin is not loaded.');
+          return;
+        }
+
+        params.options.url = params.url;
+
+        return L.esri.tiledMapLayer(params.options);
+      },
+    },
+    agsDynamic: {
+      mustHaveUrl: true,
+      createLayer: function(params) {
+        if (!Helpers.AGSDynamicMapLayerPlugin.isLoaded()) {
+          $log.warn(errorHeader + ' The esri plugin is not loaded.');
+          return;
+        }
+
+        params.options.url = params.url;
+
+        return L.esri.dynamicMapLayer(params.options);
+      },
+    },
+    agsImage: {
+      mustHaveUrl: true,
+      createLayer: function(params) {
+        if (!Helpers.AGSImageMapLayerPlugin.isLoaded()) {
+          $log.warn(errorHeader + ' The esri plugin is not loaded.');
+          return;
+        }
+
+        params.options.url = params.url;
+
+        return L.esri.imageMapLayer(params.options);
+      },
+    },
+    agsClustered: {
+      mustHaveUrl: true,
+      createLayer: function(params) {
+        if (!Helpers.AGSClusteredLayerPlugin.isLoaded()) {
+          $log.warn(errorHeader + ' The esri clustered layer plugin is not loaded.');
+          return;
+        }
+
+        if (!Helpers.MarkerClusterPlugin.isLoaded()) {
+          $log.warn(errorHeader + ' The markercluster plugin is not loaded.');
+          return;
+        }
+
+        return L.esri.clusteredFeatureLayer(params.url, params.options);
+      },
+    },
+    agsHeatmap: {
+      mustHaveUrl: true,
+      createLayer: function(params) {
+        if (!Helpers.AGSHeatmapLayerPlugin.isLoaded()) {
+          $log.warn(errorHeader + ' The esri heatmap layer plugin is not loaded.');
+          return;
+        }
+
+        if (!Helpers.HeatLayerPlugin.isLoaded()) {
+          $log.warn(errorHeader + ' The heatlayer plugin is not loaded.');
+          return;
+        }
+
+        return L.esri.heatmapFeatureLayer(params.url, params.options);
+      },
+    },
+    markercluster: {
+      mustHaveUrl: false,
+      createLayer: function(params) {
+        if (!Helpers.MarkerClusterPlugin.isLoaded()) {
+          $log.warn(errorHeader + ' The markercluster plugin is not loaded.');
+          return;
+        }
+
+        return new L.MarkerClusterGroup(params.options);
+      },
+    },
+    bing: {
+      mustHaveUrl: false,
+      createLayer: function(params) {
+        if (!Helpers.BingLayerPlugin.isLoaded()) {
+          return;
+        }
+
+        return new L.BingLayer(params.key, params.options);
+      },
+    },
+    webGLHeatmap: {
+      mustHaveUrl: false,
+      mustHaveData: true,
+      createLayer: function(params) {
+        if (!Helpers.WebGLHeatMapLayerPlugin.isLoaded()) {
+          return;
+        }
+
+        var layer = new L.TileLayer.WebGLHeatMap(params.options);
+        if (isDefined(params.data)) {
+          layer.setData(params.data);
+        }
+
+        return layer;
+      },
+    },
+    heat: {
+      mustHaveUrl: false,
+      mustHaveData: true,
+      createLayer: function(params) {
+        if (!Helpers.HeatLayerPlugin.isLoaded()) {
+          return;
+        }
+
+        var layer = new L.heatLayer();
+
+        if (isArray(params.data)) {
+          layer.setLatLngs(params.data);
+        }
+
+        if (isObject(params.options)) {
+          layer.setOptions(params.options);
+        }
+
+        return layer;
+      },
+    },
+    yandex: {
+      mustHaveUrl: false,
+      createLayer: function(params) {
+        var type = params.type || 'map';
+        if (!Helpers.YandexLayerPlugin.isLoaded()) {
+          return;
+        }
+
+        return new L.Yandex(type, params.options);
+      },
+    },
+    imageOverlay: {
+      mustHaveUrl: true,
+      mustHaveBounds: true,
+      createLayer: function(params) {
+        return L.imageOverlay(params.url, params.bounds, params.options);
+      },
+    },
+    iip: {
+      mustHaveUrl: true,
+      createLayer: function(params) {
+        return L.tileLayer.iip(params.url, params.options);
+      },
+    },
+
+    // This "custom" type is used to accept every layer that user want to define himself.
+    // We can wrap these custom layers like heatmap or yandex, but it means a lot of work/code to wrap the world,
+    // so we let user to define their own layer outside the directive,
+    // and pass it on "createLayer" result for next processes
+    custom: {
+      createLayer: function(params) {
+        if (params.layer instanceof L.Class) {
+          return angular.copy(params.layer);
+        }        else {
+          $log.error('[AngularJS - Leaflet] A custom layer must be a leaflet Class');
+        }
+      },
+    },
+    cartodb: {
+      mustHaveUrl: true,
+      createLayer: function(params) {
+        return cartodb.createLayer(params.map, params.url);
+      },
+    },
+  };
+
+  function isValidLayerType(layerDefinition) {
+    // Check if the baselayer has a valid type
+    if (!isString(layerDefinition.type)) {
+      $log.error('[AngularJS - Leaflet] A layer must have a valid type defined.');
+      return false;
     }
 
-    return {
-        createLayer: createLayer,
-        safeAddLayer: safeAddLayer,
-        safeRemoveLayer: safeRemoveLayer
+    if (Object.keys(layerTypes).indexOf(layerDefinition.type) === -1) {
+      $log.error('[AngularJS - Leaflet] A layer must have a valid type: ' + Object.keys(layerTypes));
+      return false;
+    }
+
+    // Check if the layer must have an URL
+    if (layerTypes[layerDefinition.type].mustHaveUrl && !isString(layerDefinition.url)) {
+      $log.error('[AngularJS - Leaflet] A base layer must have an url');
+      return false;
+    }
+
+    if (layerTypes[layerDefinition.type].mustHaveData && !isDefined(layerDefinition.data)) {
+      $log.error('[AngularJS - Leaflet] The base layer must have a "data" array attribute');
+      return false;
+    }
+
+    if (layerTypes[layerDefinition.type].mustHaveLayer && !isDefined(layerDefinition.layer)) {
+      $log.error('[AngularJS - Leaflet] The type of layer ' + layerDefinition.type + ' must have an layer defined');
+      return false;
+    }
+
+    if (layerTypes[layerDefinition.type].mustHaveBounds && !isDefined(layerDefinition.bounds)) {
+      $log.error('[AngularJS - Leaflet] The type of layer ' + layerDefinition.type + ' must have bounds defined');
+      return false;
+    }
+
+    if (layerTypes[layerDefinition.type].mustHaveKey && !isDefined(layerDefinition.key)) {
+      $log.error('[AngularJS - Leaflet] The type of layer ' + layerDefinition.type + ' must have key defined');
+      return false;
+    }
+
+    return true;
+  }
+
+  function createLayer(layerDefinition) {
+    if (!isValidLayerType(layerDefinition)) {
+      return;
+    }
+
+    if (!isString(layerDefinition.name)) {
+      $log.error('[AngularJS - Leaflet] A base layer must have a name');
+      return;
+    }
+
+    if (!isObject(layerDefinition.layerParams)) {
+      layerDefinition.layerParams = {};
+    }
+
+    if (!isObject(layerDefinition.layerOptions)) {
+      layerDefinition.layerOptions = {};
+    }
+
+    // Mix the layer specific parameters with the general Leaflet options. Although this is an overhead
+    // the definition of a base layers is more 'clean' if the two types of parameters are differentiated
+    for (var attrname in layerDefinition.layerParams) {
+      layerDefinition.layerOptions[attrname] = layerDefinition.layerParams[attrname];
+    }
+
+    var params = {
+      url: layerDefinition.url,
+      data: layerDefinition.data,
+      options: layerDefinition.layerOptions,
+      layer: layerDefinition.layer,
+      icon: layerDefinition.icon,
+      type: layerDefinition.layerType,
+      bounds: layerDefinition.bounds,
+      key: layerDefinition.key,
+      apiKey: layerDefinition.apiKey,
+      pluginOptions: layerDefinition.pluginOptions,
+      user: layerDefinition.user,
     };
+
+    //TODO Add $watch to the layer properties
+    return layerTypes[layerDefinition.type].createLayer(params);
+  }
+
+  function safeAddLayer(map, layer) {
+    if (layer && typeof layer.addTo === 'function') {
+      layer.addTo(map);
+    } else {
+      map.addLayer(layer);
+    }
+  }
+
+  function safeRemoveLayer(map, layer, layerOptions) {
+    if (isDefined(layerOptions) && isDefined(layerOptions.loadedDefer)) {
+      if (angular.isFunction(layerOptions.loadedDefer)) {
+        var defers = layerOptions.loadedDefer();
+        $log.debug('Loaded Deferred', defers);
+        var count = defers.length;
+        if (count > 0) {
+          var resolve = function() {
+            count--;
+            if (count === 0) {
+              map.removeLayer(layer);
+            }
+          };
+
+          for (var i = 0; i < defers.length; i++) {
+            defers[i].promise.then(resolve);
+          }
+        } else {
+          map.removeLayer(layer);
+        }
+      } else {
+        layerOptions.loadedDefer.promise.then(function() {
+          map.removeLayer(layer);
+        });
+      }
+    } else {
+      map.removeLayer(layer);
+    }
+  }
+
+  return {
+    createLayer: createLayer,
+    safeAddLayer: safeAddLayer,
+    safeRemoveLayer: safeRemoveLayer,
+  };
 }]);
 
-angular.module("leaflet-directive").factory('leafletLegendHelpers', function () {
-	var _updateLegend = function(div, legendData, type, url) {
-		div.innerHTML = '';
-		if(legendData.error) {
-			div.innerHTML += '<div class="info-title alert alert-danger">' + legendData.error.message + '</div>';
-		} else {
-			if (type === 'arcgis') {
-				for (var i = 0; i < legendData.layers.length; i++) {
-					var layer = legendData.layers[i];
-					div.innerHTML += '<div class="info-title" data-layerid="' + layer.layerId + '">' + layer.layerName + '</div>';
-					for(var j = 0; j < layer.legend.length; j++) {
-						var leg = layer.legend[j];
-						div.innerHTML +=
-							'<div class="inline" data-layerid="' + layer.layerId + '"><img src="data:' + leg.contentType + ';base64,' + leg.imageData + '" /></div>' +
-							'<div class="info-label" data-layerid="' + layer.layerId + '">' + leg.label + '</div>';
-					}
-				}
-			}
-			else if (type === 'image') {
-				div.innerHTML = '<img src="' + url + '"/>';
-			}
-		}
-	};
+angular.module('leaflet-directive').factory('leafletLegendHelpers', function() {
+  var _updateLegend = function(div, legendData, type, url) {
+    div.innerHTML = '';
+    if (legendData.error) {
+      div.innerHTML += '<div class="info-title alert alert-danger">' + legendData.error.message + '</div>';
+    } else {
+      if (type === 'arcgis') {
+        for (var i = 0; i < legendData.layers.length; i++) {
+          var layer = legendData.layers[i];
+          div.innerHTML += '<div class="info-title" data-layerid="' + layer.layerId + '">' + layer.layerName + '</div>';
+          for (var j = 0; j < layer.legend.length; j++) {
+            var leg = layer.legend[j];
+            div.innerHTML +=
+            '<div class="inline" data-layerid="' + layer.layerId + '"><img src="data:' + leg.contentType + ';base64,' + leg.imageData + '" /></div>' +
+            '<div class="info-label" data-layerid="' + layer.layerId + '">' + leg.label + '</div>';
+          }
+        }
+      }      else if (type === 'image') {
+        div.innerHTML = '<img src="' + url + '"/>';
+      }
+    }
+  };
 
-	var _getOnAddLegend = function(legendData, legendClass, type, url) {
-		return function(/*map*/) {
-			var div = L.DomUtil.create('div', legendClass);
+  var _getOnAddLegend = function(legendData, legendClass, type, url) {
+    return function(/*map*/) {
+      var div = L.DomUtil.create('div', legendClass);
 
-			if (!L.Browser.touch) {
-				L.DomEvent.disableClickPropagation(div);
-				L.DomEvent.on(div, 'mousewheel', L.DomEvent.stopPropagation);
-			} else {
-				L.DomEvent.on(div, 'click', L.DomEvent.stopPropagation);
-			}
-			_updateLegend(div, legendData, type, url);
-			return div;
-		};
-	};
+      if (!L.Browser.touch) {
+        L.DomEvent.disableClickPropagation(div);
+        L.DomEvent.on(div, 'mousewheel', L.DomEvent.stopPropagation);
+      } else {
+        L.DomEvent.on(div, 'click', L.DomEvent.stopPropagation);
+      }
 
-	var _getOnAddArrayLegend = function(legend, legendClass) {
-		return function(/*map*/) {
-			var div = L.DomUtil.create('div', legendClass);
-            for (var i = 0; i < legend.colors.length; i++) {
-                div.innerHTML +=
-                    '<div class="outline"><i style="background:' + legend.colors[i] + '"></i></div>' +
-                    '<div class="info-label">' + legend.labels[i] + '</div>';
-            }
-            if (!L.Browser.touch) {
-				L.DomEvent.disableClickPropagation(div);
-				L.DomEvent.on(div, 'mousewheel', L.DomEvent.stopPropagation);
-			} else {
-				L.DomEvent.on(div, 'click', L.DomEvent.stopPropagation);
-			}
-            return div;
-		};
-	};
+      _updateLegend(div, legendData, type, url);
+      return div;
+    };
+  };
 
-	return {
-		getOnAddLegend: _getOnAddLegend,
-		getOnAddArrayLegend: _getOnAddArrayLegend,
-		updateLegend: _updateLegend,
-	};
+  var _getOnAddArrayLegend = function(legend, legendClass) {
+    return function(/*map*/) {
+      var div = L.DomUtil.create('div', legendClass);
+      for (var i = 0; i < legend.colors.length; i++) {
+        div.innerHTML +=
+            '<div class="outline"><i style="background:' + legend.colors[i] + '"></i></div>' +
+            '<div class="info-label">' + legend.labels[i] + '</div>';
+      }
+
+      if (!L.Browser.touch) {
+        L.DomEvent.disableClickPropagation(div);
+        L.DomEvent.on(div, 'mousewheel', L.DomEvent.stopPropagation);
+      } else {
+        L.DomEvent.on(div, 'click', L.DomEvent.stopPropagation);
+      }
+
+      return div;
+    };
+  };
+
+  return {
+    getOnAddLegend: _getOnAddLegend,
+    getOnAddArrayLegend: _getOnAddArrayLegend,
+    updateLegend: _updateLegend,
+  };
 });
 
-angular.module("leaflet-directive").factory('leafletMapDefaults', ["$q", "leafletHelpers", function ($q, leafletHelpers) {
-    function _getDefaults() {
-        return {
-            keyboard: true,
-            dragging: true,
-            worldCopyJump: false,
-            doubleClickZoom: true,
-            scrollWheelZoom: true,
-            tap: true,
-            touchZoom: true,
-            zoomControl: true,
-            zoomsliderControl: false,
-            zoomControlPosition: 'topleft',
-            attributionControl: true,
-            controls: {
-                layers: {
-                    visible: true,
-                    position: 'topright',
-                    collapsed: true
-                }
-            },
-            nominatim: {
-                server: ' http://nominatim.openstreetmap.org/search'
-            },
-            crs: L.CRS.EPSG3857,
-            tileLayer: '//{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-            tileLayerOptions: {
-                attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            },
-            path: {
-                weight: 10,
-                opacity: 1,
-                color: '#0000ff'
-            },
-            center: {
-                lat: 0,
-                lng: 0,
-                zoom: 1
-            }
-        };
-    }
-
-    var isDefined = leafletHelpers.isDefined,
-        isObject = leafletHelpers.isObject,
-        obtainEffectiveMapId = leafletHelpers.obtainEffectiveMapId,
-        defaults = {};
-
-    // Get the _defaults dictionary, and override the properties defined by the user
+angular.module('leaflet-directive').factory('leafletMapDefaults', ["$q", "leafletHelpers", function($q, leafletHelpers) {
+  function _getDefaults() {
     return {
-        reset: function () {
-           defaults = {};
+      keyboard: true,
+      dragging: true,
+      worldCopyJump: false,
+      doubleClickZoom: true,
+      scrollWheelZoom: true,
+      tap: true,
+      touchZoom: true,
+      zoomControl: true,
+      zoomsliderControl: false,
+      zoomControlPosition: 'topleft',
+      attributionControl: true,
+      controls: {
+        layers: {
+          visible: true,
+          position: 'topright',
+          collapsed: true,
         },
-        getDefaults: function (scopeId) {
-            var mapId = obtainEffectiveMapId(defaults, scopeId);
-            return defaults[mapId];
-        },
-
-        getMapCreationDefaults: function (scopeId) {
-            var mapId = obtainEffectiveMapId(defaults, scopeId);
-            var d = defaults[mapId];
-
-            var mapDefaults = {
-                maxZoom: d.maxZoom,
-                keyboard: d.keyboard,
-                dragging: d.dragging,
-                zoomControl: d.zoomControl,
-                doubleClickZoom: d.doubleClickZoom,
-                scrollWheelZoom: d.scrollWheelZoom,
-                tap: d.tap,
-                touchZoom: d.touchZoom,
-                attributionControl: d.attributionControl,
-                worldCopyJump: d.worldCopyJump,
-                crs: d.crs
-            };
-
-            if (isDefined(d.minZoom)) {
-                mapDefaults.minZoom = d.minZoom;
-            }
-
-            if (isDefined(d.zoomAnimation)) {
-                mapDefaults.zoomAnimation = d.zoomAnimation;
-            }
-
-            if (isDefined(d.fadeAnimation)) {
-                mapDefaults.fadeAnimation = d.fadeAnimation;
-            }
-
-            if (isDefined(d.markerZoomAnimation)) {
-                mapDefaults.markerZoomAnimation = d.markerZoomAnimation;
-            }
-
-            if (d.map) {
-                for (var option in d.map) {
-                    mapDefaults[option] = d.map[option];
-                }
-            }
-
-            return mapDefaults;
-        },
-
-        setDefaults: function (userDefaults, scopeId) {
-            var newDefaults = _getDefaults();
-
-            if (isDefined(userDefaults)) {
-                newDefaults.doubleClickZoom = isDefined(userDefaults.doubleClickZoom) ? userDefaults.doubleClickZoom : newDefaults.doubleClickZoom;
-                newDefaults.scrollWheelZoom = isDefined(userDefaults.scrollWheelZoom) ? userDefaults.scrollWheelZoom : newDefaults.doubleClickZoom;
-                newDefaults.tap = isDefined(userDefaults.tap) ? userDefaults.tap : newDefaults.tap;
-                newDefaults.touchZoom = isDefined(userDefaults.touchZoom) ? userDefaults.touchZoom : newDefaults.doubleClickZoom;
-                newDefaults.zoomControl = isDefined(userDefaults.zoomControl) ? userDefaults.zoomControl : newDefaults.zoomControl;
-                newDefaults.zoomsliderControl = isDefined(userDefaults.zoomsliderControl) ? userDefaults.zoomsliderControl : newDefaults.zoomsliderControl;
-                newDefaults.attributionControl = isDefined(userDefaults.attributionControl) ? userDefaults.attributionControl : newDefaults.attributionControl;
-                newDefaults.tileLayer = isDefined(userDefaults.tileLayer) ? userDefaults.tileLayer : newDefaults.tileLayer;
-                newDefaults.zoomControlPosition = isDefined(userDefaults.zoomControlPosition) ? userDefaults.zoomControlPosition : newDefaults.zoomControlPosition;
-                newDefaults.keyboard = isDefined(userDefaults.keyboard) ? userDefaults.keyboard : newDefaults.keyboard;
-                newDefaults.dragging = isDefined(userDefaults.dragging) ? userDefaults.dragging : newDefaults.dragging;
-
-                if (isDefined(userDefaults.controls)) {
-                    angular.extend(newDefaults.controls, userDefaults.controls);
-                }
-
-                if (isObject(userDefaults.crs)) {
-                    newDefaults.crs = userDefaults.crs;
-                } else if (isDefined(L.CRS[userDefaults.crs])) {
-                    newDefaults.crs = L.CRS[userDefaults.crs];
-                }
-
-                if (isDefined(userDefaults.center)) {
-                    angular.copy(userDefaults.center, newDefaults.center);
-                }
-
-                if (isDefined(userDefaults.tileLayerOptions)) {
-                    angular.copy(userDefaults.tileLayerOptions, newDefaults.tileLayerOptions);
-                }
-
-                if (isDefined(userDefaults.maxZoom)) {
-                    newDefaults.maxZoom = userDefaults.maxZoom;
-                }
-
-                if (isDefined(userDefaults.minZoom)) {
-                    newDefaults.minZoom = userDefaults.minZoom;
-                }
-
-                if (isDefined(userDefaults.zoomAnimation)) {
-                    newDefaults.zoomAnimation = userDefaults.zoomAnimation;
-                }
-
-                if (isDefined(userDefaults.fadeAnimation)) {
-                    newDefaults.fadeAnimation = userDefaults.fadeAnimation;
-                }
-
-                if (isDefined(userDefaults.markerZoomAnimation)) {
-                    newDefaults.markerZoomAnimation = userDefaults.markerZoomAnimation;
-                }
-
-                if (isDefined(userDefaults.worldCopyJump)) {
-                    newDefaults.worldCopyJump = userDefaults.worldCopyJump;
-                }
-
-                if (isDefined(userDefaults.map)) {
-                    newDefaults.map = userDefaults.map;
-                }
-
-                if (isDefined(userDefaults.path)) {
-                    newDefaults.path = userDefaults.path;
-                }
-            }
-
-            var mapId = obtainEffectiveMapId(defaults, scopeId);
-            defaults[mapId] = newDefaults;
-            return newDefaults;
-        }
+      },
+      nominatim: {
+        server: ' http://nominatim.openstreetmap.org/search',
+      },
+      crs: L.CRS.EPSG3857,
+      tileLayer: '//{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      tileLayerOptions: {
+        attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      },
+      path: {
+        weight: 10,
+        opacity: 1,
+        color: '#0000ff',
+      },
+      center: {
+        lat: 0,
+        lng: 0,
+        zoom: 1,
+      },
     };
+  }
+
+  var isDefined = leafletHelpers.isDefined;
+  var isObject = leafletHelpers.isObject;
+  var obtainEffectiveMapId = leafletHelpers.obtainEffectiveMapId;
+  var defaults = {};
+
+  // Get the _defaults dictionary, and override the properties defined by the user
+  return {
+    reset: function() {
+      defaults = {};
+    },
+
+    getDefaults: function(scopeId) {
+      var mapId = obtainEffectiveMapId(defaults, scopeId);
+      return defaults[mapId];
+    },
+
+    getMapCreationDefaults: function(scopeId) {
+      var mapId = obtainEffectiveMapId(defaults, scopeId);
+      var d = defaults[mapId];
+
+      var mapDefaults = {
+        maxZoom: d.maxZoom,
+        keyboard: d.keyboard,
+        dragging: d.dragging,
+        zoomControl: d.zoomControl,
+        doubleClickZoom: d.doubleClickZoom,
+        scrollWheelZoom: d.scrollWheelZoom,
+        tap: d.tap,
+        touchZoom: d.touchZoom,
+        attributionControl: d.attributionControl,
+        worldCopyJump: d.worldCopyJump,
+        crs: d.crs,
+      };
+
+      if (isDefined(d.minZoom)) {
+        mapDefaults.minZoom = d.minZoom;
+      }
+
+      if (isDefined(d.zoomAnimation)) {
+        mapDefaults.zoomAnimation = d.zoomAnimation;
+      }
+
+      if (isDefined(d.fadeAnimation)) {
+        mapDefaults.fadeAnimation = d.fadeAnimation;
+      }
+
+      if (isDefined(d.markerZoomAnimation)) {
+        mapDefaults.markerZoomAnimation = d.markerZoomAnimation;
+      }
+
+      if (d.map) {
+        for (var option in d.map) {
+          mapDefaults[option] = d.map[option];
+        }
+      }
+
+      return mapDefaults;
+    },
+
+    setDefaults: function(userDefaults, scopeId) {
+      var newDefaults = _getDefaults();
+
+      if (isDefined(userDefaults)) {
+        newDefaults.doubleClickZoom = isDefined(userDefaults.doubleClickZoom) ? userDefaults.doubleClickZoom : newDefaults.doubleClickZoom;
+        newDefaults.scrollWheelZoom = isDefined(userDefaults.scrollWheelZoom) ? userDefaults.scrollWheelZoom : newDefaults.doubleClickZoom;
+        newDefaults.tap = isDefined(userDefaults.tap) ? userDefaults.tap : newDefaults.tap;
+        newDefaults.touchZoom = isDefined(userDefaults.touchZoom) ? userDefaults.touchZoom : newDefaults.doubleClickZoom;
+        newDefaults.zoomControl = isDefined(userDefaults.zoomControl) ? userDefaults.zoomControl : newDefaults.zoomControl;
+        newDefaults.zoomsliderControl = isDefined(userDefaults.zoomsliderControl) ? userDefaults.zoomsliderControl : newDefaults.zoomsliderControl;
+        newDefaults.attributionControl = isDefined(userDefaults.attributionControl) ? userDefaults.attributionControl : newDefaults.attributionControl;
+        newDefaults.tileLayer = isDefined(userDefaults.tileLayer) ? userDefaults.tileLayer : newDefaults.tileLayer;
+        newDefaults.zoomControlPosition = isDefined(userDefaults.zoomControlPosition) ? userDefaults.zoomControlPosition : newDefaults.zoomControlPosition;
+        newDefaults.keyboard = isDefined(userDefaults.keyboard) ? userDefaults.keyboard : newDefaults.keyboard;
+        newDefaults.dragging = isDefined(userDefaults.dragging) ? userDefaults.dragging : newDefaults.dragging;
+
+        if (isDefined(userDefaults.controls)) {
+          angular.extend(newDefaults.controls, userDefaults.controls);
+        }
+
+        if (isObject(userDefaults.crs)) {
+          newDefaults.crs = userDefaults.crs;
+        } else if (isDefined(L.CRS[userDefaults.crs])) {
+          newDefaults.crs = L.CRS[userDefaults.crs];
+        }
+
+        if (isDefined(userDefaults.center)) {
+          angular.copy(userDefaults.center, newDefaults.center);
+        }
+
+        if (isDefined(userDefaults.tileLayerOptions)) {
+          angular.copy(userDefaults.tileLayerOptions, newDefaults.tileLayerOptions);
+        }
+
+        if (isDefined(userDefaults.maxZoom)) {
+          newDefaults.maxZoom = userDefaults.maxZoom;
+        }
+
+        if (isDefined(userDefaults.minZoom)) {
+          newDefaults.minZoom = userDefaults.minZoom;
+        }
+
+        if (isDefined(userDefaults.zoomAnimation)) {
+          newDefaults.zoomAnimation = userDefaults.zoomAnimation;
+        }
+
+        if (isDefined(userDefaults.fadeAnimation)) {
+          newDefaults.fadeAnimation = userDefaults.fadeAnimation;
+        }
+
+        if (isDefined(userDefaults.markerZoomAnimation)) {
+          newDefaults.markerZoomAnimation = userDefaults.markerZoomAnimation;
+        }
+
+        if (isDefined(userDefaults.worldCopyJump)) {
+          newDefaults.worldCopyJump = userDefaults.worldCopyJump;
+        }
+
+        if (isDefined(userDefaults.map)) {
+          newDefaults.map = userDefaults.map;
+        }
+
+        if (isDefined(userDefaults.path)) {
+          newDefaults.path = userDefaults.path;
+        }
+      }
+
+      var mapId = obtainEffectiveMapId(defaults, scopeId);
+      defaults[mapId] = newDefaults;
+      return newDefaults;
+    },
+  };
 }]);
 
-angular.module("leaflet-directive").service('leafletMarkersHelpers', ["$rootScope", "$timeout", "leafletHelpers", "leafletLogger", "$compile", "leafletGeoJsonHelpers", function ($rootScope, $timeout, leafletHelpers, leafletLogger, $compile, leafletGeoJsonHelpers) {
-    var isDefined = leafletHelpers.isDefined,
-        defaultTo = leafletHelpers.defaultTo,
-        MarkerClusterPlugin = leafletHelpers.MarkerClusterPlugin,
-        AwesomeMarkersPlugin = leafletHelpers.AwesomeMarkersPlugin,
-        MakiMarkersPlugin = leafletHelpers.MakiMarkersPlugin,
-        ExtraMarkersPlugin = leafletHelpers.ExtraMarkersPlugin,
-        DomMarkersPlugin = leafletHelpers.DomMarkersPlugin,
-        safeApply = leafletHelpers.safeApply,
-        Helpers = leafletHelpers,
-        isString = leafletHelpers.isString,
-        isNumber = leafletHelpers.isNumber,
-        isObject = leafletHelpers.isObject,
-        groups = {},
-        geoHlp = leafletGeoJsonHelpers,
-        errorHeader = leafletHelpers.errorHeader,
-        $log = leafletLogger;
+angular.module('leaflet-directive').service('leafletMarkersHelpers', ["$rootScope", "$timeout", "leafletHelpers", "$log", "$compile", "leafletGeoJsonHelpers", function($rootScope, $timeout, leafletHelpers, $log, $compile, leafletGeoJsonHelpers) {
+  var isDefined = leafletHelpers.isDefined;
+  var defaultTo = leafletHelpers.defaultTo;
+  var MarkerClusterPlugin = leafletHelpers.MarkerClusterPlugin;
+  var AwesomeMarkersPlugin = leafletHelpers.AwesomeMarkersPlugin;
+  var VectorMarkersPlugin = leafletHelpers.VectorMarkersPlugin;
+  var MakiMarkersPlugin = leafletHelpers.MakiMarkersPlugin;
+  var ExtraMarkersPlugin = leafletHelpers.ExtraMarkersPlugin;
+  var DomMarkersPlugin = leafletHelpers.DomMarkersPlugin;
+  var safeApply = leafletHelpers.safeApply;
+  var Helpers = leafletHelpers;
+  var isString = leafletHelpers.isString;
+  var isNumber = leafletHelpers.isNumber;
+  var isObject = leafletHelpers.isObject;
+  var groups = {};
+  var geoHlp = leafletGeoJsonHelpers;
+  var errorHeader = leafletHelpers.errorHeader;
 
+  var _string = function(marker) {
+    //this exists since JSON.stringify barfs on cyclic
+    var retStr = '';
+    ['_icon', '_latlng', '_leaflet_id', '_map', '_shadow'].forEach(function(prop) {
+      retStr += prop + ': ' + defaultTo(marker[prop], 'undefined') + ' \n';
+    });
 
-    var _string = function (marker) {
-        //this exists since JSON.stringify barfs on cyclic
-        var retStr = '';
-        ['_icon', '_latlng', '_leaflet_id', '_map', '_shadow'].forEach(function (prop) {
-            retStr += prop + ': ' + defaultTo(marker[prop], 'undefined') + ' \n';
-        });
-        return '[leafletMarker] : \n' + retStr;
-    };
-    var _log = function (marker, useConsole) {
-        var logger = useConsole ? console : $log;
-        logger.debug(_string(marker));
-    };
+    return '[leafletMarker] : \n' + retStr;
+  };
 
-    var createLeafletIcon = function (iconData) {
-        if (isDefined(iconData) && isDefined(iconData.type) && iconData.type === 'awesomeMarker') {
-            if (!AwesomeMarkersPlugin.isLoaded()) {
-                $log.error(errorHeader + ' The AwesomeMarkers Plugin is not loaded.');
-            }
+  var _log = function(marker, useConsole) {
+    var logger = useConsole ? console : $log;
+    logger.debug(_string(marker));
+  };
 
-            return new L.AwesomeMarkers.icon(iconData);
+  var createLeafletIcon = function(iconData) {
+    if (isDefined(iconData) && isDefined(iconData.type) && iconData.type === 'awesomeMarker') {
+      if (!AwesomeMarkersPlugin.isLoaded()) {
+        $log.error(errorHeader + ' The AwesomeMarkers Plugin is not loaded.');
+      }
+
+      return new L.AwesomeMarkers.icon(iconData);
+    }
+
+    if (isDefined(iconData) && isDefined(iconData.type) && iconData.type === 'vectorMarker') {
+      if (!VectorMarkersPlugin.isLoaded()) {
+        $log.error(errorHeader + ' The VectorMarkers Plugin is not loaded.');
+      }
+
+      return new L.VectorMarkers.icon(iconData);
+    }
+
+    if (isDefined(iconData) && isDefined(iconData.type) && iconData.type === 'makiMarker') {
+      if (!MakiMarkersPlugin.isLoaded()) {
+        $log.error(errorHeader + 'The MakiMarkers Plugin is not loaded.');
+      }
+
+      return new L.MakiMarkers.icon(iconData);
+    }
+
+    if (isDefined(iconData) && isDefined(iconData.type) && iconData.type === 'extraMarker') {
+      if (!ExtraMarkersPlugin.isLoaded()) {
+        $log.error(errorHeader + 'The ExtraMarkers Plugin is not loaded.');
+      }
+
+      return new L.ExtraMarkers.icon(iconData);
+    }
+
+    if (isDefined(iconData) && isDefined(iconData.type) && iconData.type === 'div') {
+      return new L.divIcon(iconData);
+    }
+
+    if (isDefined(iconData) && isDefined(iconData.type) && iconData.type === 'dom') {
+      if (!DomMarkersPlugin.isLoaded()) {
+        $log.error(errorHeader + 'The DomMarkers Plugin is not loaded.');
+      }
+
+      var markerScope = angular.isFunction(iconData.getMarkerScope) ? iconData.getMarkerScope() : $rootScope;
+      var template = $compile(iconData.template)(markerScope);
+      var iconDataCopy = angular.copy(iconData);
+      iconDataCopy.element = template[0];
+      return new L.DomMarkers.icon(iconDataCopy);
+    }
+
+    // allow for any custom icon to be used... assumes the icon has already been initialized
+    if (isDefined(iconData) && isDefined(iconData.type) && iconData.type === 'icon') {
+      return iconData.icon;
+    }
+
+    var base64icon = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABkAAAApCAYAAADAk4LOAAAGmklEQVRYw7VXeUyTZxjvNnfELFuyIzOabermMZEeQC/OclkO49CpOHXOLJl/CAURuYbQi3KLgEhbrhZ1aDwmaoGqKII6odATmH/scDFbdC7LvFqOCc+e95s2VG50X/LLm/f4/Z7neY/ne18aANCmAr5E/xZf1uDOkTcGcWR6hl9247tT5U7Y6SNvWsKT63P58qbfeLJG8M5qcgTknrvvrdDbsT7Ml+tv82X6vVxJE33aRmgSyYtcWVMqX97Yv2JvW39UhRE2HuyBL+t+gK1116ly06EeWFNlAmHxlQE0OMiV6mQCScusKRlhS3QLeVJdl1+23h5dY4FNB3thrbYboqptEFlphTC1hSpJnbRvxP4NWgsE5Jyz86QNNi/5qSUTGuFk1gu54tN9wuK2wc3o+Wc13RCmsoBwEqzGcZsxsvCSy/9wJKf7UWf1mEY8JWfewc67UUoDbDjQC+FqK4QqLVMGGR9d2wurKzqBk3nqIT/9zLxRRjgZ9bqQgub+DdoeCC03Q8j+0QhFhBHR/eP3U/zCln7Uu+hihJ1+bBNffLIvmkyP0gpBZWYXhKussK6mBz5HT6M1Nqpcp+mBCPXosYQfrekGvrjewd59/GvKCE7TbK/04/ZV5QZYVWmDwH1mF3xa2Q3ra3DBC5vBT1oP7PTj4C0+CcL8c7C2CtejqhuCnuIQHaKHzvcRfZpnylFfXsYJx3pNLwhKzRAwAhEqG0SpusBHfAKkxw3w4627MPhoCH798z7s0ZnBJ/MEJbZSbXPhER2ih7p2ok/zSj2cEJDd4CAe+5WYnBCgR2uruyEw6zRoW6/DWJ/OeAP8pd/BGtzOZKpG8oke0SX6GMmRk6GFlyAc59K32OTEinILRJRchah8HQwND8N435Z9Z0FY1EqtxUg+0SO6RJ/mmXz4VuS+DpxXC3gXmZwIL7dBSH4zKE50wESf8qwVgrP1EIlTO5JP9Igu0aexdh28F1lmAEGJGfh7jE6ElyM5Rw/FDcYJjWhbeiBYoYNIpc2FT/SILivp0F1ipDWk4BIEo2VuodEJUifhbiltnNBIXPUFCMpthtAyqws/BPlEF/VbaIxErdxPphsU7rcCp8DohC+GvBIPJS/tW2jtvTmmAeuNO8BNOYQeG8G/2OzCJ3q+soYB5i6NhMaKr17FSal7GIHheuV3uSCY8qYVuEm1cOzqdWr7ku/R0BDoTT+DT+ohCM6/CCvKLKO4RI+dXPeAuaMqksaKrZ7L3FE5FIFbkIceeOZ2OcHO6wIhTkNo0ffgjRGxEqogXHYUPHfWAC/lADpwGcLRY3aeK4/oRGCKYcZXPVoeX/kelVYY8dUGf8V5EBRbgJXT5QIPhP9ePJi428JKOiEYhYXFBqou2Guh+p/mEB1/RfMw6rY7cxcjTrneI1FrDyuzUSRm9miwEJx8E/gUmqlyvHGkneiwErR21F3tNOK5Tf0yXaT+O7DgCvALTUBXdM4YhC/IawPU+2PduqMvuaR6eoxSwUk75ggqsYJ7VicsnwGIkZBSXKOUww73WGXyqP+J2/b9c+gi1YAg/xpwck3gJuucNrh5JvDPvQr0WFXf0piyt8f8/WI0hV4pRxxkQZdJDfDJNOAmM0Ag8jyT6hz0WGXWuP94Yh2jcfjmXAGvHCMslRimDHYuHuDsy2QtHuIavznhbYURq5R57KpzBBRZKPJi8eQg48h4j8SDdowifdIrEVdU+gbO6QNvRRt4ZBthUaZhUnjlYObNagV3keoeru3rU7rcuceqU1mJBxy+BWZYlNEBH+0eH4vRiB+OYybU2hnblYlTvkHinM4m54YnxSyaZYSF6R3jwgP7udKLGIX6r/lbNa9N6y5MFynjWDtrHd75ZvTYAPO/6RgF0k76mQla3FGq7dO+cH8sKn0Vo7nDllwAhqwLPkxrHwWmHJOo+AKJ4rab5OgrM7rVu8eWb2Pu0Dh4eDgXoOfvp7Y7QeqknRmvcTBEyq9m/HQQSCSz6LHq3z0yzsNySRfMS253wl2KyRDbcZPcfJKjZmSEOjcxyi+Y8dUOtsIEH6R2wNykdqrkYJ0RV92H0W58pkfQk7cKevsLK10Py8SdMGfXNXATY+pPbyJR/ET6n9nIfztNtZYRV9XniQu9IA2vOVgy4ir7GCLVmmd+zjkH0eAF9Po6K61pmCXHxU5rHMYd1ftc3owjwRSVRzLjKvqZEty6cRUD7jGqiOdu5HG6MdHjNcNYGqfDm5YRzLBBCCDl/2bk8a8gdbqcfwECu62Fg/HrggAAAABJRU5ErkJggg==';
+    var base64shadow = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACkAAAApCAYAAACoYAD2AAAC5ElEQVRYw+2YW4/TMBCF45S0S1luXZCABy5CgLQgwf//S4BYBLTdJLax0fFqmB07nnQfEGqkIydpVH85M+NLjPe++dcPc4Q8Qh4hj5D/AaQJx6H/4TMwB0PeBNwU7EGQAmAtsNfAzoZkgIa0ZgLMa4Aj6CxIAsjhjOCoL5z7Glg1JAOkaicgvQBXuncwJAWjksLtBTWZe04CnYRktUGdilALppZBOgHGZcBzL6OClABvMSVIzyBjazOgrvACf1ydC5mguqAVg6RhdkSWQFj2uxfaq/BrIZOLEWgZdALIDvcMcZLD8ZbLC9de4yR1sYMi4G20S4Q/PWeJYxTOZn5zJXANZHIxAd4JWhPIloTJZhzMQduM89WQ3MUVAE/RnhAXpTycqys3NZALOBbB7kFrgLesQl2h45Fcj8L1tTSohUwuxhy8H/Qg6K7gIs+3kkaigQCOcyEXCHN07wyQazhrmIulvKMQAwMcmLNqyCVyMAI+BuxSMeTk3OPikLY2J1uE+VHQk6ANrhds+tNARqBeaGc72cK550FP4WhXmFmcMGhTwAR1ifOe3EvPqIegFmF+C8gVy0OfAaWQPMR7gF1OQKqGoBjq90HPMP01BUjPOqGFksC4emE48tWQAH0YmvOgF3DST6xieJgHAWxPAHMuNhrImIdvoNOKNWIOcE+UXE0pYAnkX6uhWsgVXDxHdTfCmrEEmMB2zMFimLVOtiiajxiGWrbU52EeCdyOwPEQD8LqyPH9Ti2kgYMf4OhSKB7qYILbBv3CuVTJ11Y80oaseiMWOONc/Y7kJYe0xL2f0BaiFTxknHO5HaMGMublKwxFGzYdWsBF174H/QDknhTHmHHN39iWFnkZx8lPyM8WHfYELmlLKtgWNmFNzQcC1b47gJ4hL19i7o65dhH0Negbca8vONZoP7doIeOC9zXm8RjuL0Gf4d4OYaU5ljo3GYiqzrWQHfJxA6ALhDpVKv9qYeZA8eM3EhfPSCmpuD0AAAAASUVORK5CYII=';
+
+    if (!isDefined(iconData) || !isDefined(iconData.iconUrl)) {
+      return new L.Icon.Default({
+        iconUrl: base64icon,
+        shadowUrl: base64shadow,
+        iconSize: [25, 41],
+        iconAnchor: [12, 41],
+        popupAnchor: [1, -34],
+        shadowSize: [41, 41],
+      });
+    }
+
+    return new L.Icon(iconData);
+  };
+
+  var _resetMarkerGroup = function(groupName) {
+    if (isDefined(groups[groupName])) {
+      groups.splice(groupName, 1);
+    }
+  };
+
+  var _resetMarkerGroups = function() {
+    groups = {};
+  };
+
+  var _deleteMarker = function(marker, map, layers) {
+    marker.closePopup();
+
+    // There is no easy way to know if a marker is added to a layer, so we search for it
+    // if there are overlays
+    if (isDefined(layers) && isDefined(layers.overlays)) {
+      for (var key in layers.overlays) {
+        if (layers.overlays[key] instanceof L.LayerGroup || layers.overlays[key] instanceof L.FeatureGroup) {
+          if (layers.overlays[key].hasLayer(marker)) {
+            layers.overlays[key].removeLayer(marker);
+            return;
+          }
+        }
+      }
+    }
+
+    if (isDefined(groups)) {
+      for (var groupKey in groups) {
+        if (groups[groupKey].hasLayer(marker)) {
+          groups[groupKey].removeLayer(marker);
+        }
+      }
+    }
+
+    if (map.hasLayer(marker)) {
+      map.removeLayer(marker);
+    }
+  };
+
+  var adjustPopupPan = function(marker, map) {
+    var containerHeight = marker._popup._container.offsetHeight;
+    var layerPos = new L.Point(marker._popup._containerLeft, -containerHeight - marker._popup._containerBottom);
+    var containerPos = map.layerPointToContainerPoint(layerPos);
+    if (containerPos !== null) {
+      marker._popup._adjustPan();
+    }
+  };
+
+  var compilePopup = function(marker, markerScope) {
+    $compile(marker._popup._contentNode)(markerScope);
+  };
+
+  var updatePopup = function(marker, markerScope, map) {
+    //The innerText should be more than 1 once angular has compiled.
+    //We need to keep trying until angular has compiled before we _updateLayout and _updatePosition
+    //This should take care of any scenario , eg ngincludes, whatever.
+    //Is there a better way to check for this?
+    var innerText = marker._popup._contentNode.innerText || marker._popup._contentNode.textContent;
+    if (innerText.length < 1) {
+      $timeout(function() {
+        updatePopup(marker, markerScope, map);
+      });
+    }
+
+    //cause a reflow - this is also very important - if we don't do this then the widths are from before $compile
+    var reflow = marker._popup._contentNode.offsetWidth;
+
+    marker._popup._updateLayout();
+    marker._popup._updatePosition();
+
+    if (marker._popup.options.autoPan) {
+      adjustPopupPan(marker, map);
+    }
+
+    //using / returning reflow so jshint doesn't moan
+    return reflow;
+  };
+
+  var _manageOpenPopup = function(marker, markerData, map) {
+    // The marker may provide a scope returning function used to compile the message
+    // default to $rootScope otherwise
+    var markerScope = angular.isFunction(markerData.getMessageScope) ? markerData.getMessageScope() : $rootScope;
+    var compileMessage = isDefined(markerData.compileMessage) ? markerData.compileMessage : true;
+
+    if (compileMessage) {
+      if (!isDefined(marker._popup) || !isDefined(marker._popup._contentNode)) {
+        $log.error(errorHeader + 'Popup is invalid or does not have any content.');
+        return false;
+      }
+
+      compilePopup(marker, markerScope);
+      updatePopup(marker, markerData, map);
+    }
+  };
+
+  var _manageOpenLabel = function(marker, markerData) {
+    var markerScope = angular.isFunction(markerData.getMessageScope) ? markerData.getMessageScope() : $rootScope;
+    var labelScope = angular.isFunction(markerData.getLabelScope) ? markerData.getLabelScope() : markerScope;
+    var compileMessage = isDefined(markerData.compileMessage) ? markerData.compileMessage : true;
+
+    if (Helpers.LabelPlugin.isLoaded() && isDefined(markerData.label)) {
+      if (isDefined(markerData.label.options) && markerData.label.options.noHide === true) {
+        marker.showLabel();
+      }
+
+      if (compileMessage && isDefined(marker.label)) {
+        $compile(marker.label._container)(labelScope);
+      }
+    }
+  };
+
+  var _updateMarker = function(markerData, oldMarkerData, marker, name, leafletScope, layers, map) {
+    if (!isDefined(oldMarkerData)) {
+      return;
+    }
+
+    // Update the lat-lng property (always present in marker properties)
+    if (!geoHlp.validateCoords(markerData)) {
+      $log.warn('There are problems with lat-lng data, please verify your marker model');
+      _deleteMarker(marker, map, layers);
+      return;
+    }
+
+    // watch is being initialized if old and new object is the same
+    var isInitializing = markerData === oldMarkerData;
+
+    // Update marker rotation
+    if (isDefined(markerData.iconAngle) && oldMarkerData.iconAngle !== markerData.iconAngle) {
+      marker.setIconAngle(markerData.iconAngle);
+    }
+
+    // It is possible that the layer has been removed or the layer marker does not exist
+    // Update the layer group if present or move it to the map if not
+    if (!isString(markerData.layer)) {
+      // There is no layer information, we move the marker to the map if it was in a layer group
+      if (isString(oldMarkerData.layer)) {
+        // Remove from the layer group that is supposed to be
+        if (isDefined(layers.overlays[oldMarkerData.layer]) && layers.overlays[oldMarkerData.layer].hasLayer(marker)) {
+          layers.overlays[oldMarkerData.layer].removeLayer(marker);
+          marker.closePopup();
         }
 
-        if (isDefined(iconData) && isDefined(iconData.type) && iconData.type === 'makiMarker') {
-            if (!MakiMarkersPlugin.isLoaded()) {
-                $log.error(errorHeader + 'The MakiMarkers Plugin is not loaded.');
-            }
-
-            return new L.MakiMarkers.icon(iconData);
+        // Test if it is not on the map and add it
+        if (!map.hasLayer(marker)) {
+          map.addLayer(marker);
         }
+      }
+    }
 
-        if (isDefined(iconData) && isDefined(iconData.type) && iconData.type === 'extraMarker') {
-            if (!ExtraMarkersPlugin.isLoaded()) {
-                $log.error(errorHeader + 'The ExtraMarkers Plugin is not loaded.');
-            }
-            return new L.ExtraMarkers.icon(iconData);
+    if ((isNumber(markerData.opacity) || isNumber(parseFloat(markerData.opacity))) && markerData.opacity !== oldMarkerData.opacity) {
+      // There was a different opacity so we update it
+      marker.setOpacity(markerData.opacity);
+    }
+
+    if (isString(markerData.layer) && oldMarkerData.layer !== markerData.layer) {
+      // If it was on a layer group we have to remove it
+      if (isString(oldMarkerData.layer) && isDefined(layers.overlays[oldMarkerData.layer]) && layers.overlays[oldMarkerData.layer].hasLayer(marker)) {
+        layers.overlays[oldMarkerData.layer].removeLayer(marker);
+      }
+
+      marker.closePopup();
+
+      // Remove it from the map in case the new layer is hidden or there is an error in the new layer
+      if (map.hasLayer(marker)) {
+        map.removeLayer(marker);
+      }
+
+      // The markerData.layer is defined so we add the marker to the layer if it is different from the old data
+      if (!isDefined(layers.overlays[markerData.layer])) {
+        $log.error(errorHeader + 'You must use a name of an existing layer');
+        return;
+      }
+
+      // Is a group layer?
+      var layerGroup = layers.overlays[markerData.layer];
+      if (!(layerGroup instanceof L.LayerGroup || layerGroup instanceof L.FeatureGroup)) {
+        $log.error(errorHeader + 'A marker can only be added to a layer of type "group" or "featureGroup"');
+        return;
+      }
+
+      // The marker goes to a correct layer group, so first of all we add it
+      layerGroup.addLayer(marker);
+
+      // The marker is automatically added to the map depending on the visibility
+      // of the layer, so we only have to open the popup if the marker is in the map
+      if (map.hasLayer(marker) && markerData.focus === true) {
+        marker.openPopup();
+      }
+    }
+
+    // Update the draggable property
+    if (markerData.draggable !== true && oldMarkerData.draggable === true && (isDefined(marker.dragging))) {
+      marker.dragging.disable();
+    }
+
+    if (markerData.draggable === true && oldMarkerData.draggable !== true) {
+      // The markerData.draggable property must be true so we update if there wasn't a previous value or it wasn't true
+      if (marker.dragging) {
+        marker.dragging.enable();
+      } else {
+        if (L.Handler.MarkerDrag) {
+          marker.dragging = new L.Handler.MarkerDrag(marker);
+          marker.options.draggable = true;
+          marker.dragging.enable();
         }
+      }
+    }
 
-        if (isDefined(iconData) && isDefined(iconData.type) && iconData.type === 'div') {
-            return new L.divIcon(iconData);
-        }
-
-        if (isDefined(iconData) && isDefined(iconData.type) && iconData.type === 'dom') {
-            if (!DomMarkersPlugin.isLoaded()) {
-                $log.error(errorHeader + 'The DomMarkers Plugin is not loaded.');
-            }
-            var markerScope = angular.isFunction(iconData.getMarkerScope) ? iconData.getMarkerScope() : $rootScope,
-                template = $compile(iconData.template)(markerScope),
-                iconDataCopy = angular.copy(iconData);
-            iconDataCopy.element = template[0];
-            return new L.DomMarkers.icon(iconDataCopy);
-        }
-
-        // allow for any custom icon to be used... assumes the icon has already been initialized
-        if (isDefined(iconData) && isDefined(iconData.type) && iconData.type === 'icon') {
-            return iconData.icon;
-        }
-
-        var base64icon = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABkAAAApCAYAAADAk4LOAAAGmklEQVRYw7VXeUyTZxjvNnfELFuyIzOabermMZEeQC/OclkO49CpOHXOLJl/CAURuYbQi3KLgEhbrhZ1aDwmaoGqKII6odATmH/scDFbdC7LvFqOCc+e95s2VG50X/LLm/f4/Z7neY/ne18aANCmAr5E/xZf1uDOkTcGcWR6hl9247tT5U7Y6SNvWsKT63P58qbfeLJG8M5qcgTknrvvrdDbsT7Ml+tv82X6vVxJE33aRmgSyYtcWVMqX97Yv2JvW39UhRE2HuyBL+t+gK1116ly06EeWFNlAmHxlQE0OMiV6mQCScusKRlhS3QLeVJdl1+23h5dY4FNB3thrbYboqptEFlphTC1hSpJnbRvxP4NWgsE5Jyz86QNNi/5qSUTGuFk1gu54tN9wuK2wc3o+Wc13RCmsoBwEqzGcZsxsvCSy/9wJKf7UWf1mEY8JWfewc67UUoDbDjQC+FqK4QqLVMGGR9d2wurKzqBk3nqIT/9zLxRRjgZ9bqQgub+DdoeCC03Q8j+0QhFhBHR/eP3U/zCln7Uu+hihJ1+bBNffLIvmkyP0gpBZWYXhKussK6mBz5HT6M1Nqpcp+mBCPXosYQfrekGvrjewd59/GvKCE7TbK/04/ZV5QZYVWmDwH1mF3xa2Q3ra3DBC5vBT1oP7PTj4C0+CcL8c7C2CtejqhuCnuIQHaKHzvcRfZpnylFfXsYJx3pNLwhKzRAwAhEqG0SpusBHfAKkxw3w4627MPhoCH798z7s0ZnBJ/MEJbZSbXPhER2ih7p2ok/zSj2cEJDd4CAe+5WYnBCgR2uruyEw6zRoW6/DWJ/OeAP8pd/BGtzOZKpG8oke0SX6GMmRk6GFlyAc59K32OTEinILRJRchah8HQwND8N435Z9Z0FY1EqtxUg+0SO6RJ/mmXz4VuS+DpxXC3gXmZwIL7dBSH4zKE50wESf8qwVgrP1EIlTO5JP9Igu0aexdh28F1lmAEGJGfh7jE6ElyM5Rw/FDcYJjWhbeiBYoYNIpc2FT/SILivp0F1ipDWk4BIEo2VuodEJUifhbiltnNBIXPUFCMpthtAyqws/BPlEF/VbaIxErdxPphsU7rcCp8DohC+GvBIPJS/tW2jtvTmmAeuNO8BNOYQeG8G/2OzCJ3q+soYB5i6NhMaKr17FSal7GIHheuV3uSCY8qYVuEm1cOzqdWr7ku/R0BDoTT+DT+ohCM6/CCvKLKO4RI+dXPeAuaMqksaKrZ7L3FE5FIFbkIceeOZ2OcHO6wIhTkNo0ffgjRGxEqogXHYUPHfWAC/lADpwGcLRY3aeK4/oRGCKYcZXPVoeX/kelVYY8dUGf8V5EBRbgJXT5QIPhP9ePJi428JKOiEYhYXFBqou2Guh+p/mEB1/RfMw6rY7cxcjTrneI1FrDyuzUSRm9miwEJx8E/gUmqlyvHGkneiwErR21F3tNOK5Tf0yXaT+O7DgCvALTUBXdM4YhC/IawPU+2PduqMvuaR6eoxSwUk75ggqsYJ7VicsnwGIkZBSXKOUww73WGXyqP+J2/b9c+gi1YAg/xpwck3gJuucNrh5JvDPvQr0WFXf0piyt8f8/WI0hV4pRxxkQZdJDfDJNOAmM0Ag8jyT6hz0WGXWuP94Yh2jcfjmXAGvHCMslRimDHYuHuDsy2QtHuIavznhbYURq5R57KpzBBRZKPJi8eQg48h4j8SDdowifdIrEVdU+gbO6QNvRRt4ZBthUaZhUnjlYObNagV3keoeru3rU7rcuceqU1mJBxy+BWZYlNEBH+0eH4vRiB+OYybU2hnblYlTvkHinM4m54YnxSyaZYSF6R3jwgP7udKLGIX6r/lbNa9N6y5MFynjWDtrHd75ZvTYAPO/6RgF0k76mQla3FGq7dO+cH8sKn0Vo7nDllwAhqwLPkxrHwWmHJOo+AKJ4rab5OgrM7rVu8eWb2Pu0Dh4eDgXoOfvp7Y7QeqknRmvcTBEyq9m/HQQSCSz6LHq3z0yzsNySRfMS253wl2KyRDbcZPcfJKjZmSEOjcxyi+Y8dUOtsIEH6R2wNykdqrkYJ0RV92H0W58pkfQk7cKevsLK10Py8SdMGfXNXATY+pPbyJR/ET6n9nIfztNtZYRV9XniQu9IA2vOVgy4ir7GCLVmmd+zjkH0eAF9Po6K61pmCXHxU5rHMYd1ftc3owjwRSVRzLjKvqZEty6cRUD7jGqiOdu5HG6MdHjNcNYGqfDm5YRzLBBCCDl/2bk8a8gdbqcfwECu62Fg/HrggAAAABJRU5ErkJggg==";
-        var base64shadow = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACkAAAApCAYAAACoYAD2AAAC5ElEQVRYw+2YW4/TMBCF45S0S1luXZCABy5CgLQgwf//S4BYBLTdJLax0fFqmB07nnQfEGqkIydpVH85M+NLjPe++dcPc4Q8Qh4hj5D/AaQJx6H/4TMwB0PeBNwU7EGQAmAtsNfAzoZkgIa0ZgLMa4Aj6CxIAsjhjOCoL5z7Glg1JAOkaicgvQBXuncwJAWjksLtBTWZe04CnYRktUGdilALppZBOgHGZcBzL6OClABvMSVIzyBjazOgrvACf1ydC5mguqAVg6RhdkSWQFj2uxfaq/BrIZOLEWgZdALIDvcMcZLD8ZbLC9de4yR1sYMi4G20S4Q/PWeJYxTOZn5zJXANZHIxAd4JWhPIloTJZhzMQduM89WQ3MUVAE/RnhAXpTycqys3NZALOBbB7kFrgLesQl2h45Fcj8L1tTSohUwuxhy8H/Qg6K7gIs+3kkaigQCOcyEXCHN07wyQazhrmIulvKMQAwMcmLNqyCVyMAI+BuxSMeTk3OPikLY2J1uE+VHQk6ANrhds+tNARqBeaGc72cK550FP4WhXmFmcMGhTwAR1ifOe3EvPqIegFmF+C8gVy0OfAaWQPMR7gF1OQKqGoBjq90HPMP01BUjPOqGFksC4emE48tWQAH0YmvOgF3DST6xieJgHAWxPAHMuNhrImIdvoNOKNWIOcE+UXE0pYAnkX6uhWsgVXDxHdTfCmrEEmMB2zMFimLVOtiiajxiGWrbU52EeCdyOwPEQD8LqyPH9Ti2kgYMf4OhSKB7qYILbBv3CuVTJ11Y80oaseiMWOONc/Y7kJYe0xL2f0BaiFTxknHO5HaMGMublKwxFGzYdWsBF174H/QDknhTHmHHN39iWFnkZx8lPyM8WHfYELmlLKtgWNmFNzQcC1b47gJ4hL19i7o65dhH0Negbca8vONZoP7doIeOC9zXm8RjuL0Gf4d4OYaU5ljo3GYiqzrWQHfJxA6ALhDpVKv9qYeZA8eM3EhfPSCmpuD0AAAAASUVORK5CYII=";
-
-        if (!isDefined(iconData) || !isDefined(iconData.iconUrl)) {
-            return new L.Icon.Default({
-                iconUrl: base64icon,
-                shadowUrl: base64shadow,
-                iconSize: [25, 41],
-                iconAnchor: [12, 41],
-                popupAnchor: [1, -34],
-                shadowSize: [41, 41]
-            });
-        }
-
-        return new L.Icon(iconData);
-    };
-
-    var _resetMarkerGroup = function (groupName) {
-        if (isDefined(groups[groupName])) {
-            groups.splice(groupName, 1);
-        }
-    };
-
-    var _resetMarkerGroups = function () {
-        groups = {};
-    };
-
-    var _deleteMarker = function (marker, map, layers) {
+    // Update the icon property
+    if (!isObject(markerData.icon)) {
+      // If there is no icon property or it's not an object
+      if (isObject(oldMarkerData.icon)) {
+        // If there was an icon before restore to the default
+        marker.setIcon(createLeafletIcon());
         marker.closePopup();
-        // There is no easy way to know if a marker is added to a layer, so we search for it
-        // if there are overlays
-        if (isDefined(layers) && isDefined(layers.overlays)) {
-            for (var key in layers.overlays) {
-                if (layers.overlays[key] instanceof L.LayerGroup || layers.overlays[key] instanceof L.FeatureGroup) {
-                    if (layers.overlays[key].hasLayer(marker)) {
-                        layers.overlays[key].removeLayer(marker);
-                        return;
-                    }
-                }
-            }
+        marker.unbindPopup();
+        if (isString(markerData.message)) {
+          marker.bindPopup(markerData.message, markerData.popupOptions);
         }
-
-        if (isDefined(groups)) {
-            for (var groupKey in groups) {
-                if (groups[groupKey].hasLayer(marker)) {
-                    groups[groupKey].removeLayer(marker);
-                }
-            }
-        }
-
-        if (map.hasLayer(marker)) {
-            map.removeLayer(marker);
-        }
-    };
-
-    var adjustPopupPan = function(marker, map) {
-        var containerHeight = marker._popup._container.offsetHeight,
-            layerPos = new L.Point(marker._popup._containerLeft, -containerHeight - marker._popup._containerBottom),
-            containerPos = map.layerPointToContainerPoint(layerPos);
-        if (containerPos !== null) {
-            marker._popup._adjustPan();
-        }
-    };
-
-    var compilePopup = function(marker, markerScope) {
-        $compile(marker._popup._contentNode)(markerScope);
-    };
-
-    var updatePopup = function (marker, markerScope, map) {
-        //The innerText should be more than 1 once angular has compiled.
-        //We need to keep trying until angular has compiled before we _updateLayout and _updatePosition
-        //This should take care of any scenario , eg ngincludes, whatever.
-        //Is there a better way to check for this?
-        var innerText = marker._popup._contentNode.innerText || marker._popup._contentNode.textContent;
-        if (innerText.length < 1) {
-            $timeout(function () {
-                updatePopup(marker, markerScope, map);
-            });
-        }
-
-        //cause a reflow - this is also very important - if we don't do this then the widths are from before $compile
-        var reflow = marker._popup._contentNode.offsetWidth;
-
-        marker._popup._updateLayout();
-        marker._popup._updatePosition();
-
-        if (marker._popup.options.autoPan) {
-            adjustPopupPan(marker, map);
-        }
-
-        //using / returning reflow so jshint doesn't moan
-        return reflow;
-    };
-
-    var _manageOpenPopup = function (marker, markerData, map) {
-        // The marker may provide a scope returning function used to compile the message
-        // default to $rootScope otherwise
-        var markerScope = angular.isFunction(markerData.getMessageScope) ? markerData.getMessageScope() : $rootScope,
-            compileMessage = isDefined(markerData.compileMessage) ? markerData.compileMessage : true;
-
-        if (compileMessage) {
-            if (!isDefined(marker._popup) || !isDefined(marker._popup._contentNode)) {
-                $log.error(errorHeader + 'Popup is invalid or does not have any content.');
-                return false;
-            }
-
-            compilePopup(marker, markerScope);
-            updatePopup(marker, markerData, map);
-        }
-    };
-
-
-    var _manageOpenLabel = function (marker, markerData) {
-        var markerScope = angular.isFunction(markerData.getMessageScope) ? markerData.getMessageScope() : $rootScope,
-            labelScope = angular.isFunction(markerData.getLabelScope) ? markerData.getLabelScope() : markerScope,
-            compileMessage = isDefined(markerData.compileMessage) ? markerData.compileMessage : true;
-
-        if (Helpers.LabelPlugin.isLoaded() && isDefined(markerData.label)) {
-            if (isDefined(markerData.label.options) && markerData.label.options.noHide === true) {
-                marker.showLabel();
-            }
-            if (compileMessage && isDefined(marker.label)) {
-                $compile(marker.label._container)(labelScope);
-            }
-        }
-    };
-
-    var _updateMarker = function (markerData, oldMarkerData, marker, name, leafletScope, layers, map) {
-            if (!isDefined(oldMarkerData)) {
-                return;
-            }
-
-            // Update the lat-lng property (always present in marker properties)
-            if (!geoHlp.validateCoords(markerData)) {
-                $log.warn('There are problems with lat-lng data, please verify your marker model');
-                _deleteMarker(marker, map, layers);
-                return;
-            }
-
-            // watch is being initialized if old and new object is the same
-            var isInitializing = markerData === oldMarkerData;
-
-            // Update marker rotation
-            if (isDefined(markerData.iconAngle) && oldMarkerData.iconAngle !== markerData.iconAngle) {
-                marker.setIconAngle(markerData.iconAngle);
-            }
-
-            // It is possible that the layer has been removed or the layer marker does not exist
-            // Update the layer group if present or move it to the map if not
-            if (!isString(markerData.layer)) {
-                // There is no layer information, we move the marker to the map if it was in a layer group
-                if (isString(oldMarkerData.layer)) {
-                    // Remove from the layer group that is supposed to be
-                    if (isDefined(layers.overlays[oldMarkerData.layer]) && layers.overlays[oldMarkerData.layer].hasLayer(marker)) {
-                        layers.overlays[oldMarkerData.layer].removeLayer(marker);
-                        marker.closePopup();
-                    }
-                    // Test if it is not on the map and add it
-                    if (!map.hasLayer(marker)) {
-                        map.addLayer(marker);
-                    }
-                }
-            }
-
-            if ((isNumber(markerData.opacity) || isNumber(parseFloat(markerData.opacity))) && markerData.opacity !== oldMarkerData.opacity) {
-                // There was a different opacity so we update it
-                marker.setOpacity(markerData.opacity);
-            }
-
-            if (isString(markerData.layer) && oldMarkerData.layer !== markerData.layer) {
-                // If it was on a layer group we have to remove it
-                if (isString(oldMarkerData.layer) && isDefined(layers.overlays[oldMarkerData.layer]) && layers.overlays[oldMarkerData.layer].hasLayer(marker)) {
-                    layers.overlays[oldMarkerData.layer].removeLayer(marker);
-                }
-                marker.closePopup();
-
-                // Remove it from the map in case the new layer is hidden or there is an error in the new layer
-                if (map.hasLayer(marker)) {
-                    map.removeLayer(marker);
-                }
-
-                // The markerData.layer is defined so we add the marker to the layer if it is different from the old data
-                if (!isDefined(layers.overlays[markerData.layer])) {
-                    $log.error(errorHeader + 'You must use a name of an existing layer');
-                    return;
-                }
-                // Is a group layer?
-                var layerGroup = layers.overlays[markerData.layer];
-                if (!(layerGroup instanceof L.LayerGroup || layerGroup instanceof L.FeatureGroup)) {
-                    $log.error(errorHeader + 'A marker can only be added to a layer of type "group" or "featureGroup"');
-                    return;
-                }
-                // The marker goes to a correct layer group, so first of all we add it
-                layerGroup.addLayer(marker);
-                // The marker is automatically added to the map depending on the visibility
-                // of the layer, so we only have to open the popup if the marker is in the map
-                if (map.hasLayer(marker) && markerData.focus === true) {
-                    marker.openPopup();
-                }
-            }
-
-            // Update the draggable property
-            if (markerData.draggable !== true && oldMarkerData.draggable === true && (isDefined(marker.dragging))) {
-                marker.dragging.disable();
-            }
-
-            if (markerData.draggable === true && oldMarkerData.draggable !== true) {
-                // The markerData.draggable property must be true so we update if there wasn't a previous value or it wasn't true
-                if (marker.dragging) {
-                    marker.dragging.enable();
-                } else {
-                    if (L.Handler.MarkerDrag) {
-                        marker.dragging = new L.Handler.MarkerDrag(marker);
-                        marker.options.draggable = true;
-                        marker.dragging.enable();
-                    }
-                }
-            }
-
-            // Update the icon property
-            if (!isObject(markerData.icon)) {
-                // If there is no icon property or it's not an object
-                if (isObject(oldMarkerData.icon)) {
-                    // If there was an icon before restore to the default
-                    marker.setIcon(createLeafletIcon());
-                    marker.closePopup();
-                    marker.unbindPopup();
-                    if (isString(markerData.message)) {
-                        marker.bindPopup(markerData.message, markerData.popupOptions);
-                    }
-                }
-            }
-
-            if (isObject(markerData.icon) && isObject(oldMarkerData.icon) && !angular.equals(markerData.icon, oldMarkerData.icon)) {
-                var dragG = false;
-                if (marker.dragging) {
-                    dragG = marker.dragging.enabled();
-                }
-                marker.setIcon(createLeafletIcon(markerData.icon));
-                if (dragG) {
-                    marker.dragging.enable();
-                }
-                marker.closePopup();
-                marker.unbindPopup();
-                if (isString(markerData.message)) {
-                    marker.bindPopup(markerData.message, markerData.popupOptions);
-                }
-            }
-
-            // Update the Popup message property
-            if (!isString(markerData.message) && isString(oldMarkerData.message)) {
-                marker.closePopup();
-                marker.unbindPopup();
-            }
-
-            // Update the label content or bind a new label if the old one has been removed.
-            if (Helpers.LabelPlugin.isLoaded()) {
-                if (isDefined(markerData.label) && isDefined(markerData.label.message)) {
-                    if ('label' in oldMarkerData && 'message' in oldMarkerData.label && !angular.equals(markerData.label.message, oldMarkerData.label.message)) {
-                        marker.updateLabelContent(markerData.label.message);
-                    } else if (!angular.isFunction(marker.getLabel) || angular.isFunction(marker.getLabel) && !isDefined(marker.getLabel())) {
-                        marker.bindLabel(markerData.label.message, markerData.label.options);
-                        _manageOpenLabel(marker, markerData);
-                    } else {
-                        _manageOpenLabel(marker, markerData);
-                    }
-                } else if (!('label' in markerData && !('message' in markerData.label))) {
-                    if (angular.isFunction(marker.unbindLabel)) {
-                        marker.unbindLabel();
-                    }
-                }
-            }
-
-            // There is some text in the popup, so we must show the text or update existing
-            if (isString(markerData.message) && !isString(oldMarkerData.message)) {
-                // There was no message before so we create it
-                marker.bindPopup(markerData.message, markerData.popupOptions);
-            }
-
-            if (isString(markerData.message) && isString(oldMarkerData.message) && markerData.message !== oldMarkerData.message) {
-                // There was a different previous message so we update it
-                marker.setPopupContent(markerData.message);
-            }
-
-            // Update the focus property
-            var updatedFocus = false;
-            if (markerData.focus !== true && oldMarkerData.focus === true) {
-                // If there was a focus property and was true we turn it off
-                marker.closePopup();
-                updatedFocus = true;
-            }
-
-            // The markerData.focus property must be true so we update if there wasn't a previous value or it wasn't true
-            if (markerData.focus === true && ( !isDefined(oldMarkerData.focus) || oldMarkerData.focus === false) || (isInitializing && markerData.focus === true)) {
-                // Reopen the popup when focus is still true
-                marker.openPopup();
-                updatedFocus = true;
-            }
-
-            // zIndexOffset adjustment
-            if (oldMarkerData.zIndexOffset !== markerData.zIndexOffset) {
-                marker.setZIndexOffset(markerData.zIndexOffset);
-            }
-
-            var markerLatLng = marker.getLatLng();
-            var isCluster = (isString(markerData.layer) && Helpers.MarkerClusterPlugin.is(layers.overlays[markerData.layer]));
-            // If the marker is in a cluster it has to be removed and added to the layer when the location is changed
-            if (isCluster) {
-                // The focus has changed even by a user click or programatically
-                if (updatedFocus) {
-                    // We only have to update the location if it was changed programatically, because it was
-                    // changed by a user drag the marker data has already been updated by the internal event
-                    // listened by the directive
-                    if ((markerData.lat !== oldMarkerData.lat) || (markerData.lng !== oldMarkerData.lng)) {
-                        layers.overlays[markerData.layer].removeLayer(marker);
-                        marker.setLatLng([markerData.lat, markerData.lng]);
-                        layers.overlays[markerData.layer].addLayer(marker);
-                    }
-                } else {
-                    // The marker has possibly moved. It can be moved by a user drag (marker location and data are equal but old
-                    // data is diferent) or programatically (marker location and data are diferent)
-                    if ((markerLatLng.lat !== markerData.lat) || (markerLatLng.lng !== markerData.lng)) {
-                        // The marker was moved by a user drag
-                        layers.overlays[markerData.layer].removeLayer(marker);
-                        marker.setLatLng([markerData.lat, markerData.lng]);
-                        layers.overlays[markerData.layer].addLayer(marker);
-                    } else if ((markerData.lat !== oldMarkerData.lat) || (markerData.lng !== oldMarkerData.lng)) {
-                        // The marker was moved programatically
-                        layers.overlays[markerData.layer].removeLayer(marker);
-                        marker.setLatLng([markerData.lat, markerData.lng]);
-                        layers.overlays[markerData.layer].addLayer(marker);
-                    } else if (isObject(markerData.icon) && isObject(oldMarkerData.icon) && !angular.equals(markerData.icon, oldMarkerData.icon)) {
-                        layers.overlays[markerData.layer].removeLayer(marker);
-                        layers.overlays[markerData.layer].addLayer(marker);
-                    }
-                }
-            } else if (markerLatLng.lat !== markerData.lat || markerLatLng.lng !== markerData.lng) {
-                marker.setLatLng([markerData.lat, markerData.lng]);
-            }
-        };
-    return {
-        resetMarkerGroup: _resetMarkerGroup,
-
-        resetMarkerGroups: _resetMarkerGroups,
-
-        deleteMarker: _deleteMarker,
-
-        manageOpenPopup: _manageOpenPopup,
-
-        manageOpenLabel: _manageOpenLabel,
-
-        createMarker: function (markerData) {
-            if (!isDefined(markerData) || !geoHlp.validateCoords(markerData)) {
-                $log.error(errorHeader + 'The marker definition is not valid.');
-                return;
-            }
-            var coords = geoHlp.getCoords(markerData);
-
-            if (!isDefined(coords)) {
-                $log.error(errorHeader + 'Unable to get coordinates from markerData.');
-                return;
-            }
-
-            var markerOptions = {
-                icon: createLeafletIcon(markerData.icon),
-                title: isDefined(markerData.title) ? markerData.title : '',
-                draggable: isDefined(markerData.draggable) ? markerData.draggable : false,
-                clickable: isDefined(markerData.clickable) ? markerData.clickable : true,
-                riseOnHover: isDefined(markerData.riseOnHover) ? markerData.riseOnHover : false,
-                zIndexOffset: isDefined(markerData.zIndexOffset) ? markerData.zIndexOffset : 0,
-                iconAngle: isDefined(markerData.iconAngle) ? markerData.iconAngle : 0
-            };
-            // Add any other options not added above to markerOptions
-            for (var markerDatum in markerData) {
-                if (markerData.hasOwnProperty(markerDatum) && !markerOptions.hasOwnProperty(markerDatum)) {
-                    markerOptions[markerDatum] = markerData[markerDatum];
-                }
-            }
-
-            var marker = new L.marker(coords, markerOptions);
-
-            if (!isString(markerData.message)) {
-                marker.unbindPopup();
-            }
-
-            return marker;
-        },
-
-        addMarkerToGroup: function (marker, groupName, groupOptions, map) {
-            if (!isString(groupName)) {
-                $log.error(errorHeader + 'The marker group you have specified is invalid.');
-                return;
-            }
-
-            if (!MarkerClusterPlugin.isLoaded()) {
-                $log.error(errorHeader + "The MarkerCluster plugin is not loaded.");
-                return;
-            }
-            if (!isDefined(groups[groupName])) {
-                groups[groupName] = new L.MarkerClusterGroup(groupOptions);
-                map.addLayer(groups[groupName]);
-            }
-            groups[groupName].addLayer(marker);
-        },
-
-        listenMarkerEvents: function (marker, markerData, leafletScope, doWatch, map) {
-            marker.on("popupopen", function (/* event */) {
-                safeApply(leafletScope, function () {
-                    if (isDefined(marker._popup) || isDefined(marker._popup._contentNode)) {
-                        markerData.focus = true;
-                        _manageOpenPopup(marker, markerData, map);//needed since markerData is now a copy
-                    }
-                });
-            });
-            marker.on("popupclose", function (/* event */) {
-                safeApply(leafletScope, function () {
-                    markerData.focus = false;
-                });
-            });
-            marker.on("add", function (/* event */) {
-                safeApply(leafletScope, function () {
-                    if ('label' in markerData)
-                        _manageOpenLabel(marker, markerData);
-                });
-            });
-        },
-
-        updateMarker: _updateMarker,
-
-        addMarkerWatcher: function (marker, name, leafletScope, layers, map, isDeepWatch) {
-            var markerWatchPath = Helpers.getObjectArrayPath("markers." + name);
-            isDeepWatch = defaultTo(isDeepWatch, true);
-
-            var clearWatch = leafletScope.$watch(markerWatchPath, function(markerData, oldMarkerData) {
-                if (!isDefined(markerData)) {
-                    _deleteMarker(marker, map, layers);
-                    clearWatch();
-                    return;
-                }
-                _updateMarker(markerData, oldMarkerData, marker, name, leafletScope, layers, map);
-            } , isDeepWatch);
-        },
-        string: _string,
-        log: _log
-    };
-}]);
-
-angular.module("leaflet-directive").factory('leafletPathsHelpers', ["$rootScope", "leafletLogger", "leafletHelpers", function ($rootScope, leafletLogger, leafletHelpers) {
-    var isDefined = leafletHelpers.isDefined,
-        isArray = leafletHelpers.isArray,
-        isNumber = leafletHelpers.isNumber,
-        isValidPoint = leafletHelpers.isValidPoint,
-        $log = leafletLogger;
-        
-    var availableOptions = [
-        // Path options
-        'stroke', 'weight', 'color', 'opacity',
-        'fill', 'fillColor', 'fillOpacity',
-        'dashArray', 'lineCap', 'lineJoin', 'clickable',
-        'pointerEvents', 'className',
-
-        // Polyline options
-        'smoothFactor', 'noClip'
-    ];
-    function _convertToLeafletLatLngs(latlngs) {
-        return latlngs.filter(function(latlng) {
-            return isValidPoint(latlng);
-        }).map(function (latlng) {
-            return _convertToLeafletLatLng(latlng);
-        });
+      }
     }
 
-    function _convertToLeafletLatLng(latlng) {
-        if (isArray(latlng)) {
-            return new L.LatLng(latlng[0], latlng[1]);
+    if (isObject(markerData.icon) && isObject(oldMarkerData.icon) && !angular.equals(markerData.icon, oldMarkerData.icon)) {
+      var dragG = false;
+      if (marker.dragging) {
+        dragG = marker.dragging.enabled();
+      }
+
+      marker.setIcon(createLeafletIcon(markerData.icon));
+      if (dragG) {
+        marker.dragging.enable();
+      }
+
+      marker.closePopup();
+      marker.unbindPopup();
+      if (isString(markerData.message)) {
+        marker.bindPopup(markerData.message, markerData.popupOptions);
+
+        // if marker has been already focused, reopen popup
+        if (map.hasLayer(marker) && markerData.focus === true) {
+          marker.openPopup();
+        }
+      }
+    }
+
+    // Update the Popup message property
+    if (!isString(markerData.message) && isString(oldMarkerData.message)) {
+      marker.closePopup();
+      marker.unbindPopup();
+    }
+
+    // Update the label content or bind a new label if the old one has been removed.
+    if (Helpers.LabelPlugin.isLoaded()) {
+      if (isDefined(markerData.label) && isDefined(markerData.label.message)) {
+        if ('label' in oldMarkerData && 'message' in oldMarkerData.label && !angular.equals(markerData.label.message, oldMarkerData.label.message)) {
+          marker.updateLabelContent(markerData.label.message);
+        } else if (!angular.isFunction(marker.getLabel) || angular.isFunction(marker.getLabel) && !isDefined(marker.getLabel())) {
+          marker.bindLabel(markerData.label.message, markerData.label.options);
+          _manageOpenLabel(marker, markerData);
         } else {
-            return new L.LatLng(latlng.lat, latlng.lng);
+          _manageOpenLabel(marker, markerData);
         }
+      } else if (!('label' in markerData && !('message' in markerData.label))) {
+        if (angular.isFunction(marker.unbindLabel)) {
+          marker.unbindLabel();
+        }
+      }
     }
 
-    function _convertToLeafletMultiLatLngs(paths) {
-        return paths.map(function(latlngs) {
-            return _convertToLeafletLatLngs(latlngs);
+    // There is some text in the popup, so we must show the text or update existing
+    if (isString(markerData.message) && !isString(oldMarkerData.message)) {
+      // There was no message before so we create it
+      marker.bindPopup(markerData.message, markerData.popupOptions);
+    }
+
+    if (isString(markerData.message) && isString(oldMarkerData.message) && markerData.message !== oldMarkerData.message) {
+      // There was a different previous message so we update it
+      marker.setPopupContent(markerData.message);
+    }
+
+    // Update the focus property
+    var updatedFocus = false;
+    if (markerData.focus !== true && oldMarkerData.focus === true) {
+      // If there was a focus property and was true we turn it off
+      marker.closePopup();
+      updatedFocus = true;
+    }
+
+    // The markerData.focus property must be true so we update if there wasn't a previous value or it wasn't true
+    if (markerData.focus === true && (!isDefined(oldMarkerData.focus) || oldMarkerData.focus === false) || (isInitializing && markerData.focus === true)) {
+      // Reopen the popup when focus is still true
+      marker.openPopup();
+      updatedFocus = true;
+    }
+
+    // zIndexOffset adjustment
+    if (oldMarkerData.zIndexOffset !== markerData.zIndexOffset) {
+      marker.setZIndexOffset(markerData.zIndexOffset);
+    }
+
+    var markerLatLng = marker.getLatLng();
+    var isCluster = (isString(markerData.layer) && Helpers.MarkerClusterPlugin.is(layers.overlays[markerData.layer]));
+
+    // If the marker is in a cluster it has to be removed and added to the layer when the location is changed
+    if (isCluster) {
+      // The focus has changed even by a user click or programatically
+      if (updatedFocus) {
+        // We only have to update the location if it was changed programatically, because it was
+        // changed by a user drag the marker data has already been updated by the internal event
+        // listened by the directive
+        if ((markerData.lat !== oldMarkerData.lat) || (markerData.lng !== oldMarkerData.lng)) {
+          layers.overlays[markerData.layer].removeLayer(marker);
+          marker.setLatLng([markerData.lat, markerData.lng]);
+          layers.overlays[markerData.layer].addLayer(marker);
+        }
+      } else {
+        // The marker has possibly moved. It can be moved by a user drag (marker location and data are equal but old
+        // data is diferent) or programatically (marker location and data are diferent)
+        if ((markerLatLng.lat !== markerData.lat) || (markerLatLng.lng !== markerData.lng)) {
+          // The marker was moved by a user drag
+          layers.overlays[markerData.layer].removeLayer(marker);
+          marker.setLatLng([markerData.lat, markerData.lng]);
+          layers.overlays[markerData.layer].addLayer(marker);
+        } else if ((markerData.lat !== oldMarkerData.lat) || (markerData.lng !== oldMarkerData.lng)) {
+          // The marker was moved programatically
+          layers.overlays[markerData.layer].removeLayer(marker);
+          marker.setLatLng([markerData.lat, markerData.lng]);
+          layers.overlays[markerData.layer].addLayer(marker);
+        } else if (isObject(markerData.icon) && isObject(oldMarkerData.icon) && !angular.equals(markerData.icon, oldMarkerData.icon)) {
+          layers.overlays[markerData.layer].removeLayer(marker);
+          layers.overlays[markerData.layer].addLayer(marker);
+        }
+      }
+    } else if (markerLatLng.lat !== markerData.lat || markerLatLng.lng !== markerData.lng) {
+      marker.setLatLng([markerData.lat, markerData.lng]);
+    }
+  };
+
+  return {
+    resetMarkerGroup: _resetMarkerGroup,
+
+    resetMarkerGroups: _resetMarkerGroups,
+
+    deleteMarker: _deleteMarker,
+
+    manageOpenPopup: _manageOpenPopup,
+
+    manageOpenLabel: _manageOpenLabel,
+
+    createMarker: function(markerData) {
+      if (!isDefined(markerData) || !geoHlp.validateCoords(markerData)) {
+        $log.error(errorHeader + 'The marker definition is not valid.');
+        return;
+      }
+
+      var coords = geoHlp.getCoords(markerData);
+
+      if (!isDefined(coords)) {
+        $log.error(errorHeader + 'Unable to get coordinates from markerData.');
+        return;
+      }
+
+      var markerOptions = {
+        icon: createLeafletIcon(markerData.icon),
+        title: isDefined(markerData.title) ? markerData.title : '',
+        draggable: isDefined(markerData.draggable) ? markerData.draggable : false,
+        clickable: isDefined(markerData.clickable) ? markerData.clickable : true,
+        riseOnHover: isDefined(markerData.riseOnHover) ? markerData.riseOnHover : false,
+        zIndexOffset: isDefined(markerData.zIndexOffset) ? markerData.zIndexOffset : 0,
+        iconAngle: isDefined(markerData.iconAngle) ? markerData.iconAngle : 0,
+      };
+
+      // Add any other options not added above to markerOptions
+      for (var markerDatum in markerData) {
+        if (markerData.hasOwnProperty(markerDatum) && !markerOptions.hasOwnProperty(markerDatum)) {
+          markerOptions[markerDatum] = markerData[markerDatum];
+        }
+      }
+
+      var marker = new L.marker(coords, markerOptions);
+
+      if (!isString(markerData.message)) {
+        marker.unbindPopup();
+      }
+
+      return marker;
+    },
+
+    addMarkerToGroup: function(marker, groupName, groupOptions, map) {
+      if (!isString(groupName)) {
+        $log.error(errorHeader + 'The marker group you have specified is invalid.');
+        return;
+      }
+
+      if (!MarkerClusterPlugin.isLoaded()) {
+        $log.error(errorHeader + 'The MarkerCluster plugin is not loaded.');
+        return;
+      }
+
+      if (!isDefined(groups[groupName])) {
+        groups[groupName] = new L.MarkerClusterGroup(groupOptions);
+        map.addLayer(groups[groupName]);
+      }
+
+      groups[groupName].addLayer(marker);
+    },
+
+    listenMarkerEvents: function(marker, markerData, leafletScope, doWatch, map) {
+      marker.on('popupopen', function(/* event */) {
+        safeApply(leafletScope, function() {
+          if (isDefined(marker._popup) || isDefined(marker._popup._contentNode)) {
+            markerData.focus = true;
+            _manageOpenPopup(marker, markerData, map);//needed since markerData is now a copy
+          }
         });
-    }
+      });
 
-    function _getOptions(path, defaults) {
-        var options = {};
-        for (var i = 0; i < availableOptions.length; i++) {
-            var optionName = availableOptions[i];
+      marker.on('popupclose', function(/* event */) {
+        safeApply(leafletScope, function() {
+          markerData.focus = false;
+        });
+      });
 
-            if (isDefined(path[optionName])) {
-                options[optionName] = path[optionName];
-            } else if (isDefined(defaults.path[optionName])) {
-                options[optionName] = defaults.path[optionName];
-            }
+      marker.on('add', function(/* event */) {
+        safeApply(leafletScope, function() {
+          if ('label' in markerData)
+              _manageOpenLabel(marker, markerData);
+        });
+      });
+    },
+
+    updateMarker: _updateMarker,
+
+    addMarkerWatcher: function(marker, name, leafletScope, layers, map, isDeepWatch) {
+      var markerWatchPath = Helpers.getObjectArrayPath('markers.' + name);
+      isDeepWatch = defaultTo(isDeepWatch, true);
+
+      var clearWatch = leafletScope.$watch(markerWatchPath, function(markerData, oldMarkerData) {
+        if (!isDefined(markerData)) {
+          _deleteMarker(marker, map, layers);
+          clearWatch();
+          return;
         }
 
-        return options;
-    }
+        _updateMarker(markerData, oldMarkerData, marker, name, leafletScope, layers, map);
+      }, isDeepWatch);
+    },
 
-    var _updatePathOptions = function (path, data) {
-        var updatedStyle = {};
-        for (var i = 0; i < availableOptions.length; i++) {
-            var optionName = availableOptions[i];
-            if (isDefined(data[optionName])) {
-                updatedStyle[optionName] = data[optionName];
-            }
-        }
-        path.setStyle(data);
-    };
-
-    var _isValidPolyline = function(latlngs) {
-        if (!isArray(latlngs)) {
-            return false;
-        }
-        for (var i = 0; i < latlngs.length; i++) {
-            var point = latlngs[i];
-            if (!isValidPoint(point)) {
-                return false;
-            }
-        }
-        return true;
-    };
-
-    var pathTypes = {
-        polyline: {
-            isValid: function(pathData) {
-                var latlngs = pathData.latlngs;
-                return _isValidPolyline(latlngs);
-            },
-            createPath: function(options) {
-                return new L.Polyline([], options);
-            },
-            setPath: function(path, data) {
-                path.setLatLngs(_convertToLeafletLatLngs(data.latlngs));
-                _updatePathOptions(path, data);
-                return;
-            }
-        },
-        multiPolyline: {
-            isValid: function(pathData) {
-                var latlngs = pathData.latlngs;
-                if (!isArray(latlngs)) {
-                    return false;
-                }
-
-                for (var i in latlngs) {
-                    var polyline = latlngs[i];
-                    if (!_isValidPolyline(polyline)) {
-                        return false;
-                    }
-                }
-
-                return true;
-            },
-            createPath: function(options) {
-                return new L.multiPolyline([[[0,0],[1,1]]], options);
-            },
-            setPath: function(path, data) {
-                path.setLatLngs(_convertToLeafletMultiLatLngs(data.latlngs));
-                _updatePathOptions(path, data);
-                return;
-            }
-        } ,
-        polygon: {
-            isValid: function(pathData) {
-                var latlngs = pathData.latlngs;
-                return _isValidPolyline(latlngs);
-            },
-            createPath: function(options) {
-                return new L.Polygon([], options);
-            },
-            setPath: function(path, data) {
-                path.setLatLngs(_convertToLeafletLatLngs(data.latlngs));
-                _updatePathOptions(path, data);
-                return;
-            }
-        },
-        multiPolygon: {
-            isValid: function(pathData) {
-                var latlngs = pathData.latlngs;
-
-                if (!isArray(latlngs)) {
-                    return false;
-                }
-
-                for (var i in latlngs) {
-                    var polyline = latlngs[i];
-                    if (!_isValidPolyline(polyline)) {
-                        return false;
-                    }
-                }
-
-                return true;
-            },
-            createPath: function(options) {
-                return new L.MultiPolygon([[[0,0],[1,1],[0,1]]], options);
-            },
-            setPath: function(path, data) {
-                path.setLatLngs(_convertToLeafletMultiLatLngs(data.latlngs));
-                _updatePathOptions(path, data);
-                return;
-            }
-        },
-        rectangle: {
-            isValid: function(pathData) {
-                var latlngs = pathData.latlngs;
-
-                if (!isArray(latlngs) || latlngs.length !== 2) {
-                    return false;
-                }
-
-                for (var i in latlngs) {
-                    var point = latlngs[i];
-                    if (!isValidPoint(point)) {
-                        return false;
-                    }
-                }
-
-                return true;
-            },
-            createPath: function(options) {
-                return new L.Rectangle([[0,0],[1,1]], options);
-            },
-            setPath: function(path, data) {
-                path.setBounds(new L.LatLngBounds(_convertToLeafletLatLngs(data.latlngs)));
-                _updatePathOptions(path, data);
-            }
-        },
-        circle: {
-            isValid: function(pathData) {
-                var point= pathData.latlngs;
-                return isValidPoint(point) && isNumber(pathData.radius);
-            },
-            createPath: function(options) {
-                return new L.Circle([0,0], 1, options);
-            },
-            setPath: function(path, data) {
-                path.setLatLng(_convertToLeafletLatLng(data.latlngs));
-                if (isDefined(data.radius)) {
-                    path.setRadius(data.radius);
-                }
-                _updatePathOptions(path, data);
-            }
-        },
-        circleMarker: {
-            isValid: function(pathData) {
-                var point= pathData.latlngs;
-                return isValidPoint(point) && isNumber(pathData.radius);
-            },
-            createPath: function(options) {
-                return new L.CircleMarker([0,0], options);
-            },
-            setPath: function(path, data) {
-                path.setLatLng(_convertToLeafletLatLng(data.latlngs));
-                if (isDefined(data.radius)) {
-                    path.setRadius(data.radius);
-                }
-                _updatePathOptions(path, data);
-            }
-        }
-    };
-
-    var _getPathData = function(path) {
-        var pathData = {};
-        if (path.latlngs) {
-            pathData.latlngs = path.latlngs;
-        }
-
-        if (path.radius) {
-            pathData.radius = path.radius;
-        }
-
-        return pathData;
-    };
-
-    return {
-        setPathOptions: function(leafletPath, pathType, data) {
-            if(!isDefined(pathType)) {
-                pathType = "polyline";
-            }
-            pathTypes[pathType].setPath(leafletPath, data);
-        },
-        createPath: function(name, path, defaults) {
-            if(!isDefined(path.type)) {
-                path.type = "polyline";
-            }
-            var options = _getOptions(path, defaults);
-            var pathData = _getPathData(path);
-
-            if (!pathTypes[path.type].isValid(pathData)) {
-                $log.error("[AngularJS - Leaflet] Invalid data passed to the " + path.type + " path");
-                return;
-            }
-
-            return pathTypes[path.type].createPath(options);
-        }
-    };
+    string: _string,
+    log: _log,
+  };
 }]);
 
-angular.module("leaflet-directive")
-.service('leafletWatchHelpers', function (){
+angular.module('leaflet-directive').factory('leafletPathsHelpers', ["$rootScope", "$log", "leafletHelpers", function($rootScope, $log, leafletHelpers) {
+  var isDefined = leafletHelpers.isDefined;
+  var isArray = leafletHelpers.isArray;
+  var isNumber = leafletHelpers.isNumber;
+  var isValidPoint = leafletHelpers.isValidPoint;
 
-    var _maybe = function(scope, watchFunctionName, thingToWatchStr, watchOptions, initCb){
-        //watchOptions.isDeep is/should be ignored in $watchCollection
-        var unWatch = scope[watchFunctionName](thingToWatchStr, function(newValue, oldValue) {
-            initCb(newValue, oldValue);
-            if(!watchOptions.doWatch)
-                unWatch();
-        }, watchOptions.isDeep);
+  var availableOptions = [
 
-        return unWatch;
-    };
+      // Path options
+      'stroke', 'weight', 'color', 'opacity',
+      'fill', 'fillColor', 'fillOpacity',
+      'dashArray', 'lineCap', 'lineJoin', 'clickable',
+      'pointerEvents', 'className',
+
+      // Polyline options
+      'smoothFactor', 'noClip',
+  ];
+  function _convertToLeafletLatLngs(latlngs) {
+    return latlngs.filter(function(latlng) {
+      return isValidPoint(latlng);
+    }).map(function(latlng) {
+      return _convertToLeafletLatLng(latlng);
+    });
+  }
+
+  function _convertToLeafletLatLng(latlng) {
+    if (isArray(latlng)) {
+      return new L.LatLng(latlng[0], latlng[1]);
+    } else {
+      return new L.LatLng(latlng.lat, latlng.lng);
+    }
+  }
+
+  function _convertToLeafletMultiLatLngs(paths) {
+    return paths.map(function(latlngs) {
+      return _convertToLeafletLatLngs(latlngs);
+    });
+  }
+
+  function _getOptions(path, defaults) {
+    var options = {};
+    for (var i = 0; i < availableOptions.length; i++) {
+      var optionName = availableOptions[i];
+
+      if (isDefined(path[optionName])) {
+        options[optionName] = path[optionName];
+      } else if (isDefined(defaults.path[optionName])) {
+        options[optionName] = defaults.path[optionName];
+      }
+    }
+
+    return options;
+  }
+
+  var _updatePathOptions = function(path, data) {
+    var updatedStyle = {};
+    for (var i = 0; i < availableOptions.length; i++) {
+      var optionName = availableOptions[i];
+      if (isDefined(data[optionName])) {
+        updatedStyle[optionName] = data[optionName];
+      }
+    }
+
+    path.setStyle(data);
+  };
+
+  var _isValidPolyline = function(latlngs) {
+    if (!isArray(latlngs)) {
+      return false;
+    }
+
+    for (var i = 0; i < latlngs.length; i++) {
+      var point = latlngs[i];
+      if (!isValidPoint(point)) {
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  var pathTypes = {
+    polyline: {
+      isValid: function(pathData) {
+        var latlngs = pathData.latlngs;
+        return _isValidPolyline(latlngs);
+      },
+
+      createPath: function(options) {
+        return new L.Polyline([], options);
+      },
+
+      setPath: function(path, data) {
+        path.setLatLngs(_convertToLeafletLatLngs(data.latlngs));
+        _updatePathOptions(path, data);
+        return;
+      },
+    },
+    multiPolyline: {
+      isValid: function(pathData) {
+        var latlngs = pathData.latlngs;
+        if (!isArray(latlngs)) {
+          return false;
+        }
+
+        for (var i in latlngs) {
+          var polyline = latlngs[i];
+          if (!_isValidPolyline(polyline)) {
+            return false;
+          }
+        }
+
+        return true;
+      },
+
+      createPath: function(options) {
+        return new L.multiPolyline([[[0, 0], [1, 1]]], options);
+      },
+
+      setPath: function(path, data) {
+        path.setLatLngs(_convertToLeafletMultiLatLngs(data.latlngs));
+        _updatePathOptions(path, data);
+        return;
+      },
+    },
+    polygon: {
+      isValid: function(pathData) {
+        var latlngs = pathData.latlngs;
+        return _isValidPolyline(latlngs);
+      },
+
+      createPath: function(options) {
+        return new L.Polygon([], options);
+      },
+
+      setPath: function(path, data) {
+        path.setLatLngs(_convertToLeafletLatLngs(data.latlngs));
+        _updatePathOptions(path, data);
+        return;
+      },
+    },
+    multiPolygon: {
+      isValid: function(pathData) {
+        var latlngs = pathData.latlngs;
+
+        if (!isArray(latlngs)) {
+          return false;
+        }
+
+        for (var i in latlngs) {
+          var polyline = latlngs[i];
+          if (!_isValidPolyline(polyline)) {
+            return false;
+          }
+        }
+
+        return true;
+      },
+
+      createPath: function(options) {
+        return new L.MultiPolygon([[[0, 0], [1, 1], [0, 1]]], options);
+      },
+
+      setPath: function(path, data) {
+        path.setLatLngs(_convertToLeafletMultiLatLngs(data.latlngs));
+        _updatePathOptions(path, data);
+        return;
+      },
+    },
+    rectangle: {
+      isValid: function(pathData) {
+        var latlngs = pathData.latlngs;
+
+        if (!isArray(latlngs) || latlngs.length !== 2) {
+          return false;
+        }
+
+        for (var i in latlngs) {
+          var point = latlngs[i];
+          if (!isValidPoint(point)) {
+            return false;
+          }
+        }
+
+        return true;
+      },
+
+      createPath: function(options) {
+        return new L.Rectangle([[0, 0], [1, 1]], options);
+      },
+
+      setPath: function(path, data) {
+        path.setBounds(new L.LatLngBounds(_convertToLeafletLatLngs(data.latlngs)));
+        _updatePathOptions(path, data);
+      },
+    },
+    circle: {
+      isValid: function(pathData) {
+        var point = pathData.latlngs;
+        return isValidPoint(point) && isNumber(pathData.radius);
+      },
+
+      createPath: function(options) {
+        return new L.Circle([0, 0], 1, options);
+      },
+
+      setPath: function(path, data) {
+        path.setLatLng(_convertToLeafletLatLng(data.latlngs));
+        if (isDefined(data.radius)) {
+          path.setRadius(data.radius);
+        }
+
+        _updatePathOptions(path, data);
+      },
+    },
+    circleMarker: {
+      isValid: function(pathData) {
+        var point = pathData.latlngs;
+        return isValidPoint(point) && isNumber(pathData.radius);
+      },
+
+      createPath: function(options) {
+        return new L.CircleMarker([0, 0], options);
+      },
+
+      setPath: function(path, data) {
+        path.setLatLng(_convertToLeafletLatLng(data.latlngs));
+        if (isDefined(data.radius)) {
+          path.setRadius(data.radius);
+        }
+
+        _updatePathOptions(path, data);
+      },
+    },
+  };
+
+  var _getPathData = function(path) {
+    var pathData = {};
+    if (path.latlngs) {
+      pathData.latlngs = path.latlngs;
+    }
+
+    if (path.radius) {
+      pathData.radius = path.radius;
+    }
+
+    return pathData;
+  };
+
+  return {
+    setPathOptions: function(leafletPath, pathType, data) {
+      if (!isDefined(pathType)) {
+        pathType = 'polyline';
+      }
+
+      pathTypes[pathType].setPath(leafletPath, data);
+    },
+
+    createPath: function(name, path, defaults) {
+      if (!isDefined(path.type)) {
+        path.type = 'polyline';
+      }
+
+      var options = _getOptions(path, defaults);
+      var pathData = _getPathData(path);
+
+      if (!pathTypes[path.type].isValid(pathData)) {
+        $log.error('[AngularJS - Leaflet] Invalid data passed to the ' + path.type + ' path');
+        return;
+      }
+
+      return pathTypes[path.type].createPath(options);
+    },
+  };
+}]);
+
+angular.module('leaflet-directive')
+.service('leafletWatchHelpers', function() {
+
+  var _maybe = function(scope, watchFunctionName, thingToWatchStr, watchOptions, initCb) {
+    //watchOptions.isDeep is/should be ignored in $watchCollection
+    var unWatch = scope[watchFunctionName](thingToWatchStr, function(newValue, oldValue) {
+      initCb(newValue, oldValue);
+      if (!watchOptions.doWatch)
+          unWatch();
+    }, watchOptions.isDeep);
+
+    return unWatch;
+  };
 
   /*
   @name: maybeWatch
@@ -17337,8 +16144,8 @@ angular.module("leaflet-directive")
   @param watchOptions - see markersWatchOptions and or derrivatives. This object is used
   to set watching to once and its watch depth.
   */
-  var _maybeWatch = function(scope, thingToWatchStr, watchOptions, initCb){
-      return _maybe(scope, '$watch', thingToWatchStr, watchOptions, initCb);
+  var _maybeWatch = function(scope, thingToWatchStr, watchOptions, initCb) {
+    return _maybe(scope, '$watch', thingToWatchStr, watchOptions, initCb);
   };
 
   /*
@@ -17348,1317 +16155,1381 @@ angular.module("leaflet-directive")
   @param watchOptions - see markersWatchOptions and or derrivatives. This object is used
   to set watching to once and its watch depth.
   */
-  var _maybeWatchCollection = function(scope, thingToWatchStr, watchOptions, initCb){
-      return _maybe(scope, '$watchCollection', thingToWatchStr, watchOptions, initCb);
+  var _maybeWatchCollection = function(scope, thingToWatchStr, watchOptions, initCb) {
+    return _maybe(scope, '$watchCollection', thingToWatchStr, watchOptions, initCb);
   };
 
   return {
     maybeWatch: _maybeWatch,
-    maybeWatchCollection: _maybeWatchCollection
+    maybeWatchCollection: _maybeWatchCollection,
   };
 });
 
-angular.module("leaflet-directive").service('leafletLogger', ["nemSimpleLogger", function(nemSimpleLogger) {
-  return nemSimpleLogger.spawn();
+angular.module('leaflet-directive').factory('nominatimService', ["$q", "$http", "leafletHelpers", "leafletMapDefaults", function($q, $http, leafletHelpers, leafletMapDefaults) {
+  var isDefined = leafletHelpers.isDefined;
+
+  return {
+    query: function(address, mapId) {
+      var defaults = leafletMapDefaults.getDefaults(mapId);
+      var url = defaults.nominatim.server;
+      var df = $q.defer();
+
+      $http.get(url, { params: { format: 'json', limit: 1, q: address } }).success(function(data) {
+        if (data.length > 0 && isDefined(data[0].boundingbox)) {
+          df.resolve(data[0]);
+        } else {
+          df.reject('[Nominatim] Invalid address');
+        }
+      });
+
+      return df.promise;
+    },
+  };
 }]);
 
-angular.module("leaflet-directive").factory('nominatimService', ["$q", "$http", "leafletHelpers", "leafletMapDefaults", function ($q, $http, leafletHelpers, leafletMapDefaults) {
-    var isDefined = leafletHelpers.isDefined;
+angular.module('leaflet-directive').directive('bounds', ["$log", "$timeout", "$http", "leafletHelpers", "nominatimService", "leafletBoundsHelpers", function($log, $timeout, $http, leafletHelpers, nominatimService, leafletBoundsHelpers) {
 
-    return {
-        query: function(address, mapId) {
-            var defaults = leafletMapDefaults.getDefaults(mapId);
-            var url = defaults.nominatim.server;
-            var df = $q.defer();
+  return {
+    restrict: 'A',
+    scope: false,
+    replace: false,
+    require: ['leaflet'],
 
-            $http.get(url, { params: { format: 'json', limit: 1, q: address } }).success(function(data) {
-                if (data.length > 0 && isDefined(data[0].boundingbox)) {
-                    df.resolve(data[0]);
-                } else {
-                    df.reject('[Nominatim] Invalid address');
-                }
+    link: function(scope, element, attrs, controller) {
+      var isDefined = leafletHelpers.isDefined;
+      var createLeafletBounds = leafletBoundsHelpers.createLeafletBounds;
+      var leafletScope = controller[0].getLeafletScope();
+      var mapController = controller[0];
+      var errorHeader = leafletHelpers.errorHeader + ' [Bounds] ';
+
+      var emptyBounds = function(bounds) {
+        return (bounds._southWest.lat === 0 && bounds._southWest.lng === 0 &&
+                bounds._northEast.lat === 0 && bounds._northEast.lng === 0);
+      };
+
+      mapController.getMap().then(function(map) {
+        leafletScope.$on('boundsChanged', function(event) {
+          var scope = event.currentScope;
+          var bounds = map.getBounds();
+
+          if (emptyBounds(bounds) || scope.settingBoundsFromScope) {
+            return;
+          }
+
+          scope.settingBoundsFromLeaflet = true;
+          var newScopeBounds = {
+            northEast: {
+              lat: bounds._northEast.lat,
+              lng: bounds._northEast.lng,
+            },
+            southWest: {
+              lat: bounds._southWest.lat,
+              lng: bounds._southWest.lng,
+            },
+            options: bounds.options,
+          };
+          if (!angular.equals(scope.bounds, newScopeBounds)) {
+            scope.bounds = newScopeBounds;
+          }
+
+          $timeout(function() {
+            scope.settingBoundsFromLeaflet = false;
+          });
+        });
+
+        var lastNominatimQuery;
+        leafletScope.$watch('bounds', function(bounds) {
+          if (scope.settingBoundsFromLeaflet)
+              return;
+          if (isDefined(bounds.address) && bounds.address !== lastNominatimQuery) {
+            scope.settingBoundsFromScope = true;
+            nominatimService.query(bounds.address, attrs.id).then(function(data) {
+              var b = data.boundingbox;
+              var newBounds = [[b[0], b[2]], [b[1], b[3]]];
+              map.fitBounds(newBounds);
+            }, function(errMsg) {
+
+              $log.error(errorHeader + ' ' + errMsg + '.');
             });
 
-            return df.promise;
-        }
-    };
-}]);
-
-angular.module("leaflet-directive").directive('bounds', ["leafletLogger", "$timeout", "$http", "leafletHelpers", "nominatimService", "leafletBoundsHelpers", function (leafletLogger, $timeout, $http, leafletHelpers, nominatimService, leafletBoundsHelpers) {
-    var $log = leafletLogger;
-    return {
-        restrict: "A",
-        scope: false,
-        replace: false,
-        require: [ 'leaflet' ],
-
-        link: function(scope, element, attrs, controller) {
-            var isDefined = leafletHelpers.isDefined;
-            var createLeafletBounds = leafletBoundsHelpers.createLeafletBounds;
-            var leafletScope = controller[0].getLeafletScope();
-            var mapController = controller[0];
-            var errorHeader = leafletHelpers.errorHeader + ' [Bounds] ';
-
-            var emptyBounds = function(bounds) {
-                return (bounds._southWest.lat === 0 && bounds._southWest.lng === 0 &&
-                        bounds._northEast.lat === 0 && bounds._northEast.lng === 0);
-            };
-
-            mapController.getMap().then(function (map) {
-                leafletScope.$on('boundsChanged', function (event) {
-                    var scope = event.currentScope;
-                    var bounds = map.getBounds();
-
-                    if (emptyBounds(bounds) || scope.settingBoundsFromScope) {
-                        return;
-                    }
-                    scope.settingBoundsFromLeaflet = true;
-                    var newScopeBounds = {
-                        northEast: {
-                            lat: bounds._northEast.lat,
-                            lng: bounds._northEast.lng
-                        },
-                        southWest: {
-                            lat: bounds._southWest.lat,
-                            lng: bounds._southWest.lng
-                        },
-                        options: bounds.options
-                    };
-                    if (!angular.equals(scope.bounds, newScopeBounds)) {
-                        scope.bounds = newScopeBounds;
-                    }
-                    $timeout( function() {
-                        scope.settingBoundsFromLeaflet = false;
-                    });
-                });
-
-                var lastNominatimQuery;
-                leafletScope.$watch('bounds', function (bounds) {
-                    if (scope.settingBoundsFromLeaflet)
-                        return;
-                    if (isDefined(bounds.address) && bounds.address !== lastNominatimQuery) {
-                        scope.settingBoundsFromScope = true;
-                        nominatimService.query(bounds.address, attrs.id).then(function(data) {
-                            var b = data.boundingbox;
-                            var newBounds = [ [ b[0], b[2]], [ b[1], b[3]] ];
-                            map.fitBounds(newBounds);
-                        }, function(errMsg) {
-                            $log.error(errorHeader + ' ' + errMsg + '.');
-                        });
-                        lastNominatimQuery = bounds.address;
-                        $timeout( function() {
-                            scope.settingBoundsFromScope = false;
-                        });
-                        return;
-                    }
-
-                    var leafletBounds = createLeafletBounds(bounds);
-                    if (leafletBounds && !map.getBounds().equals(leafletBounds)) {
-                        scope.settingBoundsFromScope = true;
-                        map.fitBounds(leafletBounds, bounds.options);
-                        $timeout( function() {
-                            scope.settingBoundsFromScope = false;
-                        });
-                    }
-                }, true);
+            lastNominatimQuery = bounds.address;
+            $timeout(function() {
+              scope.settingBoundsFromScope = false;
             });
-        }
-    };
+
+            return;
+          }
+
+          var leafletBounds = createLeafletBounds(bounds);
+          if (leafletBounds && !map.getBounds().equals(leafletBounds)) {
+            scope.settingBoundsFromScope = true;
+            map.fitBounds(leafletBounds, bounds.options);
+            $timeout(function() {
+              scope.settingBoundsFromScope = false;
+            });
+          }
+        }, true);
+      });
+    },
+  };
 }]);
 
-var centerDirectiveTypes = ['center', 'lfCenter'],
-    centerDirectives = {};
+var centerDirectiveTypes = ['center', 'lfCenter'];
+var centerDirectives = {};
 
 centerDirectiveTypes.forEach(function(directiveName) {
-    centerDirectives[directiveName] = ['leafletLogger', '$q', '$location', '$timeout', 'leafletMapDefaults', 'leafletHelpers',
-        'leafletBoundsHelpers', 'leafletEvents',
-        function(leafletLogger, $q, $location, $timeout, leafletMapDefaults, leafletHelpers,
-      leafletBoundsHelpers, leafletEvents) {
+  centerDirectives[directiveName] = ['$log', '$q', '$location', '$timeout', 'leafletMapDefaults', 'leafletHelpers',
+      'leafletBoundsHelpers', 'leafletMapEvents',
+        function($log, $q, $location, $timeout, leafletMapDefaults, leafletHelpers,
+      leafletBoundsHelpers, leafletMapEvents) {
 
-        var isDefined = leafletHelpers.isDefined,
-            isNumber = leafletHelpers.isNumber,
-            isSameCenterOnMap = leafletHelpers.isSameCenterOnMap,
-            safeApply = leafletHelpers.safeApply,
-            isValidCenter = leafletHelpers.isValidCenter,
-            isValidBounds = leafletBoundsHelpers.isValidBounds,
-            isUndefinedOrEmpty = leafletHelpers.isUndefinedOrEmpty,
-            errorHeader = leafletHelpers.errorHeader,
-            $log = leafletLogger;
+      var isDefined = leafletHelpers.isDefined;
+      var isNumber = leafletHelpers.isNumber;
+      var isSameCenterOnMap = leafletHelpers.isSameCenterOnMap;
+      var safeApply = leafletHelpers.safeApply;
+      var isValidCenter = leafletHelpers.isValidCenter;
+      var isValidBounds = leafletBoundsHelpers.isValidBounds;
+      var isUndefinedOrEmpty = leafletHelpers.isUndefinedOrEmpty;
+      var errorHeader = leafletHelpers.errorHeader;
 
-        var shouldInitializeMapWithBounds = function(bounds, center) {
-            return isDefined(bounds) && isValidBounds(bounds) && isUndefinedOrEmpty(center);
-        };
+      var shouldInitializeMapWithBounds = function(bounds, center) {
+        return isDefined(bounds) && isValidBounds(bounds) && isUndefinedOrEmpty(center);
+      };
 
-        var _leafletCenter;
-        return {
-            restrict: "A",
-            scope: false,
-            replace: false,
-            require: 'leaflet',
-            controller: function() {
-                _leafletCenter = $q.defer();
-                this.getCenter = function() {
-                    return _leafletCenter.promise;
-                };
-            },
-            link: function(scope, element, attrs, controller) {
-                var leafletScope = controller.getLeafletScope(),
-                    centerModel = leafletScope[directiveName];
+      var _leafletCenter;
+      return {
+        restrict: 'A',
+        scope: false,
+        replace: false,
+        require: 'leaflet',
+        controller: function() {
+          _leafletCenter = $q.defer();
+          this.getCenter = function() {
+            return _leafletCenter.promise;
+          };
+        },
 
-                controller.getMap().then(function(map) {
-                    var defaults = leafletMapDefaults.getDefaults(attrs.id);
+        link: function(scope, element, attrs, controller) {
+          var leafletScope = controller.getLeafletScope();
+          var centerModel = leafletScope[directiveName];
 
-                    if (attrs[directiveName].search("-") !== -1) {
-                        $log.error(errorHeader + ' The "center" variable can\'t use a "-" on its key name: "' + attrs[directiveName] + '".');
-                        map.setView([defaults.center.lat, defaults.center.lng], defaults.center.zoom);
-                        return;
-                    } else if (shouldInitializeMapWithBounds(leafletScope.bounds, centerModel)) {
-                        map.fitBounds(leafletBoundsHelpers.createLeafletBounds(leafletScope.bounds), leafletScope.bounds.options);
-                        centerModel = map.getCenter();
-                        safeApply(leafletScope, function(scope) {
-                            angular.extend(scope[directiveName], {
-                                lat: map.getCenter().lat,
-                                lng: map.getCenter().lng,
-                                zoom: map.getZoom(),
-                                autoDiscover: false
-                            });
-                        });
-                        safeApply(leafletScope, function(scope) {
-                            var mapBounds = map.getBounds();
-                            scope.bounds = {
-                                northEast: {
-                                    lat: mapBounds._northEast.lat,
-                                    lng: mapBounds._northEast.lng
-                                },
-                                southWest: {
-                                    lat: mapBounds._southWest.lat,
-                                    lng: mapBounds._southWest.lng
-                                }
-                            };
-                        });
-                    } else if (!isDefined(centerModel)) {
-                        $log.error(errorHeader + ' The "center" property is not defined in the main scope');
-                        map.setView([defaults.center.lat, defaults.center.lng], defaults.center.zoom);
-                        return;
-                    } else if (!(isDefined(centerModel.lat) && isDefined(centerModel.lng)) && !isDefined(centerModel.autoDiscover)) {
-                        angular.copy(defaults.center, centerModel);
-                    }
+          controller.getMap().then(function(map) {
+            var defaults = leafletMapDefaults.getDefaults(attrs.id);
 
-                    var urlCenterHash, mapReady;
-                    if (attrs.urlHashCenter === "yes") {
-                        var extractCenterFromUrl = function() {
-                            var search = $location.search();
-                            var centerParam;
-                            if (isDefined(search.c)) {
-                                var cParam = search.c.split(":");
-                                if (cParam.length === 3) {
-                                    centerParam = {
-                                        lat: parseFloat(cParam[0]),
-                                        lng: parseFloat(cParam[1]),
-                                        zoom: parseInt(cParam[2], 10)
-                                    };
-                                }
-                            }
-                            return centerParam;
-                        };
-                        urlCenterHash = extractCenterFromUrl();
-
-                        leafletScope.$on('$locationChangeSuccess', function(event) {
-                            var scope = event.currentScope;
-                            //$log.debug("updated location...");
-                            var urlCenter = extractCenterFromUrl();
-                            if (isDefined(urlCenter) && !isSameCenterOnMap(urlCenter, map)) {
-                                //$log.debug("updating center model...", urlCenter);
-                                angular.extend(scope[directiveName], {
-                                    lat: urlCenter.lat,
-                                    lng: urlCenter.lng,
-                                    zoom: urlCenter.zoom
-                                });
-                            }
-                        });
-                    }
-
-                    leafletScope.$watch(directiveName, function(center) {
-                        if (leafletScope.settingCenterFromLeaflet)
-                            return;
-                        //$log.debug("updated center model...");
-                        // The center from the URL has priority
-                        if (isDefined(urlCenterHash)) {
-                            angular.copy(urlCenterHash, center);
-                            urlCenterHash = undefined;
-                        }
-
-                        if (!isValidCenter(center) && center.autoDiscover !== true) {
-                            $log.warn(errorHeader + " invalid 'center'");
-                            //map.setView([defaults.center.lat, defaults.center.lng], defaults.center.zoom);
-                            return;
-                        }
-
-                        if (center.autoDiscover === true) {
-                            if (!isNumber(center.zoom)) {
-                                map.setView([defaults.center.lat, defaults.center.lng], defaults.center.zoom);
-                            }
-                            if (isNumber(center.zoom) && center.zoom > defaults.center.zoom) {
-                                map.locate({
-                                    setView: true,
-                                    maxZoom: center.zoom
-                                });
-                            } else if (isDefined(defaults.maxZoom)) {
-                                map.locate({
-                                    setView: true,
-                                    maxZoom: defaults.maxZoom
-                                });
-                            } else {
-                                map.locate({
-                                    setView: true
-                                });
-                            }
-                            return;
-                        }
-
-                        if (mapReady && isSameCenterOnMap(center, map)) {
-                            //$log.debug("no need to update map again.");
-                            return;
-                        }
-
-                        //$log.debug("updating map center...", center);
-                        leafletScope.settingCenterFromScope = true;
-                        map.setView([center.lat, center.lng], center.zoom);
-                        leafletEvents.notifyCenterChangedToBounds(leafletScope, map);
-                        $timeout(function() {
-                            leafletScope.settingCenterFromScope = false;
-                            //$log.debug("allow center scope updates");
-                        });
-                    }, true);
-
-                    map.whenReady(function() {
-                        mapReady = true;
-                    });
-
-                    map.on('moveend', function( /* event */ ) {
-                        // Resolve the center after the first map position
-                        _leafletCenter.resolve();
-                        leafletEvents.notifyCenterUrlHashChanged(leafletScope, map, attrs, $location.search());
-                        //$log.debug("updated center on map...");
-                        if (isSameCenterOnMap(centerModel, map) || leafletScope.settingCenterFromScope) {
-                            //$log.debug("same center in model, no need to update again.");
-                            return;
-                        }
-                        leafletScope.settingCenterFromLeaflet = true;
-                        safeApply(leafletScope, function(scope) {
-                            if (!leafletScope.settingCenterFromScope) {
-                                //$log.debug("updating center model...", map.getCenter(), map.getZoom());
-                                angular.extend(scope[directiveName], {
-                                    lat: map.getCenter().lat,
-                                    lng: map.getCenter().lng,
-                                    zoom: map.getZoom(),
-                                    autoDiscover: false
-                                });
-                            }
-                            leafletEvents.notifyCenterChangedToBounds(leafletScope, map);
-                            $timeout(function() {
-                                leafletScope.settingCenterFromLeaflet = false;
-                            });
-                        });
-                    });
-
-                    if (centerModel.autoDiscover === true) {
-                        map.on('locationerror', function() {
-                            $log.warn(errorHeader + " The Geolocation API is unauthorized on this page.");
-                            if (isValidCenter(centerModel)) {
-                                map.setView([centerModel.lat, centerModel.lng], centerModel.zoom);
-                                leafletEvents.notifyCenterChangedToBounds(leafletScope, map);
-                            } else {
-                                map.setView([defaults.center.lat, defaults.center.lng], defaults.center.zoom);
-                                leafletEvents.notifyCenterChangedToBounds(leafletScope, map);
-                            }
-                        });
-                    }
+            if (attrs[directiveName].search('-') !== -1) {
+              $log.error(errorHeader + ' The "center" variable can\'t use a "-" on its key name: "' + attrs[directiveName] + '".');
+              map.setView([defaults.center.lat, defaults.center.lng], defaults.center.zoom);
+              return;
+            } else if (shouldInitializeMapWithBounds(leafletScope.bounds, centerModel)) {
+              map.fitBounds(leafletBoundsHelpers.createLeafletBounds(leafletScope.bounds), leafletScope.bounds.options);
+              centerModel = map.getCenter();
+              safeApply(leafletScope, function(scope) {
+                angular.extend(scope[directiveName], {
+                  lat: map.getCenter().lat,
+                  lng: map.getCenter().lng,
+                  zoom: map.getZoom(),
+                  autoDiscover: false,
                 });
+              });
+
+              safeApply(leafletScope, function(scope) {
+                var mapBounds = map.getBounds();
+                scope.bounds = {
+                  northEast: {
+                    lat: mapBounds._northEast.lat,
+                    lng: mapBounds._northEast.lng,
+                  },
+                  southWest: {
+                    lat: mapBounds._southWest.lat,
+                    lng: mapBounds._southWest.lng,
+                  },
+                };
+              });
+            } else if (!isDefined(centerModel)) {
+              $log.error(errorHeader + ' The "center" property is not defined in the main scope');
+              map.setView([defaults.center.lat, defaults.center.lng], defaults.center.zoom);
+              return;
+            } else if (!(isDefined(centerModel.lat) && isDefined(centerModel.lng)) && !isDefined(centerModel.autoDiscover)) {
+              angular.copy(defaults.center, centerModel);
             }
-        };
-    }
+
+            var urlCenterHash;
+            var mapReady;
+            if (attrs.urlHashCenter === 'yes') {
+              var extractCenterFromUrl = function() {
+                var search = $location.search();
+                var centerParam;
+                if (isDefined(search.c)) {
+                  var cParam = search.c.split(':');
+                  if (cParam.length === 3) {
+                    centerParam = {
+                      lat: parseFloat(cParam[0]),
+                      lng: parseFloat(cParam[1]),
+                      zoom: parseInt(cParam[2], 10),
+                    };
+                  }
+                }
+
+                return centerParam;
+              };
+
+              urlCenterHash = extractCenterFromUrl();
+
+              leafletScope.$on('$locationChangeSuccess', function(event) {
+                var scope = event.currentScope;
+
+                //$log.debug("updated location...");
+                var urlCenter = extractCenterFromUrl();
+                if (isDefined(urlCenter) && !isSameCenterOnMap(urlCenter, map)) {
+                  //$log.debug("updating center model...", urlCenter);
+                  angular.extend(scope[directiveName], {
+                    lat: urlCenter.lat,
+                    lng: urlCenter.lng,
+                    zoom: urlCenter.zoom,
+                  });
+                }
+              });
+            }
+
+            leafletScope.$watch(directiveName, function(center) {
+              if (leafletScope.settingCenterFromLeaflet)
+                  return;
+
+              //$log.debug("updated center model...");
+              // The center from the URL has priority
+              if (isDefined(urlCenterHash)) {
+                angular.copy(urlCenterHash, center);
+                urlCenterHash = undefined;
+              }
+
+              if (!isValidCenter(center) && center.autoDiscover !== true) {
+                $log.warn(errorHeader + ' invalid \'center\'');
+
+                //map.setView([defaults.center.lat, defaults.center.lng], defaults.center.zoom);
+                return;
+              }
+
+              if (center.autoDiscover === true) {
+                if (!isNumber(center.zoom)) {
+                  map.setView([defaults.center.lat, defaults.center.lng], defaults.center.zoom);
+                }
+
+                if (isNumber(center.zoom) && center.zoom > defaults.center.zoom) {
+                  map.locate({
+                    setView: true,
+                    maxZoom: center.zoom,
+                  });
+                } else if (isDefined(defaults.maxZoom)) {
+                  map.locate({
+                    setView: true,
+                    maxZoom: defaults.maxZoom,
+                  });
+                } else {
+                  map.locate({
+                    setView: true,
+                  });
+                }
+
+                return;
+              }
+
+              if (mapReady && isSameCenterOnMap(center, map)) {
+                //$log.debug("no need to update map again.");
+                return;
+              }
+
+              //$log.debug("updating map center...", center);
+              leafletScope.settingCenterFromScope = true;
+              map.setView([center.lat, center.lng], center.zoom);
+              leafletMapEvents.notifyCenterChangedToBounds(leafletScope, map);
+              $timeout(function() {
+                leafletScope.settingCenterFromScope = false;
+
+                //$log.debug("allow center scope updates");
+              });
+            }, true);
+
+            map.whenReady(function() {
+              mapReady = true;
+            });
+
+            map.on('moveend', function(/* event */) {
+              // Resolve the center after the first map position
+              _leafletCenter.resolve();
+              leafletMapEvents.notifyCenterUrlHashChanged(leafletScope, map, attrs, $location.search());
+
+              //$log.debug("updated center on map...");
+              if (isSameCenterOnMap(centerModel, map) || leafletScope.settingCenterFromScope) {
+                //$log.debug("same center in model, no need to update again.");
+                return;
+              }
+
+              leafletScope.settingCenterFromLeaflet = true;
+              safeApply(leafletScope, function(scope) {
+                if (!leafletScope.settingCenterFromScope) {
+                  //$log.debug("updating center model...", map.getCenter(), map.getZoom());
+                  angular.extend(scope[directiveName], {
+                    lat: map.getCenter().lat,
+                    lng: map.getCenter().lng,
+                    zoom: map.getZoom(),
+                    autoDiscover: false,
+                  });
+                }
+
+                leafletMapEvents.notifyCenterChangedToBounds(leafletScope, map);
+                $timeout(function() {
+                  leafletScope.settingCenterFromLeaflet = false;
+                });
+              });
+            });
+
+            if (centerModel.autoDiscover === true) {
+              map.on('locationerror', function() {
+                $log.warn(errorHeader + ' The Geolocation API is unauthorized on this page.');
+                if (isValidCenter(centerModel)) {
+                  map.setView([centerModel.lat, centerModel.lng], centerModel.zoom);
+                  leafletMapEvents.notifyCenterChangedToBounds(leafletScope, map);
+                } else {
+                  map.setView([defaults.center.lat, defaults.center.lng], defaults.center.zoom);
+                  leafletMapEvents.notifyCenterChangedToBounds(leafletScope, map);
+                }
+              });
+            }
+          });
+        },
+      };
+    },
     ];
 });
 
-centerDirectiveTypes.forEach(function(dirType){
-  angular.module("leaflet-directive").directive(dirType, centerDirectives[dirType]);
+centerDirectiveTypes.forEach(function(dirType) {
+  angular.module('leaflet-directive').directive(dirType, centerDirectives[dirType]);
 });
 
-angular.module("leaflet-directive").directive('controls', ["leafletLogger", "leafletHelpers", "leafletControlHelpers", function (leafletLogger, leafletHelpers, leafletControlHelpers) {
-    var $log = leafletLogger;
-    return {
-        restrict: "A",
-        scope: false,
-        replace: false,
-        require: '?^leaflet',
+angular.module('leaflet-directive').directive('controls', ["$log", "leafletHelpers", "leafletControlHelpers", function($log, leafletHelpers, leafletControlHelpers) {
 
-        link: function(scope, element, attrs, controller) {
-            if(!controller) {
-                return;
+  return {
+    restrict: 'A',
+    scope: false,
+    replace: false,
+    require: '?^leaflet',
+
+    link: function(scope, element, attrs, controller) {
+      if (!controller) {
+        return;
+      }
+
+      var createControl = leafletControlHelpers.createControl;
+      var isValidControlType = leafletControlHelpers.isValidControlType;
+      var leafletScope  = controller.getLeafletScope();
+      var isDefined = leafletHelpers.isDefined;
+      var isArray = leafletHelpers.isArray;
+      var leafletControls = {};
+      var errorHeader = leafletHelpers.errorHeader + ' [Controls] ';
+
+      controller.getMap().then(function(map) {
+
+        leafletScope.$watchCollection('controls', function(newControls) {
+
+          // Delete controls from the array
+          for (var name in leafletControls) {
+            if (!isDefined(newControls[name])) {
+              if (map.hasControl(leafletControls[name])) {
+                map.removeControl(leafletControls[name]);
+              }
+
+              delete leafletControls[name];
+            }
+          }
+
+          for (var newName in newControls) {
+            var control;
+
+            var controlType = isDefined(newControls[newName].type) ? newControls[newName].type : newName;
+
+            if (!isValidControlType(controlType)) {
+              $log.error(errorHeader + ' Invalid control type: ' + controlType + '.');
+              return;
             }
 
-            var createControl = leafletControlHelpers.createControl;
-            var isValidControlType = leafletControlHelpers.isValidControlType;
-            var leafletScope  = controller.getLeafletScope();
-            var isDefined = leafletHelpers.isDefined;
-            var isArray = leafletHelpers.isArray;
-            var leafletControls = {};
-            var errorHeader = leafletHelpers.errorHeader + ' [Controls] ';
-
-            controller.getMap().then(function(map) {
-
-                leafletScope.$watchCollection('controls', function(newControls) {
-
-                    // Delete controls from the array
-                    for (var name in leafletControls) {
-                        if (!isDefined(newControls[name])) {
-                            if (map.hasControl(leafletControls[name])) {
-                                map.removeControl(leafletControls[name]);
-                            }
-                            delete leafletControls[name];
-                        }
-                    }
-
-                    for (var newName in newControls) {
-                        var control;
-
-                        var controlType = isDefined(newControls[newName].type) ? newControls[newName].type : newName;
-
-                        if (!isValidControlType(controlType)) {
-                            $log.error(errorHeader + ' Invalid control type: ' + controlType + '.');
-                            return;
-                        }
-
-                        if (controlType !== 'custom') {
-                            control = createControl(controlType, newControls[newName]);
-                            map.addControl(control);
-                            leafletControls[newName] = control;
-                        } else {
-                            var customControlValue = newControls[newName];
-                            if (isArray(customControlValue)) {
-                                for (var i in customControlValue) {
-                                    var customControl = customControlValue[i];
-                                    map.addControl(customControl);
-                                    leafletControls[newName] = !isDefined(leafletControls[newName]) ? [customControl] : leafletControls[newName].concat([customControl]);
-                                }
-                            } else {
-                                map.addControl(customControlValue);
-                                leafletControls[newName] = customControlValue;
-                            }
-                        }
-                    }
-
-                });
-
-            });
-        }
-    };
-}]);
-
-angular.module("leaflet-directive").directive("decorations", ["leafletLogger", "leafletHelpers", function(leafletLogger, leafletHelpers) {
-	var $log = leafletLogger;
-	return {
-		restrict: "A",
-		scope: false,
-		replace: false,
-		require: 'leaflet',
-
-		link: function(scope, element, attrs, controller) {
-			var leafletScope = controller.getLeafletScope(),
-				PolylineDecoratorPlugin = leafletHelpers.PolylineDecoratorPlugin,
-				isDefined = leafletHelpers.isDefined,
-				leafletDecorations = {};
-
-			/* Creates an "empty" decoration with a set of coordinates, but no pattern. */
-			function createDecoration(options) {
-				if (isDefined(options) && isDefined(options.coordinates)) {
-					if (!PolylineDecoratorPlugin.isLoaded()) {
-						$log.error('[AngularJS - Leaflet] The PolylineDecorator Plugin is not loaded.');
-					}
-				}
-
-				return L.polylineDecorator(options.coordinates);
-			}
-
-			/* Updates the path and the patterns for the provided decoration, and returns the decoration. */
-			function setDecorationOptions(decoration, options) {
-				if (isDefined(decoration) && isDefined(options)) {
-					if (isDefined(options.coordinates) && isDefined(options.patterns)) {
-						decoration.setPaths(options.coordinates);
-						decoration.setPatterns(options.patterns);
-						return decoration;
-					}
-				}
-			}
-
-			controller.getMap().then(function(map) {
-				leafletScope.$watch("decorations", function(newDecorations) {
-					for (var name in leafletDecorations) {
-						if (!isDefined(newDecorations[name]) || !angular.equals(newDecorations[name], leafletDecorations)) {
-							map.removeLayer(leafletDecorations[name]);
-							delete leafletDecorations[name];
-						}
-					}
-
-					for (var newName in newDecorations) {
-						var decorationData = newDecorations[newName],
-							newDecoration = createDecoration(decorationData);
-
-						if (isDefined(newDecoration)) {
-							leafletDecorations[newName] = newDecoration;
-							map.addLayer(newDecoration);
-							setDecorationOptions(newDecoration, decorationData);
-						}
-					}
-				}, true);
-			});
-		}
-	};
-}]);
-
-angular.module("leaflet-directive").directive('eventBroadcast', ["leafletLogger", "$rootScope", "leafletHelpers", "leafletEvents", "leafletIterators", function (leafletLogger, $rootScope, leafletHelpers, leafletEvents, leafletIterators) {
-    var $log = leafletLogger;
-    return {
-        restrict: "A",
-        scope: false,
-        replace: false,
-        require: 'leaflet',
-
-        link: function(scope, element, attrs, controller) {
-            var isObject = leafletHelpers.isObject,
-                isDefined = leafletHelpers.isDefined,
-                leafletScope  = controller.getLeafletScope(),
-                eventBroadcast = leafletScope.eventBroadcast,
-                availableMapEvents = leafletEvents.getAvailableMapEvents(),
-                addEvents = leafletEvents.addEvents;
-
-            controller.getMap().then(function(map) {
-
-                var mapEvents = [],
-                    logic = "broadcast";
-
-                // We have a possible valid object
-                if (!isDefined(eventBroadcast.map)) {
-                    // We do not have events enable/disable do we do nothing (all enabled by default)
-                    mapEvents = availableMapEvents;
-                } else if (!isObject(eventBroadcast.map)) {
-                    // Not a valid object
-                    $log.warn("[AngularJS - Leaflet] event-broadcast.map must be an object check your model.");
-                } else {
-                    // We have a possible valid map object
-                    // Event propadation logic
-                    if (eventBroadcast.map.logic !== "emit" && eventBroadcast.map.logic !== "broadcast") {
-                        // This is an error
-                        $log.warn("[AngularJS - Leaflet] Available event propagation logic are: 'emit' or 'broadcast'.");
-                    } else {
-                        logic = eventBroadcast.map.logic;
-                    }
-
-                    if (!(isObject(eventBroadcast.map.enable) && eventBroadcast.map.enable.length >= 0)) {
-                        $log.warn("[AngularJS - Leaflet] event-broadcast.map.enable must be an object check your model.");
-                    } else {
-                        // Enable events
-                        leafletIterators.each(eventBroadcast.map.enable, function(eventName) {
-                            // Do we have already the event enabled?
-                            if (mapEvents.indexOf(eventName) === -1 && availableMapEvents.indexOf(eventName) !== -1) {
-                                mapEvents.push(eventName);
-                            }
-                        });
-                    }
-
-                }
-                // as long as the map is removed in the root leaflet directive we
-                // do not need ot clean up the events as leaflet does it itself
-                addEvents(map, mapEvents, "eventName", leafletScope, logic);
-            });
-        }
-    };
-}]);
-
-angular.module("leaflet-directive")
-.directive('geojson', ["leafletLogger", "$rootScope", "leafletData", "leafletHelpers", "leafletWatchHelpers", "leafletDirectiveControlsHelpers", "leafletIterators", "leafletGeoJsonEvents", function (leafletLogger, $rootScope, leafletData, leafletHelpers,
-    leafletWatchHelpers, leafletDirectiveControlsHelpers,leafletIterators,
-    leafletGeoJsonEvents) {
-    var _maybeWatch = leafletWatchHelpers.maybeWatch,
-        _watchOptions = leafletHelpers.watchOptions,
-        _extendDirectiveControls = leafletDirectiveControlsHelpers.extend,
-        hlp = leafletHelpers,
-        $it = leafletIterators;
-        // $log = leafletLogger;
-
-    return {
-        restrict: "A",
-        scope: false,
-        replace: false,
-        require: 'leaflet',
-
-        link: function(scope, element, attrs, controller) {
-            var isDefined = leafletHelpers.isDefined,
-                leafletScope  = controller.getLeafletScope(),
-                leafletGeoJSON = {},
-                _hasSetLeafletData = false;
-
-            controller.getMap().then(function(map) {
-                var watchOptions = leafletScope.geojsonWatchOptions || _watchOptions;
-
-                var _hookUpEvents = function(geojson, maybeName){
-                    var onEachFeature;
-
-                    if (angular.isFunction(geojson.onEachFeature)) {
-                        onEachFeature = geojson.onEachFeature;
-                    } else {
-                        onEachFeature = function(feature, layer) {
-                            if (leafletHelpers.LabelPlugin.isLoaded() && isDefined(feature.properties.description)) {
-                                layer.bindLabel(feature.properties.description);
-                            }
-
-                            leafletGeoJsonEvents.bindEvents(layer, null, feature,
-                                leafletScope, maybeName,
-                                {resetStyleOnMouseout: geojson.resetStyleOnMouseout,
-                                mapId: attrs.id});
-                        };
-                    }
-                    return onEachFeature;
-                };
-
-                var isNested = (hlp.isDefined(attrs.geojsonNested) &&
-                    hlp.isTruthy(attrs.geojsonNested));
-
-                var _clean = function(){
-                    if(!leafletGeoJSON)
-                        return;
-                    var _remove = function(lObject) {
-                        if (isDefined(lObject) && map.hasLayer(lObject)) {
-                            map.removeLayer(lObject);
-                        }
-                    };
-                    if(isNested) {
-                        $it.each(leafletGeoJSON, function(lObject) {
-                            _remove(lObject);
-                        });
-                        return;
-                    }
-                    _remove(leafletGeoJSON);
-                };
-
-                var _addGeojson = function(model, maybeName){
-                    var geojson = angular.copy(model);
-                    if (!(isDefined(geojson) && isDefined(geojson.data))) {
-                        return;
-                    }
-                    var onEachFeature = _hookUpEvents(geojson, maybeName);
-
-                    if (!isDefined(geojson.options)) {
-                        //right here is why we use a clone / copy (we modify and thus)
-                        //would kick of a watcher.. we need to be more careful everywhere
-                        //for stuff like this
-                        geojson.options = {
-                            style: geojson.style,
-                            filter: geojson.filter,
-                            onEachFeature: onEachFeature,
-                            pointToLayer: geojson.pointToLayer
-                        };
-                    }
-
-                    var lObject = L.geoJson(geojson.data, geojson.options);
-
-                    if(maybeName && hlp.isString(maybeName)){
-                        leafletGeoJSON[maybeName] = lObject;
-                    }
-                    else{
-                        leafletGeoJSON = lObject;
-                    }
-
-                    lObject.addTo(map);
-
-                    if(!_hasSetLeafletData){//only do this once and play with the same ref forever
-                        _hasSetLeafletData = true;
-                        leafletData.setGeoJSON(leafletGeoJSON, attrs.id);
-                    }
-                };
-
-                var _create = function(model){
-                    _clean();
-                    if(isNested) {
-                        if(!model || !Object.keys(model).length)
-                            return;
-                        $it.each(model, function(m, name) {
-                            //name could be layerName and or groupName
-                            //for now it is not tied to a layer
-                            _addGeojson(m,name);
-                        });
-                        return;
-                    }
-                    _addGeojson(model);
-                };
-
-                _extendDirectiveControls(attrs.id, 'geojson', _create, _clean);
-
-                _maybeWatch(leafletScope,'geojson', watchOptions, function(geojson){
-                    _create(geojson);
-                });
-            });
-        }
-    };
-}]);
-
-angular.module("leaflet-directive").directive('layercontrol', ["$filter", "leafletLogger", "leafletData", "leafletHelpers", function ($filter, leafletLogger, leafletData, leafletHelpers) {
-    var $log = leafletLogger;
-    return {
-        restrict: "E",
-        scope: {
-            icons: '=?',
-            autoHideOpacity: '=?', // Hide other opacity controls when one is activated.
-            showGroups: '=?', // Hide other opacity controls when one is activated.
-            title: '@',
-            baseTitle: '@',
-            overlaysTitle: '@'
-        },
-        replace: true,
-        transclude: false,
-        require: '^leaflet',
-        controller: ["$scope", "$element", "$sce", function ($scope, $element, $sce) {
-            $log.debug('[Angular Directive - Layers] layers', $scope, $element);
-            var safeApply = leafletHelpers.safeApply,
-            isDefined = leafletHelpers.isDefined;
-            angular.extend($scope, {
-                baselayer: '',
-                oldGroup: '',
-                layerProperties: {},
-                groupProperties: {},
-                rangeIsSupported: leafletHelpers.rangeIsSupported(),
-                changeBaseLayer: function(key, e) {
-                    leafletHelpers.safeApply($scope, function(scp) {
-                        scp.baselayer = key;
-                        leafletData.getMap().then(function(map) {
-                            leafletData.getLayers().then(function(leafletLayers) {
-                                if(map.hasLayer(leafletLayers.baselayers[key])) {
-                                    return;
-                                }
-                                for(var i in scp.layers.baselayers) {
-                                    scp.layers.baselayers[i].icon = scp.icons.unradio;
-                                    if(map.hasLayer(leafletLayers.baselayers[i])) {
-                                        map.removeLayer(leafletLayers.baselayers[i]);
-                                    }
-                                }
-                                map.addLayer(leafletLayers.baselayers[key]);
-                                scp.layers.baselayers[key].icon = $scope.icons.radio;
-                            });
-                        });
-                    });
-                    e.preventDefault();
-                },
-                moveLayer: function(ly, newIndex, e) {
-                    var delta = Object.keys($scope.layers.baselayers).length;
-                    if(newIndex >= (1+delta) && newIndex <= ($scope.overlaysArray.length+delta)) {
-                        var oldLy;
-                        for(var key in $scope.layers.overlays) {
-                            if($scope.layers.overlays[key].index === newIndex) {
-                                oldLy = $scope.layers.overlays[key];
-                                break;
-                            }
-                        }
-                        if(oldLy) {
-                            safeApply($scope, function() {
-                                oldLy.index = ly.index;
-                                ly.index = newIndex;
-                            });
-                        }
-                    }
-                    e.stopPropagation();
-                    e.preventDefault();
-                },
-                initIndex: function(layer, idx) {
-                    var delta = Object.keys($scope.layers.baselayers).length;
-                    layer.index = isDefined(layer.index)? layer.index:idx+delta+1;
-                },
-                initGroup: function(groupName) {
-                    $scope.groupProperties[groupName] = $scope.groupProperties[groupName]? $scope.groupProperties[groupName]:{};
-                },
-                toggleOpacity: function(e, layer) {
-                    if(layer.visible) {
-                        if($scope.autoHideOpacity && !$scope.layerProperties[layer.name].opacityControl) {
-                            for(var k in $scope.layerProperties) {
-                                $scope.layerProperties[k].opacityControl = false;
-                            }
-                        }
-                        $scope.layerProperties[layer.name].opacityControl = !$scope.layerProperties[layer.name].opacityControl;
-                    }
-                    e.stopPropagation();
-                    e.preventDefault();
-                },
-                toggleLegend: function(layer) {
-                    $scope.layerProperties[layer.name].showLegend = !$scope.layerProperties[layer.name].showLegend;
-                },
-                showLegend: function(layer) {
-                    return layer.legend && $scope.layerProperties[layer.name].showLegend;
-                },
-                unsafeHTML: function(html) {
-                    return $sce.trustAsHtml(html);
-                },
-                getOpacityIcon: function(layer) {
-                    return layer.visible && $scope.layerProperties[layer.name].opacityControl? $scope.icons.close:$scope.icons.open;
-                },
-                getGroupIcon: function(group) {
-                    return group.visible? $scope.icons.check:$scope.icons.uncheck;
-                },
-                changeOpacity: function(layer) {
-                    var op = $scope.layerProperties[layer.name].opacity;
-                    leafletData.getMap().then(function(map) {
-                        leafletData.getLayers().then(function(leafletLayers) {
-                            var ly;
-                            for(var k in $scope.layers.overlays) {
-                                if($scope.layers.overlays[k] === layer) {
-                                    ly = leafletLayers.overlays[k];
-                                    break;
-                                }
-                            }
-
-                            if(map.hasLayer(ly)) {
-                                if(ly.setOpacity) {
-                                    ly.setOpacity(op/100);
-                                }
-                                if(ly.getLayers && ly.eachLayer) {
-                                    ly.eachLayer(function(lay) {
-                                        if(lay.setOpacity) {
-                                            lay.setOpacity(op/100);
-                                        }
-                                    });
-                                }
-                            }
-                        });
-                    });
-                },
-                changeGroupVisibility: function(groupName) {
-                    if(!isDefined($scope.groupProperties[groupName])) {
-                        return;
-                    }
-                    var visible = $scope.groupProperties[groupName].visible;
-                    for(var k in $scope.layers.overlays) {
-                        var layer = $scope.layers.overlays[k];
-                        if(layer.group === groupName) {
-                            layer.visible = visible;
-                        }
-                    }
-                }
-            });
-
-            var div = $element.get(0);
-            if (!L.Browser.touch) {
-                L.DomEvent.disableClickPropagation(div);
-                L.DomEvent.on(div, 'mousewheel', L.DomEvent.stopPropagation);
+            if (controlType !== 'custom') {
+              control = createControl(controlType, newControls[newName]);
+              map.addControl(control);
+              leafletControls[newName] = control;
             } else {
-                L.DomEvent.on(div, 'click', L.DomEvent.stopPropagation);
+              var customControlValue = newControls[newName];
+              if (isArray(customControlValue)) {
+                for (var i in customControlValue) {
+                  var customControl = customControlValue[i];
+                  map.addControl(customControl);
+                  leafletControls[newName] = !isDefined(leafletControls[newName]) ? [customControl] : leafletControls[newName].concat([customControl]);
+                }
+              } else {
+                map.addControl(customControlValue);
+                leafletControls[newName] = customControlValue;
+              }
             }
-        }],
-        template:
-        '<div class="angular-leaflet-control-layers" ng-show="overlaysArray.length">' +
-            '<h4 ng-if="title">{{ title }}</h4>' +
-            '<div class="lf-baselayers">' +
-                '<h5 class="lf-title" ng-if="baseTitle">{{ baseTitle }}</h5>' +
-                '<div class="lf-row" ng-repeat="(key, layer) in baselayersArray">' +
-                    '<label class="lf-icon-bl" ng-click="changeBaseLayer(key, $event)">' +
-                        '<input class="leaflet-control-layers-selector" type="radio" name="lf-radio" ' +
-                            'ng-show="false" ng-checked="baselayer === key" ng-value="key" /> ' +
-                        '<i class="lf-icon lf-icon-radio" ng-class="layer.icon"></i>' +
+          }
+
+        });
+
+      });
+    },
+  };
+}]);
+
+angular.module('leaflet-directive').directive('decorations', ["$log", "leafletHelpers", function($log, leafletHelpers) {
+
+  return {
+    restrict: 'A',
+    scope: false,
+    replace: false,
+    require: 'leaflet',
+
+    link: function(scope, element, attrs, controller) {
+      var leafletScope = controller.getLeafletScope();
+      var PolylineDecoratorPlugin = leafletHelpers.PolylineDecoratorPlugin;
+      var isDefined = leafletHelpers.isDefined;
+      var leafletDecorations = {};
+
+      /* Creates an "empty" decoration with a set of coordinates, but no pattern. */
+      function createDecoration(options) {
+        if (isDefined(options) && isDefined(options.coordinates)) {
+          if (!PolylineDecoratorPlugin.isLoaded()) {
+            $log.error('[AngularJS - Leaflet] The PolylineDecorator Plugin is not loaded.');
+          }
+        }
+
+        return L.polylineDecorator(options.coordinates);
+      }
+
+      /* Updates the path and the patterns for the provided decoration, and returns the decoration. */
+      function setDecorationOptions(decoration, options) {
+        if (isDefined(decoration) && isDefined(options)) {
+          if (isDefined(options.coordinates) && isDefined(options.patterns)) {
+            decoration.setPaths(options.coordinates);
+            decoration.setPatterns(options.patterns);
+            return decoration;
+          }
+        }
+      }
+
+      controller.getMap().then(function(map) {
+        leafletScope.$watch('decorations', function(newDecorations) {
+          for (var name in leafletDecorations) {
+            if (!isDefined(newDecorations[name]) || !angular.equals(newDecorations[name], leafletDecorations)) {
+              map.removeLayer(leafletDecorations[name]);
+              delete leafletDecorations[name];
+            }
+          }
+
+          for (var newName in newDecorations) {
+            var decorationData = newDecorations[newName];
+            var newDecoration = createDecoration(decorationData);
+
+            if (isDefined(newDecoration)) {
+              leafletDecorations[newName] = newDecoration;
+              map.addLayer(newDecoration);
+              setDecorationOptions(newDecoration, decorationData);
+            }
+          }
+        }, true);
+      });
+    },
+  };
+}]);
+
+angular.module('leaflet-directive').directive('eventBroadcast', ["$log", "$rootScope", "leafletHelpers", "leafletMapEvents", "leafletIterators", function($log, $rootScope, leafletHelpers, leafletMapEvents, leafletIterators) {
+
+  return {
+    restrict: 'A',
+    scope: false,
+    replace: false,
+    require: 'leaflet',
+
+    link: function(scope, element, attrs, controller) {
+      var isObject = leafletHelpers.isObject;
+      var isDefined = leafletHelpers.isDefined;
+      var leafletScope  = controller.getLeafletScope();
+      var eventBroadcast = leafletScope.eventBroadcast;
+      var availableMapEvents = leafletMapEvents.getAvailableMapEvents();
+      var addEvents = leafletMapEvents.addEvents;
+
+      controller.getMap().then(function(map) {
+
+        var mapEvents = [];
+        var logic = 'broadcast';
+
+        // We have a possible valid object
+        if (!isDefined(eventBroadcast.map)) {
+          // We do not have events enable/disable do we do nothing (all enabled by default)
+          mapEvents = availableMapEvents;
+        } else if (!isObject(eventBroadcast.map)) {
+          // Not a valid object
+          $log.warn('[AngularJS - Leaflet] event-broadcast.map must be an object check your model.');
+        } else {
+          // We have a possible valid map object
+          // Event propadation logic
+          if (eventBroadcast.map.logic !== 'emit' && eventBroadcast.map.logic !== 'broadcast') {
+            // This is an error
+            $log.warn('[AngularJS - Leaflet] Available event propagation logic are: \'emit\' or \'broadcast\'.');
+          } else {
+            logic = eventBroadcast.map.logic;
+          }
+
+          if (!(isObject(eventBroadcast.map.enable) && eventBroadcast.map.enable.length >= 0)) {
+            $log.warn('[AngularJS - Leaflet] event-broadcast.map.enable must be an object check your model.');
+          } else {
+            // Enable events
+            leafletIterators.each(eventBroadcast.map.enable, function(eventName) {
+              // Do we have already the event enabled?
+              if (mapEvents.indexOf(eventName) === -1 && availableMapEvents.indexOf(eventName) !== -1) {
+                mapEvents.push(eventName);
+              }
+            });
+          }
+
+        }
+
+        // as long as the map is removed in the root leaflet directive we
+        // do not need ot clean up the events as leaflet does it itself
+        addEvents(map, mapEvents, 'eventName', leafletScope, logic);
+      });
+    },
+  };
+}]);
+
+angular.module('leaflet-directive')
+.directive('geojson', ["$log", "$rootScope", "leafletData", "leafletHelpers", "leafletWatchHelpers", "leafletDirectiveControlsHelpers", "leafletIterators", "leafletGeoJsonEvents", function($log, $rootScope, leafletData, leafletHelpers,
+    leafletWatchHelpers, leafletDirectiveControlsHelpers, leafletIterators, leafletGeoJsonEvents) {
+  var _maybeWatch = leafletWatchHelpers.maybeWatch;
+  var _watchOptions = leafletHelpers.watchOptions;
+  var _extendDirectiveControls = leafletDirectiveControlsHelpers.extend;
+  var hlp = leafletHelpers;
+  var $it = leafletIterators;
+
+  return {
+    restrict: 'A',
+    scope: false,
+    replace: false,
+    require: 'leaflet',
+
+    link: function(scope, element, attrs, controller) {
+      var isDefined = leafletHelpers.isDefined;
+      var leafletScope  = controller.getLeafletScope();
+      var leafletGeoJSON = {};
+      var _hasSetLeafletData = false;
+
+      controller.getMap().then(function(map) {
+        var watchOptions = leafletScope.geojsonWatchOptions || _watchOptions;
+
+        var _hookUpEvents = function(geojson, maybeName) {
+          var onEachFeature;
+
+          if (angular.isFunction(geojson.onEachFeature)) {
+            onEachFeature = geojson.onEachFeature;
+          } else {
+            onEachFeature = function(feature, layer) {
+              if (leafletHelpers.LabelPlugin.isLoaded() && isDefined(feature.properties.description)) {
+                layer.bindLabel(feature.properties.description);
+              }
+
+              leafletGeoJsonEvents.bindEvents(attrs.id, layer, null, feature,
+                  leafletScope, maybeName,
+                  {resetStyleOnMouseout: geojson.resetStyleOnMouseout,
+                  mapId: attrs.id, });
+            };
+          }
+
+          return onEachFeature;
+        };
+
+        var isNested = (hlp.isDefined(attrs.geojsonNested) &&
+            hlp.isTruthy(attrs.geojsonNested));
+
+        var _clean = function() {
+          if (!leafletGeoJSON)
+              return;
+          var _remove = function(lObject) {
+            if (isDefined(lObject) && map.hasLayer(lObject)) {
+              map.removeLayer(lObject);
+            }
+          };
+
+          if (isNested) {
+            $it.each(leafletGeoJSON, function(lObject) {
+              _remove(lObject);
+            });
+
+            return;
+          }
+
+          _remove(leafletGeoJSON);
+        };
+
+        var _addGeojson = function(model, maybeName) {
+          var geojson = angular.copy(model);
+          if (!(isDefined(geojson) && isDefined(geojson.data))) {
+            return;
+          }
+
+          var onEachFeature = _hookUpEvents(geojson, maybeName);
+
+          if (!isDefined(geojson.options)) {
+            //right here is why we use a clone / copy (we modify and thus)
+            //would kick of a watcher.. we need to be more careful everywhere
+            //for stuff like this
+            geojson.options = {
+              style: geojson.style,
+              filter: geojson.filter,
+              onEachFeature: onEachFeature,
+              pointToLayer: geojson.pointToLayer,
+            };
+          }
+
+          var lObject = L.geoJson(geojson.data, geojson.options);
+
+          if (maybeName && hlp.isString(maybeName)) {
+            leafletGeoJSON[maybeName] = lObject;
+          }          else {
+            leafletGeoJSON = lObject;
+          }
+
+          lObject.addTo(map);
+
+          if (!_hasSetLeafletData) {//only do this once and play with the same ref forever
+            _hasSetLeafletData = true;
+            leafletData.setGeoJSON(leafletGeoJSON, attrs.id);
+          }
+        };
+
+        var _create = function(model) {
+          _clean();
+          if (isNested) {
+            if (!model || !Object.keys(model).length)
+                return;
+            $it.each(model, function(m, name) {
+              //name could be layerName and or groupName
+              //for now it is not tied to a layer
+              _addGeojson(m, name);
+            });
+
+            return;
+          }
+
+          _addGeojson(model);
+        };
+
+        _extendDirectiveControls(attrs.id, 'geojson', _create, _clean);
+
+        _maybeWatch(leafletScope, 'geojson', watchOptions, function(geojson) {
+          _create(geojson);
+        });
+      });
+    },
+  };
+}]);
+
+angular.module('leaflet-directive').directive('layercontrol', ["$filter", "$log", "leafletData", "leafletHelpers", function($filter, $log, leafletData, leafletHelpers) {
+
+  return {
+    restrict: 'E',
+    scope: {
+      icons: '=?',
+      autoHideOpacity: '=?', // Hide other opacity controls when one is activated.
+      showGroups: '=?', // Hide other opacity controls when one is activated.
+      title: '@',
+      baseTitle: '@',
+      overlaysTitle: '@',
+    },
+    replace: true,
+    transclude: false,
+    require: '^leaflet',
+    controller: ["$scope", "$element", "$sce", function($scope, $element, $sce) {
+      $log.debug('[Angular Directive - Layers] layers', $scope, $element);
+      var safeApply = leafletHelpers.safeApply;
+      var isDefined = leafletHelpers.isDefined;
+      angular.extend($scope, {
+        baselayer: '',
+        oldGroup: '',
+        layerProperties: {},
+        groupProperties: {},
+        rangeIsSupported: leafletHelpers.rangeIsSupported(),
+        changeBaseLayer: function(key, e) {
+          leafletHelpers.safeApply($scope, function(scp) {
+            scp.baselayer = key;
+            leafletData.getMap().then(function(map) {
+              leafletData.getLayers().then(function(leafletLayers) {
+                if (map.hasLayer(leafletLayers.baselayers[key])) {
+                  return;
+                }
+
+                for (var i in scp.layers.baselayers) {
+                  scp.layers.baselayers[i].icon = scp.icons.unradio;
+                  if (map.hasLayer(leafletLayers.baselayers[i])) {
+                    map.removeLayer(leafletLayers.baselayers[i]);
+                  }
+                }
+
+                map.addLayer(leafletLayers.baselayers[key]);
+                scp.layers.baselayers[key].icon = $scope.icons.radio;
+              });
+            });
+          });
+
+          e.preventDefault();
+        },
+
+        moveLayer: function(ly, newIndex, e) {
+          var delta = Object.keys($scope.layers.baselayers).length;
+          if (newIndex >= (1 + delta) && newIndex <= ($scope.overlaysArray.length + delta)) {
+            var oldLy;
+            for (var key in $scope.layers.overlays) {
+              if ($scope.layers.overlays[key].index === newIndex) {
+                oldLy = $scope.layers.overlays[key];
+                break;
+              }
+            }
+
+            if (oldLy) {
+              safeApply($scope, function() {
+                oldLy.index = ly.index;
+                ly.index = newIndex;
+              });
+            }
+          }
+
+          e.stopPropagation();
+          e.preventDefault();
+        },
+
+        initIndex: function(layer, idx) {
+          var delta = Object.keys($scope.layers.baselayers).length;
+          layer.index = isDefined(layer.index) ? layer.index : idx + delta + 1;
+        },
+
+        initGroup: function(groupName) {
+          $scope.groupProperties[groupName] = $scope.groupProperties[groupName] ? $scope.groupProperties[groupName] : {};
+        },
+
+        toggleOpacity: function(e, layer) {
+          if (layer.visible) {
+            if ($scope.autoHideOpacity && !$scope.layerProperties[layer.name].opacityControl) {
+              for (var k in $scope.layerProperties) {
+                $scope.layerProperties[k].opacityControl = false;
+              }
+            }
+
+            $scope.layerProperties[layer.name].opacityControl = !$scope.layerProperties[layer.name].opacityControl;
+          }
+
+          e.stopPropagation();
+          e.preventDefault();
+        },
+
+        toggleLegend: function(layer) {
+          $scope.layerProperties[layer.name].showLegend = !$scope.layerProperties[layer.name].showLegend;
+        },
+
+        showLegend: function(layer) {
+          return layer.legend && $scope.layerProperties[layer.name].showLegend;
+        },
+
+        unsafeHTML: function(html) {
+          return $sce.trustAsHtml(html);
+        },
+
+        getOpacityIcon: function(layer) {
+          return layer.visible && $scope.layerProperties[layer.name].opacityControl ? $scope.icons.close : $scope.icons.open;
+        },
+
+        getGroupIcon: function(group) {
+          return group.visible ? $scope.icons.check : $scope.icons.uncheck;
+        },
+
+        changeOpacity: function(layer) {
+          var op = $scope.layerProperties[layer.name].opacity;
+          leafletData.getMap().then(function(map) {
+            leafletData.getLayers().then(function(leafletLayers) {
+              var ly;
+              for (var k in $scope.layers.overlays) {
+                if ($scope.layers.overlays[k] === layer) {
+                  ly = leafletLayers.overlays[k];
+                  break;
+                }
+              }
+
+              if (map.hasLayer(ly)) {
+                if (ly.setOpacity) {
+                  ly.setOpacity(op / 100);
+                }
+
+                if (ly.getLayers && ly.eachLayer) {
+                  ly.eachLayer(function(lay) {
+                    if (lay.setOpacity) {
+                      lay.setOpacity(op / 100);
+                    }
+                  });
+                }
+              }
+            });
+          });
+        },
+
+        changeGroupVisibility: function(groupName) {
+          if (!isDefined($scope.groupProperties[groupName])) {
+            return;
+          }
+
+          var visible = $scope.groupProperties[groupName].visible;
+          for (var k in $scope.layers.overlays) {
+            var layer = $scope.layers.overlays[k];
+            if (layer.group === groupName) {
+              layer.visible = visible;
+            }
+          }
+        },
+      });
+
+      var div = $element.get(0);
+      if (!L.Browser.touch) {
+        L.DomEvent.disableClickPropagation(div);
+        L.DomEvent.on(div, 'mousewheel', L.DomEvent.stopPropagation);
+      } else {
+        L.DomEvent.on(div, 'click', L.DomEvent.stopPropagation);
+      }
+    }],
+
+    template:
+    '<div class="angular-leaflet-control-layers" ng-show="overlaysArray.length">' +
+        '<h4 ng-if="title">{{ title }}</h4>' +
+        '<div class="lf-baselayers">' +
+            '<h5 class="lf-title" ng-if="baseTitle">{{ baseTitle }}</h5>' +
+            '<div class="lf-row" ng-repeat="(key, layer) in baselayersArray">' +
+                '<label class="lf-icon-bl" ng-click="changeBaseLayer(key, $event)">' +
+                    '<input class="leaflet-control-layers-selector" type="radio" name="lf-radio" ' +
+                        'ng-show="false" ng-checked="baselayer === key" ng-value="key" /> ' +
+                    '<i class="lf-icon lf-icon-radio" ng-class="layer.icon"></i>' +
+                    '<div class="lf-text">{{layer.name}}</div>' +
+                '</label>' +
+            '</div>' +
+        '</div>' +
+        '<div class="lf-overlays">' +
+            '<h5 class="lf-title" ng-if="overlaysTitle">{{ overlaysTitle }}</h5>' +
+            '<div class="lf-container">' +
+                '<div class="lf-row" ng-repeat="layer in (o = (overlaysArray | orderBy:\'index\':order))" ng-init="initIndex(layer, $index)">' +
+                    '<label class="lf-icon-ol-group" ng-if="showGroups &amp;&amp; layer.group &amp;&amp; layer.group != o[$index-1].group">' +
+                        '<input class="lf-control-layers-selector" type="checkbox" ng-show="false" ' +
+                            'ng-change="changeGroupVisibility(layer.group)" ng-model="groupProperties[layer.group].visible"/> ' +
+                        '<i class="lf-icon lf-icon-check" ng-class="getGroupIcon(groupProperties[layer.group])"></i>' +
+                        '<div class="lf-text">{{ layer.group }}</div>' +
+                    '</label>' +
+                    '<label class="lf-icon-ol">' +
+                        '<input class="lf-control-layers-selector" type="checkbox" ng-show="false" ng-model="layer.visible"/> ' +
+                        '<i class="lf-icon lf-icon-check" ng-class="layer.icon"></i>' +
                         '<div class="lf-text">{{layer.name}}</div>' +
                     '</label>' +
-                '</div>' +
-            '</div>' +
-            '<div class="lf-overlays">' +
-                '<h5 class="lf-title" ng-if="overlaysTitle">{{ overlaysTitle }}</h5>' +
-                '<div class="lf-container">' +
-                    '<div class="lf-row" ng-repeat="layer in (o = (overlaysArray | orderBy:\'index\':order))" ng-init="initIndex(layer, $index)">' +
-                        '<label class="lf-icon-ol-group" ng-if="showGroups &amp;&amp; layer.group &amp;&amp; layer.group != o[$index-1].group">' +
-                            '<input class="lf-control-layers-selector" type="checkbox" ng-show="false" ' +
-                                'ng-change="changeGroupVisibility(layer.group)" ng-model="groupProperties[layer.group].visible"/> ' +
-                            '<i class="lf-icon lf-icon-check" ng-class="getGroupIcon(groupProperties[layer.group])"></i>' +
-                            '<div class="lf-text">{{ layer.group }}</div>' +
-                        '</label>'+
-                        '<label class="lf-icon-ol">' +
-                            '<input class="lf-control-layers-selector" type="checkbox" ng-show="false" ng-model="layer.visible"/> ' +
-                            '<i class="lf-icon lf-icon-check" ng-class="layer.icon"></i>' +
-                            '<div class="lf-text">{{layer.name}}</div>' +
-                        '</label>'+
-                        '<div class="lf-icons">' +
-                            '<i class="lf-icon lf-up" ng-class="icons.up" ng-click="moveLayer(layer, layer.index - orderNumber, $event)"></i> ' +
-                            '<i class="lf-icon lf-down" ng-class="icons.down" ng-click="moveLayer(layer, layer.index + orderNumber, $event)"></i> ' +
-                            '<i class="lf-icon lf-toggle-legend" ng-class="icons.toggleLegend" ng-if="layer.legend" ng-click="toggleLegend(layer)"></i> ' +
-                            '<i class="lf-icon lf-open" ng-class="getOpacityIcon(layer)" ng-click="toggleOpacity($event, layer)"></i>' +
-                        '</div>' +
-                        '<div class="lf-legend" ng-if="showLegend(layer)" ng-bind-html="unsafeHTML(layer.legend)"></div>' +
-                        '<div class="lf-opacity clearfix" ng-if="layer.visible &amp;&amp; layerProperties[layer.name].opacityControl">' +
-                            '<label ng-if="rangeIsSupported" class="pull-left" style="width: 50%">0</label>' +
-                            '<label ng-if="rangeIsSupported" class="pull-left text-right" style="width: 50%">100</label>' +
-                            '<input ng-if="rangeIsSupported" class="clearfix" type="range" min="0" max="100" class="lf-opacity-control" ' +
-                                'ng-model="layerProperties[layer.name].opacity" ng-change="changeOpacity(layer)"/>' +
-                            '<h6 ng-if="!rangeIsSupported">Range is not supported in this browser</h6>' +
-                        '</div>' +
+                    '<div class="lf-icons">' +
+                        '<i class="lf-icon lf-up" ng-class="icons.up" ng-click="moveLayer(layer, layer.index - orderNumber, $event)"></i> ' +
+                        '<i class="lf-icon lf-down" ng-class="icons.down" ng-click="moveLayer(layer, layer.index + orderNumber, $event)"></i> ' +
+                        '<i class="lf-icon lf-toggle-legend" ng-class="icons.toggleLegend" ng-if="layer.legend" ng-click="toggleLegend(layer)"></i> ' +
+                        '<i class="lf-icon lf-open" ng-class="getOpacityIcon(layer)" ng-click="toggleOpacity($event, layer)"></i>' +
+                    '</div>' +
+                    '<div class="lf-legend" ng-if="showLegend(layer)" ng-bind-html="unsafeHTML(layer.legend)"></div>' +
+                    '<div class="lf-opacity clearfix" ng-if="layer.visible &amp;&amp; layerProperties[layer.name].opacityControl">' +
+                        '<label ng-if="rangeIsSupported" class="pull-left" style="width: 50%">0</label>' +
+                        '<label ng-if="rangeIsSupported" class="pull-left text-right" style="width: 50%">100</label>' +
+                        '<input ng-if="rangeIsSupported" class="clearfix" type="range" min="0" max="100" class="lf-opacity-control" ' +
+                            'ng-model="layerProperties[layer.name].opacity" ng-change="changeOpacity(layer)"/>' +
+                        '<h6 ng-if="!rangeIsSupported">Range is not supported in this browser</h6>' +
                     '</div>' +
                 '</div>' +
             '</div>' +
-        '</div>',
-        link: function(scope, element, attrs, controller) {
-            var isDefined = leafletHelpers.isDefined,
-            leafletScope = controller.getLeafletScope(),
-            layers = leafletScope.layers;
+        '</div>' +
+    '</div>',
+    link: function(scope, element, attrs, controller) {
+      var isDefined = leafletHelpers.isDefined;
+      var leafletScope = controller.getLeafletScope();
+      var layers = leafletScope.layers;
 
-            scope.$watch('icons', function() {
-                var defaultIcons = {
-                    uncheck: 'fa fa-square-o',
-                    check: 'fa fa-check-square-o',
-                    radio: 'fa fa-dot-circle-o',
-                    unradio: 'fa fa-circle-o',
-                    up: 'fa fa-angle-up',
-                    down: 'fa fa-angle-down',
-                    open: 'fa fa-angle-double-down',
-                    close: 'fa fa-angle-double-up',
-                    toggleLegend: 'fa fa-pencil-square-o'
-                };
-                if(isDefined(scope.icons)) {
-                    angular.extend(defaultIcons, scope.icons);
-                    angular.extend(scope.icons, defaultIcons);
-                } else {
-                    scope.icons = defaultIcons;
-                }
-            });
-
-            // Setting layer stack order.
-            attrs.order = (isDefined(attrs.order) && (attrs.order === 'normal' || attrs.order === 'reverse'))? attrs.order:'normal';
-            scope.order = attrs.order === 'normal';
-            scope.orderNumber = attrs.order === 'normal'? -1:1;
-
-            scope.layers = layers;
-            controller.getMap().then(function(map) {
-                leafletScope.$watch('layers.baselayers', function(newBaseLayers) {
-                    var baselayersArray = {};
-                    leafletData.getLayers().then(function(leafletLayers) {
-                        var key;
-                        for(key in newBaseLayers) {
-                            var layer = newBaseLayers[key];
-                            layer.icon = scope.icons[map.hasLayer(leafletLayers.baselayers[key])? 'radio':'unradio'];
-                            baselayersArray[key] = layer;
-                        }
-                        scope.baselayersArray = baselayersArray;
-                    });
-                });
-
-                leafletScope.$watch('layers.overlays', function(newOverlayLayers) {
-                    var overlaysArray = [];
-                    var groupVisibleCount = {};
-                    leafletData.getLayers().then(function(leafletLayers) {
-                        var key;
-                        for(key in newOverlayLayers) {
-                            var layer = newOverlayLayers[key];
-                            layer.icon = scope.icons[(layer.visible? 'check':'uncheck')];
-                            overlaysArray.push(layer);
-                            if(!isDefined(scope.layerProperties[layer.name])) {
-                                scope.layerProperties[layer.name] = {
-                                    opacity: isDefined(layer.layerOptions.opacity)? layer.layerOptions.opacity*100:100,
-                                    opacityControl: false,
-                                    showLegend: true
-                                };
-                            }
-                            if(isDefined(layer.group)) {
-                                if(!isDefined(scope.groupProperties[layer.group])) {
-                                    scope.groupProperties[layer.group] = {
-                                        visible: false
-                                    };
-                                }
-                                groupVisibleCount[layer.group] = isDefined(groupVisibleCount[layer.group])? groupVisibleCount[layer.group]:{
-                                    count: 0,
-                                    visibles: 0
-                                };
-                                groupVisibleCount[layer.group].count++;
-                                if(layer.visible) {
-                                    groupVisibleCount[layer.group].visibles++;
-                                }
-                            }
-                            if(isDefined(layer.index) && leafletLayers.overlays[key].setZIndex) {
-                                leafletLayers.overlays[key].setZIndex(newOverlayLayers[key].index);
-                            }
-                        }
-
-                        for(key in groupVisibleCount) {
-                            scope.groupProperties[key].visible = groupVisibleCount[key].visibles === groupVisibleCount[key].count;
-                        }
-                        scope.overlaysArray = overlaysArray;
-                    });
-                }, true);
-            });
-        }
-    };
-}]);
-
-angular.module("leaflet-directive").directive('layers', ["leafletLogger", "$q", "leafletData", "leafletHelpers", "leafletLayerHelpers", "leafletControlHelpers", function (leafletLogger, $q, leafletData, leafletHelpers, leafletLayerHelpers, leafletControlHelpers) {
-    // var $log = leafletLogger;
-    return {
-        restrict: "A",
-        scope: false,
-        replace: false,
-        require: 'leaflet',
-        controller: ["$scope", function ($scope) {
-            $scope._leafletLayers = $q.defer();
-            this.getLayers = function () {
-                return $scope._leafletLayers.promise;
-            };
-        }],
-        link: function(scope, element, attrs, controller){
-            var isDefined = leafletHelpers.isDefined,
-                leafletLayers = {},
-                leafletScope  = controller.getLeafletScope(),
-                layers = leafletScope.layers,
-                createLayer = leafletLayerHelpers.createLayer,
-                safeAddLayer = leafletLayerHelpers.safeAddLayer,
-                safeRemoveLayer = leafletLayerHelpers.safeRemoveLayer,
-                updateLayersControl = leafletControlHelpers.updateLayersControl,
-                isLayersControlVisible = false;
-
-            controller.getMap().then(function(map) {
-
-                // We have baselayers to add to the map
-                scope._leafletLayers.resolve(leafletLayers);
-                leafletData.setLayers(leafletLayers, attrs.id);
-
-                leafletLayers.baselayers = {};
-                leafletLayers.overlays = {};
-
-                var mapId = attrs.id;
-
-                // Setup all baselayers definitions
-                var oneVisibleLayer = false;
-                for (var layerName in layers.baselayers) {
-                    var newBaseLayer = createLayer(layers.baselayers[layerName]);
-                    if (!isDefined(newBaseLayer)) {
-                        delete layers.baselayers[layerName];
-                        continue;
-                    }
-                    leafletLayers.baselayers[layerName] = newBaseLayer;
-                    // Only add the visible layer to the map, layer control manages the addition to the map
-                    // of layers in its control
-                    if (layers.baselayers[layerName].top === true) {
-                        safeAddLayer(map, leafletLayers.baselayers[layerName]);
-                        oneVisibleLayer = true;
-                    }
-                }
-
-                // If there is no visible layer add first to the map
-                if (!oneVisibleLayer && Object.keys(leafletLayers.baselayers).length > 0) {
-                    safeAddLayer(map, leafletLayers.baselayers[Object.keys(layers.baselayers)[0]]);
-                }
-
-                // Setup the Overlays
-                for (layerName in layers.overlays) {
-                    if(layers.overlays[layerName].type === 'cartodb') {
-
-                    }
-                    var newOverlayLayer = createLayer(layers.overlays[layerName]);
-                    if (!isDefined(newOverlayLayer)) {
-                        delete layers.overlays[layerName];
-                        continue;
-                    }
-                    leafletLayers.overlays[layerName] = newOverlayLayer;
-                    // Only add the visible overlays to the map
-                    if (layers.overlays[layerName].visible === true) {
-                        safeAddLayer(map, leafletLayers.overlays[layerName]);
-                    }
-                }
-
-                // Watch for the base layers
-                leafletScope.$watch('layers.baselayers', function(newBaseLayers, oldBaseLayers) {
-                    if(angular.equals(newBaseLayers, oldBaseLayers)) {
-                        isLayersControlVisible = updateLayersControl(map, mapId, isLayersControlVisible, newBaseLayers, layers.overlays, leafletLayers);
-                        return true;
-                    }
-                    // Delete layers from the array
-                    for (var name in leafletLayers.baselayers) {
-                        if (!isDefined(newBaseLayers[name]) || newBaseLayers[name].doRefresh) {
-                            // Remove from the map if it's on it
-                            if (map.hasLayer(leafletLayers.baselayers[name])) {
-                                map.removeLayer(leafletLayers.baselayers[name]);
-                            }
-                            delete leafletLayers.baselayers[name];
-
-                            if (newBaseLayers[name] && newBaseLayers[name].doRefresh) {
-                                newBaseLayers[name].doRefresh = false;
-                            }
-                        }
-                    }
-                    // add new layers
-                    for (var newName in newBaseLayers) {
-                        if (!isDefined(leafletLayers.baselayers[newName])) {
-                            var testBaseLayer = createLayer(newBaseLayers[newName]);
-                            if (isDefined(testBaseLayer)) {
-                                leafletLayers.baselayers[newName] = testBaseLayer;
-                                // Only add the visible layer to the map
-                                if (newBaseLayers[newName].top === true) {
-                                    safeAddLayer(map, leafletLayers.baselayers[newName]);
-                                }
-                            }
-                        } else {
-                            if (newBaseLayers[newName].top === true && !map.hasLayer(leafletLayers.baselayers[newName])) {
-                                safeAddLayer(map, leafletLayers.baselayers[newName]);
-                            } else if (newBaseLayers[newName].top === false && map.hasLayer(leafletLayers.baselayers[newName])) {
-                                map.removeLayer(leafletLayers.baselayers[newName]);
-                            }
-                        }
-                    }
-
-                    //we have layers, so we need to make, at least, one active
-                    var found = false;
-                    // search for an active layer
-                    for (var key in leafletLayers.baselayers) {
-                        if (map.hasLayer(leafletLayers.baselayers[key])) {
-                            found = true;
-                            break;
-                        }
-                    }
-                    // If there is no active layer make one active
-                    if (!found && Object.keys(leafletLayers.baselayers).length > 0) {
-                        safeAddLayer(map, leafletLayers.baselayers[Object.keys(leafletLayers.baselayers)[0]]);
-                    }
-
-                    // Only show the layers switch selector control if we have more than one baselayer + overlay
-                    isLayersControlVisible = updateLayersControl(map, mapId, isLayersControlVisible, newBaseLayers, layers.overlays, leafletLayers);
-                }, true);
-
-                // Watch for the overlay layers
-                leafletScope.$watch('layers.overlays', function(newOverlayLayers, oldOverlayLayers) {
-                    if(angular.equals(newOverlayLayers, oldOverlayLayers)) {
-                        isLayersControlVisible = updateLayersControl(map, mapId, isLayersControlVisible, layers.baselayers, newOverlayLayers, leafletLayers);
-                        return true;
-                    }
-
-                    // Delete layers from the array
-                    for (var name in leafletLayers.overlays) {
-                        if (!isDefined(newOverlayLayers[name]) || newOverlayLayers[name].doRefresh) {
-                            // Remove from the map if it's on it
-                            if (map.hasLayer(leafletLayers.overlays[name])) {
-                                // Safe remove when ArcGIS layers is loading.
-                                safeRemoveLayer(map, leafletLayers.overlays[name], newOverlayLayers[name].layerOptions);
-                            }
-                            // TODO: Depending on the layer type we will have to delete what's included on it
-                            delete leafletLayers.overlays[name];
-
-                            if (newOverlayLayers[name] && newOverlayLayers[name].doRefresh) {
-                                newOverlayLayers[name].doRefresh = false;
-                            }
-                        }
-                    }
-
-                    // add new overlays
-                    for (var newName in newOverlayLayers) {
-                        if (!isDefined(leafletLayers.overlays[newName])) {
-                            var testOverlayLayer = createLayer(newOverlayLayers[newName]);
-                            if (!isDefined(testOverlayLayer)) {
-                                // If the layer creation fails, continue to the next overlay
-                                continue;
-                            }
-                            leafletLayers.overlays[newName] = testOverlayLayer;
-                            if (newOverlayLayers[newName].visible === true) {
-                                safeAddLayer(map, leafletLayers.overlays[newName]);
-                            }
-                        } else {
-                            // check for the .visible property to hide/show overLayers
-                            if (newOverlayLayers[newName].visible && !map.hasLayer(leafletLayers.overlays[newName])) {
-                                safeAddLayer(map, leafletLayers.overlays[newName]);
-                            } else if (newOverlayLayers[newName].visible === false && map.hasLayer(leafletLayers.overlays[newName])) {
-                                // Safe remove when ArcGIS layers is loading.
-                                safeRemoveLayer(map, leafletLayers.overlays[newName], newOverlayLayers[newName].layerOptions);
-                            }
-                        }
-
-                        //refresh heatmap data if present
-                        if (newOverlayLayers[newName].visible && map._loaded && newOverlayLayers[newName].data && newOverlayLayers[newName].type === "heatmap") {
-                            leafletLayers.overlays[newName].setData(newOverlayLayers[newName].data);
-                            leafletLayers.overlays[newName].update();
-                        }
-                    }
-
-                    // Only add the layers switch selector control if we have more than one baselayer + overlay
-                    isLayersControlVisible = updateLayersControl(map, mapId, isLayersControlVisible, layers.baselayers, newOverlayLayers, leafletLayers);
-                }, true);
-            });
-        }
-    };
-}]);
-
-angular.module("leaflet-directive").directive('legend', ["leafletLogger", "$http", "leafletHelpers", "leafletLegendHelpers", function (leafletLogger, $http, leafletHelpers, leafletLegendHelpers) {
-        var $log = leafletLogger;
-        return {
-            restrict: "A",
-            scope: false,
-            replace: false,
-            require: 'leaflet',
-
-            link: function (scope, element, attrs, controller) {
-
-                var isArray = leafletHelpers.isArray,
-                    isDefined = leafletHelpers.isDefined,
-                    isFunction = leafletHelpers.isFunction,
-                    leafletScope = controller.getLeafletScope(),
-                    legend = leafletScope.legend;
-
-                var legendClass;
-                var position;
-                var leafletLegend;
-                var type;
-
-                leafletScope.$watch('legend', function (newLegend) {
-
-                    if (isDefined(newLegend)) {
-
-                        legendClass = newLegend.legendClass ? newLegend.legendClass : "legend";
-
-                        position = newLegend.position || 'bottomright';
-
-                        // default to arcgis
-                        type = newLegend.type || 'arcgis';
-                    }
-
-                }, true);
-
-                controller.getMap().then(function (map) {
-
-                    leafletScope.$watch('legend', function (newLegend) {
-
-                        if (!isDefined(newLegend)) {
-
-                            if (isDefined(leafletLegend)) {
-                                leafletLegend.removeFrom(map);
-                                leafletLegend= null;
-                            }
-
-                            return;
-                        }
-
-                        if (!isDefined(newLegend.url) && (type === 'arcgis') && (!isArray(newLegend.colors) || !isArray(newLegend.labels) || newLegend.colors.length !== newLegend.labels.length)) {
-
-                            $log.warn("[AngularJS - Leaflet] legend.colors and legend.labels must be set.");
-
-                            return;
-                        }
-
-                        if (isDefined(newLegend.url)) {
-
-                            $log.info("[AngularJS - Leaflet] loading legend service.");
-
-                            return;
-                        }
-
-                        if (isDefined(leafletLegend)) {
-                            leafletLegend.removeFrom(map);
-                            leafletLegend= null;
-                        }
-
-                        leafletLegend = L.control({
-                            position: position
-                        });
-                        if (type === 'arcgis') {
-                            leafletLegend.onAdd = leafletLegendHelpers.getOnAddArrayLegend(newLegend, legendClass);
-                        }
-                        leafletLegend.addTo(map);
-
-                    });
-
-                    leafletScope.$watch('legend.url', function (newURL) {
-
-                        if (!isDefined(newURL)) {
-                            return;
-                        }
-                        $http.get(newURL)
-                            .success(function (legendData) {
-
-                                if (isDefined(leafletLegend)) {
-
-                                    leafletLegendHelpers.updateLegend(leafletLegend.getContainer(), legendData, type, newURL);
-
-                                } else {
-
-                                    leafletLegend = L.control({
-                                        position: position
-                                    });
-                                    leafletLegend.onAdd = leafletLegendHelpers.getOnAddLegend(legendData, legendClass, type, newURL);
-                                    leafletLegend.addTo(map);
-                                }
-
-                                if (isDefined(legend.loadedData) && isFunction(legend.loadedData)) {
-                                    legend.loadedData();
-                                }
-                            })
-                            .error(function () {
-                                $log.warn('[AngularJS - Leaflet] legend.url not loaded.');
-                            });
-                    });
-
-                });
-            }
+      scope.$watch('icons', function() {
+        var defaultIcons = {
+          uncheck: 'fa fa-square-o',
+          check: 'fa fa-check-square-o',
+          radio: 'fa fa-dot-circle-o',
+          unradio: 'fa fa-circle-o',
+          up: 'fa fa-angle-up',
+          down: 'fa fa-angle-down',
+          open: 'fa fa-angle-double-down',
+          close: 'fa fa-angle-double-up',
+          toggleLegend: 'fa fa-pencil-square-o',
         };
-    }]);
+        if (isDefined(scope.icons)) {
+          angular.extend(defaultIcons, scope.icons);
+          angular.extend(scope.icons, defaultIcons);
+        } else {
+          scope.icons = defaultIcons;
+        }
+      });
 
-angular.module("leaflet-directive").directive('markers',
-    ["leafletLogger", "$rootScope", "$q", "leafletData", "leafletHelpers", "leafletMapDefaults", "leafletMarkersHelpers", "leafletMarkerEvents", "leafletIterators", "leafletWatchHelpers", "leafletDirectiveControlsHelpers", function (leafletLogger, $rootScope, $q, leafletData, leafletHelpers, leafletMapDefaults,
+      // Setting layer stack order.
+      attrs.order = (isDefined(attrs.order) && (attrs.order === 'normal' || attrs.order === 'reverse')) ? attrs.order : 'normal';
+      scope.order = attrs.order === 'normal';
+      scope.orderNumber = attrs.order === 'normal' ? -1 : 1;
+
+      scope.layers = layers;
+      controller.getMap().then(function(map) {
+        leafletScope.$watch('layers.baselayers', function(newBaseLayers) {
+          var baselayersArray = {};
+          leafletData.getLayers().then(function(leafletLayers) {
+            var key;
+            for (key in newBaseLayers) {
+              var layer = newBaseLayers[key];
+              layer.icon = scope.icons[map.hasLayer(leafletLayers.baselayers[key]) ? 'radio' : 'unradio'];
+              baselayersArray[key] = layer;
+            }
+
+            scope.baselayersArray = baselayersArray;
+          });
+        });
+
+        leafletScope.$watch('layers.overlays', function(newOverlayLayers) {
+          var overlaysArray = [];
+          var groupVisibleCount = {};
+          leafletData.getLayers().then(function(leafletLayers) {
+            var key;
+            for (key in newOverlayLayers) {
+              var layer = newOverlayLayers[key];
+              layer.icon = scope.icons[(layer.visible ? 'check' : 'uncheck')];
+              overlaysArray.push(layer);
+              if (!isDefined(scope.layerProperties[layer.name])) {
+                scope.layerProperties[layer.name] = {
+                  opacity: isDefined(layer.layerOptions.opacity) ? layer.layerOptions.opacity * 100 : 100,
+                  opacityControl: false,
+                  showLegend: true,
+                };
+              }
+
+              if (isDefined(layer.group)) {
+                if (!isDefined(scope.groupProperties[layer.group])) {
+                  scope.groupProperties[layer.group] = {
+                    visible: false,
+                  };
+                }
+
+                groupVisibleCount[layer.group] = isDefined(groupVisibleCount[layer.group]) ? groupVisibleCount[layer.group] : {
+                  count: 0,
+                  visibles: 0,
+                };
+                groupVisibleCount[layer.group].count++;
+                if (layer.visible) {
+                  groupVisibleCount[layer.group].visibles++;
+                }
+              }
+
+              if (isDefined(layer.index) && leafletLayers.overlays[key].setZIndex) {
+                leafletLayers.overlays[key].setZIndex(newOverlayLayers[key].index);
+              }
+            }
+
+            for (key in groupVisibleCount) {
+              scope.groupProperties[key].visible = groupVisibleCount[key].visibles === groupVisibleCount[key].count;
+            }
+
+            scope.overlaysArray = overlaysArray;
+          });
+        }, true);
+      });
+    },
+  };
+}]);
+
+angular.module('leaflet-directive').directive('layers', ["$log", "$q", "leafletData", "leafletHelpers", "leafletLayerHelpers", "leafletControlHelpers", function($log, $q, leafletData, leafletHelpers, leafletLayerHelpers, leafletControlHelpers) {
+
+  return {
+    restrict: 'A',
+    scope: false,
+    replace: false,
+    require: 'leaflet',
+    controller: ["$scope", function($scope) {
+      $scope._leafletLayers = $q.defer();
+      this.getLayers = function() {
+        return $scope._leafletLayers.promise;
+      };
+    }],
+
+    link: function(scope, element, attrs, controller) {
+      var isDefined = leafletHelpers.isDefined;
+      var leafletLayers = {};
+      var leafletScope  = controller.getLeafletScope();
+      var layers = leafletScope.layers;
+      var createLayer = leafletLayerHelpers.createLayer;
+      var safeAddLayer = leafletLayerHelpers.safeAddLayer;
+      var safeRemoveLayer = leafletLayerHelpers.safeRemoveLayer;
+      var updateLayersControl = leafletControlHelpers.updateLayersControl;
+      var isLayersControlVisible = false;
+
+      controller.getMap().then(function(map) {
+
+        // We have baselayers to add to the map
+        scope._leafletLayers.resolve(leafletLayers);
+        leafletData.setLayers(leafletLayers, attrs.id);
+
+        leafletLayers.baselayers = {};
+        leafletLayers.overlays = {};
+
+        var mapId = attrs.id;
+
+        // Setup all baselayers definitions
+        var oneVisibleLayer = false;
+        for (var layerName in layers.baselayers) {
+          var newBaseLayer = createLayer(layers.baselayers[layerName]);
+          if (!isDefined(newBaseLayer)) {
+            delete layers.baselayers[layerName];
+            continue;
+          }
+
+          leafletLayers.baselayers[layerName] = newBaseLayer;
+
+          // Only add the visible layer to the map, layer control manages the addition to the map
+          // of layers in its control
+          if (layers.baselayers[layerName].top === true) {
+            safeAddLayer(map, leafletLayers.baselayers[layerName]);
+            oneVisibleLayer = true;
+          }
+        }
+
+        // If there is no visible layer add first to the map
+        if (!oneVisibleLayer && Object.keys(leafletLayers.baselayers).length > 0) {
+          safeAddLayer(map, leafletLayers.baselayers[Object.keys(layers.baselayers)[0]]);
+        }
+
+        // Setup the Overlays
+        for (layerName in layers.overlays) {
+          //if (layers.overlays[layerName].type === 'cartodb') {
+          //
+          //}
+
+          var newOverlayLayer = createLayer(layers.overlays[layerName]);
+          if (!isDefined(newOverlayLayer)) {
+            delete layers.overlays[layerName];
+            continue;
+          }
+
+          leafletLayers.overlays[layerName] = newOverlayLayer;
+
+          // Only add the visible overlays to the map
+          if (layers.overlays[layerName].visible === true) {
+            safeAddLayer(map, leafletLayers.overlays[layerName]);
+          }
+        }
+
+        // Watch for the base layers
+        leafletScope.$watch('layers.baselayers', function(newBaseLayers, oldBaseLayers) {
+          if (angular.equals(newBaseLayers, oldBaseLayers)) {
+            isLayersControlVisible = updateLayersControl(map, mapId, isLayersControlVisible, newBaseLayers, layers.overlays, leafletLayers);
+            return true;
+          }
+
+          // Delete layers from the array
+          for (var name in leafletLayers.baselayers) {
+            if (!isDefined(newBaseLayers[name]) || newBaseLayers[name].doRefresh) {
+              // Remove from the map if it's on it
+              if (map.hasLayer(leafletLayers.baselayers[name])) {
+                map.removeLayer(leafletLayers.baselayers[name]);
+              }
+
+              delete leafletLayers.baselayers[name];
+
+              if (newBaseLayers[name] && newBaseLayers[name].doRefresh) {
+                newBaseLayers[name].doRefresh = false;
+              }
+            }
+          }
+
+          // add new layers
+          for (var newName in newBaseLayers) {
+            if (!isDefined(leafletLayers.baselayers[newName])) {
+              var testBaseLayer = createLayer(newBaseLayers[newName]);
+              if (isDefined(testBaseLayer)) {
+                leafletLayers.baselayers[newName] = testBaseLayer;
+
+                // Only add the visible layer to the map
+                if (newBaseLayers[newName].top === true) {
+                  safeAddLayer(map, leafletLayers.baselayers[newName]);
+                }
+              }
+            } else {
+              if (newBaseLayers[newName].top === true && !map.hasLayer(leafletLayers.baselayers[newName])) {
+                safeAddLayer(map, leafletLayers.baselayers[newName]);
+              } else if (newBaseLayers[newName].top === false && map.hasLayer(leafletLayers.baselayers[newName])) {
+                map.removeLayer(leafletLayers.baselayers[newName]);
+              }
+            }
+          }
+
+          //we have layers, so we need to make, at least, one active
+          var found = false;
+
+          // search for an active layer
+          for (var key in leafletLayers.baselayers) {
+            if (map.hasLayer(leafletLayers.baselayers[key])) {
+              found = true;
+              break;
+            }
+          }
+
+          // If there is no active layer make one active
+          if (!found && Object.keys(leafletLayers.baselayers).length > 0) {
+            safeAddLayer(map, leafletLayers.baselayers[Object.keys(leafletLayers.baselayers)[0]]);
+          }
+
+          // Only show the layers switch selector control if we have more than one baselayer + overlay
+          isLayersControlVisible = updateLayersControl(map, mapId, isLayersControlVisible, newBaseLayers, layers.overlays, leafletLayers);
+        }, true);
+
+        // Watch for the overlay layers
+        leafletScope.$watch('layers.overlays', function(newOverlayLayers, oldOverlayLayers) {
+          if (angular.equals(newOverlayLayers, oldOverlayLayers)) {
+            isLayersControlVisible = updateLayersControl(map, mapId, isLayersControlVisible, layers.baselayers, newOverlayLayers, leafletLayers);
+            return true;
+          }
+
+          // Delete layers from the array
+          for (var name in leafletLayers.overlays) {
+            if (!isDefined(newOverlayLayers[name]) || newOverlayLayers[name].doRefresh) {
+              // Remove from the map if it's on it
+              if (map.hasLayer(leafletLayers.overlays[name])) {
+                // Safe remove when ArcGIS layers is loading.
+                var options = isDefined(newOverlayLayers[name]) ?
+                    newOverlayLayers[name].layerOptions : null;
+                safeRemoveLayer(map, leafletLayers.overlays[name], options);
+              }
+
+              // TODO: Depending on the layer type we will have to delete what's included on it
+              delete leafletLayers.overlays[name];
+
+              if (newOverlayLayers[name] && newOverlayLayers[name].doRefresh) {
+                newOverlayLayers[name].doRefresh = false;
+              }
+            }
+          }
+
+          // add new overlays
+          for (var newName in newOverlayLayers) {
+            if (!isDefined(leafletLayers.overlays[newName])) {
+              var testOverlayLayer = createLayer(newOverlayLayers[newName]);
+              if (!isDefined(testOverlayLayer)) {
+                // If the layer creation fails, continue to the next overlay
+                continue;
+              }
+
+              leafletLayers.overlays[newName] = testOverlayLayer;
+              if (newOverlayLayers[newName].visible === true) {
+                safeAddLayer(map, leafletLayers.overlays[newName]);
+              }
+            } else {
+              // check for the .visible property to hide/show overLayers
+              if (newOverlayLayers[newName].visible && !map.hasLayer(leafletLayers.overlays[newName])) {
+                safeAddLayer(map, leafletLayers.overlays[newName]);
+              } else if (newOverlayLayers[newName].visible === false && map.hasLayer(leafletLayers.overlays[newName])) {
+                // Safe remove when ArcGIS layers is loading.
+                safeRemoveLayer(map, leafletLayers.overlays[newName], newOverlayLayers[newName].layerOptions);
+              }
+            }
+
+            //refresh heatmap data if present
+            if (newOverlayLayers[newName].visible && map._loaded && newOverlayLayers[newName].data && newOverlayLayers[newName].type === 'heatmap') {
+              leafletLayers.overlays[newName].setData(newOverlayLayers[newName].data);
+              leafletLayers.overlays[newName].update();
+            }
+          }
+
+          // Only add the layers switch selector control if we have more than one baselayer + overlay
+          isLayersControlVisible = updateLayersControl(map, mapId, isLayersControlVisible, layers.baselayers, newOverlayLayers, leafletLayers);
+        }, true);
+      });
+    },
+  };
+}]);
+
+angular.module('leaflet-directive').directive('legend', ["$log", "$http", "leafletHelpers", "leafletLegendHelpers", function($log, $http, leafletHelpers, leafletLegendHelpers) {
+
+  return {
+    restrict: 'A',
+    scope: false,
+    replace: false,
+    require: 'leaflet',
+
+    link: function(scope, element, attrs, controller) {
+
+      var isArray = leafletHelpers.isArray;
+      var isDefined = leafletHelpers.isDefined;
+      var isFunction = leafletHelpers.isFunction;
+      var leafletScope = controller.getLeafletScope();
+      var legend = leafletScope.legend;
+
+      var legendClass;
+      var position;
+      var leafletLegend;
+      var type;
+
+      leafletScope.$watch('legend', function(newLegend) {
+
+        if (isDefined(newLegend)) {
+
+          legendClass = newLegend.legendClass ? newLegend.legendClass : 'legend';
+
+          position = newLegend.position || 'bottomright';
+
+          // default to arcgis
+          type = newLegend.type || 'arcgis';
+        }
+
+      }, true);
+
+      controller.getMap().then(function(map) {
+
+        leafletScope.$watch('legend', function(newLegend) {
+
+          if (!isDefined(newLegend)) {
+
+            if (isDefined(leafletLegend)) {
+              leafletLegend.removeFrom(map);
+              leafletLegend = null;
+            }
+
+            return;
+          }
+
+          if (!isDefined(newLegend.url) && (type === 'arcgis') && (!isArray(newLegend.colors) || !isArray(newLegend.labels) || newLegend.colors.length !== newLegend.labels.length)) {
+
+            $log.warn('[AngularJS - Leaflet] legend.colors and legend.labels must be set.');
+
+            return;
+          }
+
+          if (isDefined(newLegend.url)) {
+
+            $log.info('[AngularJS - Leaflet] loading legend service.');
+
+            return;
+          }
+
+          if (isDefined(leafletLegend)) {
+            leafletLegend.removeFrom(map);
+            leafletLegend = null;
+          }
+
+          leafletLegend = L.control({
+            position: position,
+          });
+          if (type === 'arcgis') {
+            leafletLegend.onAdd = leafletLegendHelpers.getOnAddArrayLegend(newLegend, legendClass);
+          }
+
+          leafletLegend.addTo(map);
+
+        });
+
+        leafletScope.$watch('legend.url', function(newURL) {
+
+          if (!isDefined(newURL)) {
+            return;
+          }
+
+          $http.get(newURL)
+                            .success(function(legendData) {
+
+                              if (isDefined(leafletLegend)) {
+
+                                leafletLegendHelpers.updateLegend(leafletLegend.getContainer(), legendData, type, newURL);
+
+                              } else {
+
+                                leafletLegend = L.control({
+                                  position: position,
+                                });
+                                leafletLegend.onAdd = leafletLegendHelpers.getOnAddLegend(legendData, legendClass, type, newURL);
+                                leafletLegend.addTo(map);
+                              }
+
+                              if (isDefined(legend.loadedData) && isFunction(legend.loadedData)) {
+                                legend.loadedData();
+                              }
+                            })
+                            .error(function() {
+                              $log.warn('[AngularJS - Leaflet] legend.url not loaded.');
+                            });
+        });
+
+      });
+    },
+  };
+}]);
+
+angular.module('leaflet-directive').directive('markers',
+    ["$log", "$rootScope", "$q", "leafletData", "leafletHelpers", "leafletMapDefaults", "leafletMarkersHelpers", "leafletMarkerEvents", "leafletIterators", "leafletWatchHelpers", "leafletDirectiveControlsHelpers", function($log, $rootScope, $q, leafletData, leafletHelpers, leafletMapDefaults,
               leafletMarkersHelpers, leafletMarkerEvents, leafletIterators, leafletWatchHelpers,
               leafletDirectiveControlsHelpers) {
-    //less terse vars to helpers
-    var isDefined = leafletHelpers.isDefined,
-        errorHeader = leafletHelpers.errorHeader,
-        Helpers = leafletHelpers,
-        isString = leafletHelpers.isString,
-        addMarkerWatcher = leafletMarkersHelpers.addMarkerWatcher,
-        updateMarker = leafletMarkersHelpers.updateMarker,
-        listenMarkerEvents = leafletMarkersHelpers.listenMarkerEvents,
-        addMarkerToGroup = leafletMarkersHelpers.addMarkerToGroup,
-        createMarker = leafletMarkersHelpers.createMarker,
-        deleteMarker = leafletMarkersHelpers.deleteMarker,
-        $it = leafletIterators,
-        _markersWatchOptions = leafletHelpers.watchOptions,
-        maybeWatch = leafletWatchHelpers.maybeWatch,
-        extendDirectiveControls = leafletDirectiveControlsHelpers.extend,
-        $log = leafletLogger;
+      //less terse vars to helpers
+      var isDefined = leafletHelpers.isDefined;
+      var errorHeader = leafletHelpers.errorHeader;
+      var Helpers = leafletHelpers;
+      var isString = leafletHelpers.isString;
+      var addMarkerWatcher = leafletMarkersHelpers.addMarkerWatcher;
+      var updateMarker = leafletMarkersHelpers.updateMarker;
+      var listenMarkerEvents = leafletMarkersHelpers.listenMarkerEvents;
+      var addMarkerToGroup = leafletMarkersHelpers.addMarkerToGroup;
+      var createMarker = leafletMarkersHelpers.createMarker;
+      var deleteMarker = leafletMarkersHelpers.deleteMarker;
+      var $it = leafletIterators;
+      var _markersWatchOptions = leafletHelpers.watchOptions;
+      var maybeWatch = leafletWatchHelpers.maybeWatch;
+      var extendDirectiveControls = leafletDirectiveControlsHelpers.extend;
 
-    var _getLMarker = function(leafletMarkers, name, maybeLayerName){
-        if(!Object.keys(leafletMarkers).length) return;
-        if(maybeLayerName && isString(maybeLayerName)){
-            if(!leafletMarkers[maybeLayerName] || !Object.keys(leafletMarkers[maybeLayerName]).length)
-                return;
-            return leafletMarkers[maybeLayerName][name];
+      var _getLMarker = function(leafletMarkers, name, maybeLayerName) {
+        if (!Object.keys(leafletMarkers).length) return;
+        if (maybeLayerName && isString(maybeLayerName)) {
+          if (!leafletMarkers[maybeLayerName] || !Object.keys(leafletMarkers[maybeLayerName]).length)
+              return;
+          return leafletMarkers[maybeLayerName][name];
         }
+
         return leafletMarkers[name];
-    };
+      };
 
-    var _setLMarker = function(lObject, leafletMarkers, name, maybeLayerName){
-        if(maybeLayerName && isString(maybeLayerName)){
-            if(!isDefined(leafletMarkers[maybeLayerName]))
-                leafletMarkers[maybeLayerName] = {};
-            leafletMarkers[maybeLayerName][name] = lObject;
-        }
-        else
+      var _setLMarker = function(lObject, leafletMarkers, name, maybeLayerName) {
+        if (maybeLayerName && isString(maybeLayerName)) {
+          if (!isDefined(leafletMarkers[maybeLayerName]))
+              leafletMarkers[maybeLayerName] = {};
+          leafletMarkers[maybeLayerName][name] = lObject;
+        } else
             leafletMarkers[name] = lObject;
         return lObject;
-    };
+      };
 
-    var _maybeAddMarkerToLayer = function(layerName, layers, model, marker, doIndividualWatch, map){
+      var _maybeAddMarkerToLayer = function(layerName, layers, model, marker, doIndividualWatch, map) {
 
         if (!isString(layerName)) {
-            $log.error(errorHeader + ' A layername must be a string');
-            return false;
+          $log.error(errorHeader + ' A layername must be a string');
+          return false;
         }
 
         if (!isDefined(layers)) {
-            $log.error(errorHeader + ' You must add layers to the directive if the markers are going to use this functionality.');
-            return false;
+          $log.error(errorHeader + ' You must add layers to the directive if the markers are going to use this functionality.');
+          return false;
         }
 
         if (!isDefined(layers.overlays) || !isDefined(layers.overlays[layerName])) {
-            $log.error(errorHeader +' A marker can only be added to a layer of type "group"');
-            return false;
+          $log.error(errorHeader + ' A marker can only be added to a layer of type "group"');
+          return false;
         }
+
         var layerGroup = layers.overlays[layerName];
         if (!(layerGroup instanceof L.LayerGroup || layerGroup instanceof L.FeatureGroup)) {
-            $log.error(errorHeader + ' Adding a marker to an overlay needs a overlay of the type "group" or "featureGroup"');
-            return false;
+          $log.error(errorHeader + ' Adding a marker to an overlay needs a overlay of the type "group" or "featureGroup"');
+          return false;
         }
 
         // The marker goes to a correct layer group, so first of all we add it
@@ -18667,460 +17538,489 @@ angular.module("leaflet-directive").directive('markers',
         // The marker is automatically added to the map depending on the visibility
         // of the layer, so we only have to open the popup if the marker is in the map
         if (!doIndividualWatch && map.hasLayer(marker) && model.focus === true) {
-            marker.openPopup();
+          marker.openPopup();
         }
+
         return true;
-    };
-    //TODO: move to leafletMarkersHelpers??? or make a new class/function file (leafletMarkersHelpers is large already)
-    var _addMarkers = function(markersToRender, oldModels, map, layers, leafletMarkers, leafletScope,
-                               watchOptions, maybeLayerName, skips){
+      };
+
+      //TODO: move to leafletMarkersHelpers??? or make a new class/function file (leafletMarkersHelpers is large already)
+      var _addMarkers = function(mapId, markersToRender, oldModels, map, layers, leafletMarkers, leafletScope,
+                                 watchOptions, maybeLayerName, skips) {
         for (var newName in markersToRender) {
-            if(skips[newName])
-                continue;
+          if (skips[newName])
+              continue;
 
-            if (newName.search("-") !== -1) {
-                $log.error('The marker can\'t use a "-" on his key name: "' + newName + '".');
-                continue;
+          if (newName.search('-') !== -1) {
+            $log.error('The marker can\'t use a "-" on his key name: "' + newName + '".');
+            continue;
+          }
+
+          var model = Helpers.copy(markersToRender[newName]);
+          var pathToMarker = Helpers.getObjectDotPath(maybeLayerName ? [maybeLayerName, newName] : [newName]);
+          var maybeLMarker = _getLMarker(leafletMarkers, newName, maybeLayerName);
+          if (!isDefined(maybeLMarker)) {
+            //(nmccready) very important to not have model changes when lObject is changed
+            //this might be desirable in some cases but it causes two-way binding to lObject which is not ideal
+            //if it is left as the reference then all changes from oldModel vs newModel are ignored
+            //see _destroy (where modelDiff becomes meaningless if we do not copy here)
+            var marker = createMarker(model);
+            var layerName = (model ? model.layer : undefined) || maybeLayerName; //original way takes pref
+            if (!isDefined(marker)) {
+              $log.error(errorHeader + ' Received invalid data on the marker ' + newName + '.');
+              continue;
             }
 
-            var model = Helpers.copy(markersToRender[newName]);
-            var pathToMarker = Helpers.getObjectDotPath(maybeLayerName? [maybeLayerName, newName]: [newName]);
-            var maybeLMarker = _getLMarker(leafletMarkers,newName, maybeLayerName);
-            if (!isDefined(maybeLMarker)) {
-                //(nmccready) very important to not have model changes when lObject is changed
-                //this might be desirable in some cases but it causes two-way binding to lObject which is not ideal
-                //if it is left as the reference then all changes from oldModel vs newModel are ignored
-                //see _destroy (where modelDiff becomes meaningless if we do not copy here)
-                var marker = createMarker(model);
-                var layerName = (model? model.layer : undefined) || maybeLayerName; //original way takes pref
-                if (!isDefined(marker)) {
-                    $log.error(errorHeader + ' Received invalid data on the marker ' + newName + '.');
-                    continue;
-                }
-                _setLMarker(marker, leafletMarkers, newName, maybeLayerName);
+            _setLMarker(marker, leafletMarkers, newName, maybeLayerName);
 
-                // Bind message
-                if (isDefined(model.message)) {
-                    marker.bindPopup(model.message, model.popupOptions);
-                }
-
-                // Add the marker to a cluster group if needed
-                if (isDefined(model.group)) {
-                    var groupOptions = isDefined(model.groupOption) ? model.groupOption : null;
-                    addMarkerToGroup(marker, model.group, groupOptions, map);
-                }
-
-                // Show label if defined
-                if (Helpers.LabelPlugin.isLoaded() && isDefined(model.label) && isDefined(model.label.message)) {
-                    marker.bindLabel(model.label.message, model.label.options);
-                }
-
-                // Check if the marker should be added to a layer
-                if (isDefined(model) && (isDefined(model.layer) || isDefined(maybeLayerName))){
-
-                    var pass = _maybeAddMarkerToLayer(layerName, layers, model, marker,
-                        watchOptions.individual.doWatch, map);
-                    if(!pass)
-                        continue; //something went wrong move on in the loop
-                } else if (!isDefined(model.group)) {
-                    // We do not have a layer attr, so the marker goes to the map layer
-                    map.addLayer(marker);
-                    if (!watchOptions.individual.doWatch && model.focus === true) {
-                        marker.openPopup();
-                    }
-                }
-
-                if (watchOptions.individual.doWatch) {
-                    addMarkerWatcher(marker, pathToMarker, leafletScope, layers, map,
-                        watchOptions.individual.isDeep);
-                }
-
-                listenMarkerEvents(marker, model, leafletScope, watchOptions.individual.doWatch, map);
-                leafletMarkerEvents.bindEvents(marker, pathToMarker, model, leafletScope, layerName);
+            // Bind message
+            if (isDefined(model.message)) {
+              marker.bindPopup(model.message, model.popupOptions);
             }
-            else {
-                var oldModel = isDefined(oldModel)? oldModels[newName] : undefined;
-                updateMarker(model, oldModel, maybeLMarker, pathToMarker, leafletScope, layers, map);
+
+            // Add the marker to a cluster group if needed
+            if (isDefined(model.group)) {
+              var groupOptions = isDefined(model.groupOption) ? model.groupOption : null;
+              addMarkerToGroup(marker, model.group, groupOptions, map);
             }
+
+            // Show label if defined
+            if (Helpers.LabelPlugin.isLoaded() && isDefined(model.label) && isDefined(model.label.message)) {
+              marker.bindLabel(model.label.message, model.label.options);
+            }
+
+            // Check if the marker should be added to a layer
+            if (isDefined(model) && (isDefined(model.layer) || isDefined(maybeLayerName))) {
+
+              var pass = _maybeAddMarkerToLayer(layerName, layers, model, marker,
+                  watchOptions.individual.doWatch, map);
+              if (!pass)
+                  continue; //something went wrong move on in the loop
+            } else if (!isDefined(model.group)) {
+              // We do not have a layer attr, so the marker goes to the map layer
+              map.addLayer(marker);
+              if (!watchOptions.individual.doWatch && model.focus === true) {
+                marker.openPopup();
+              }
+            }
+
+            if (watchOptions.individual.doWatch) {
+              addMarkerWatcher(marker, pathToMarker, leafletScope, layers, map,
+                  watchOptions.individual.isDeep);
+            }
+
+            listenMarkerEvents(marker, model, leafletScope, watchOptions.individual.doWatch, map);
+            leafletMarkerEvents.bindEvents(mapId, marker, pathToMarker, model, leafletScope, layerName);
+          }          else {
+            var oldModel = isDefined(oldModel) ? oldModels[newName] : undefined;
+            updateMarker(model, oldModel, maybeLMarker, pathToMarker, leafletScope, layers, map);
+          }
         }
-    };
-    var _seeWhatWeAlreadyHave = function(markerModels, oldMarkerModels, lMarkers, isEqual, cb){
-        var hasLogged = false,
-            equals = false,
-            oldMarker,
-            newMarker;
+      };
+
+      var _seeWhatWeAlreadyHave = function(markerModels, oldMarkerModels, lMarkers, isEqual, cb) {
+        var hasLogged = false;
+        var equals = false;
+        var oldMarker;
+        var newMarker;
 
         var doCheckOldModel =  isDefined(oldMarkerModels);
         for (var name in lMarkers) {
-            if(!hasLogged) {
-                $log.debug(errorHeader + "[markers] destroy: ");
-                hasLogged = true;
-            }
+          if (!hasLogged) {
+            $log.debug(errorHeader + '[markers] destroy: ');
+            hasLogged = true;
+          }
 
-            if(doCheckOldModel){
-                //might want to make the option (in watch options) to disable deep checking
-                //ie the options to only check !== (reference check) instead of angular.equals (slow)
-                newMarker = markerModels[name];
-                oldMarker = oldMarkerModels[name];
-                equals = angular.equals(newMarker,oldMarker) && isEqual;
-            }
-            if (!isDefined(markerModels) ||
-                !Object.keys(markerModels).length ||
-                !isDefined(markerModels[name]) ||
-                !Object.keys(markerModels[name]).length ||
-                equals) {
-                if(cb && Helpers.isFunction(cb))
-                    cb(newMarker, oldMarker, name);
-            }
+          if (doCheckOldModel) {
+            //might want to make the option (in watch options) to disable deep checking
+            //ie the options to only check !== (reference check) instead of angular.equals (slow)
+            newMarker = markerModels[name];
+            oldMarker = oldMarkerModels[name];
+            equals = angular.equals(newMarker, oldMarker) && isEqual;
+          }
+
+          if (!isDefined(markerModels) ||
+              !Object.keys(markerModels).length ||
+              !isDefined(markerModels[name]) ||
+              !Object.keys(markerModels[name]).length ||
+              equals) {
+            if (cb && Helpers.isFunction(cb))
+                cb(newMarker, oldMarker, name);
+          }
         }
-    };
-    var _destroy = function(markerModels, oldMarkerModels, lMarkers, map, layers){
-        _seeWhatWeAlreadyHave(markerModels, oldMarkerModels, lMarkers, false,
-            function(newMarker, oldMarker, lMarkerName){
-                $log.debug(errorHeader + '[marker] is deleting marker: ' + lMarkerName);
-                deleteMarker(lMarkers[lMarkerName], map, layers);
-                delete lMarkers[lMarkerName];
-            });
-    };
+      };
 
-    var _getNewModelsToSkipp =  function(newModels, oldModels, lMarkers){
+      var _destroy = function(markerModels, oldMarkerModels, lMarkers, map, layers) {
+        _seeWhatWeAlreadyHave(markerModels, oldMarkerModels, lMarkers, false,
+            function(newMarker, oldMarker, lMarkerName) {
+              $log.debug(errorHeader + '[marker] is deleting marker: ' + lMarkerName);
+              deleteMarker(lMarkers[lMarkerName], map, layers);
+              delete lMarkers[lMarkerName];
+            });
+      };
+
+      var _getNewModelsToSkipp =  function(newModels, oldModels, lMarkers) {
         var skips = {};
         _seeWhatWeAlreadyHave(newModels, oldModels, lMarkers, true,
-            function(newMarker, oldMarker, lMarkerName){
-                $log.debug(errorHeader + '[marker] is already rendered, marker: ' + lMarkerName);
-                skips[lMarkerName] = newMarker;
+            function(newMarker, oldMarker, lMarkerName) {
+              $log.debug(errorHeader + '[marker] is already rendered, marker: ' + lMarkerName);
+              skips[lMarkerName] = newMarker;
             });
+
         return skips;
-    };
+      };
 
-    return {
-        restrict: "A",
+      return {
+        restrict: 'A',
         scope: false,
         replace: false,
         require: ['leaflet', '?layers'],
 
         link: function(scope, element, attrs, controller) {
-            var mapController = controller[0],
-                leafletScope  = mapController.getLeafletScope();
+          var mapController = controller[0];
+          var leafletScope  = mapController.getLeafletScope();
 
-            mapController.getMap().then(function(map) {
-                var leafletMarkers = {}, getLayers;
+          mapController.getMap().then(function(map) {
+            var leafletMarkers = {};
+            var getLayers;
 
-                // If the layers attribute is used, we must wait until the layers are created
-                if (isDefined(controller[1])) {
-                    getLayers = controller[1].getLayers;
-                } else {
-                    getLayers = function() {
-                        var deferred = $q.defer();
-                        deferred.resolve();
-                        return deferred.promise;
-                    };
-                }
-
-                var watchOptions = leafletScope.markersWatchOptions || _markersWatchOptions;
-
-                // backwards compat
-                if(isDefined(attrs.watchMarkers))
-                    watchOptions.doWatch = watchOptions.individual.doWatch =
-                        (!isDefined(attrs.watchMarkers) || Helpers.isTruthy(attrs.watchMarkers));
-
-                var isNested = (isDefined(attrs.markersNested) && Helpers.isTruthy(attrs.markersNested));
-
-                getLayers().then(function(layers) {
-                    var _clean = function(models, oldModels){
-                        if(isNested) {
-                            $it.each(models, function(markerToMaybeDel, layerName) {
-                                var oldModel = isDefined(oldModel)? oldModels[layerName] : undefined;
-                                _destroy(markerToMaybeDel, oldModel, leafletMarkers[layerName], map, layers);
-                            });
-                            return;
-                        }
-                        _destroy(models, oldModels, leafletMarkers, map, layers);
-                    };
-
-                    var _create = function(models, oldModels){
-                        _clean(models, oldModels);
-                        var skips = null;
-                        if(isNested) {
-                            $it.each(models, function(markersToAdd, layerName) {
-                                var oldModel = isDefined(oldModel)? oldModels[layerName] : undefined;
-                                skips = _getNewModelsToSkipp(models[layerName], oldModel, leafletMarkers[layerName]);
-                                _addMarkers(markersToAdd, oldModels, map, layers, leafletMarkers, leafletScope,
-                                    watchOptions, layerName, skips);
-                            });
-                            return;
-                        }
-                        skips = _getNewModelsToSkipp(models, oldModels, leafletMarkers);
-                        _addMarkers(models, oldModels, map, layers, leafletMarkers, leafletScope,
-                            watchOptions, undefined, skips);
-                    };
-                    extendDirectiveControls(attrs.id, 'markers', _create, _clean);
-                    leafletData.setMarkers(leafletMarkers, attrs.id);
-
-                    maybeWatch(leafletScope,'markers', watchOptions, function(newMarkers, oldMarkers){
-                        _create(newMarkers, oldMarkers);
-                    });
-                });
-            });
-        }
-    };
-}]);
-
-angular.module("leaflet-directive").directive('maxbounds', ["leafletLogger", "leafletMapDefaults", "leafletBoundsHelpers", "leafletHelpers", function (leafletLogger, leafletMapDefaults, leafletBoundsHelpers, leafletHelpers) {
-    // var $log = leafletLogger;
-    return {
-        restrict: "A",
-        scope: false,
-        replace: false,
-        require: 'leaflet',
-
-        link: function(scope, element, attrs, controller) {
-            var leafletScope  = controller.getLeafletScope(),
-                isValidBounds = leafletBoundsHelpers.isValidBounds,
-                isNumber = leafletHelpers.isNumber;
-
-
-            controller.getMap().then(function(map) {
-                leafletScope.$watch("maxbounds", function (maxbounds) {
-                    if (!isValidBounds(maxbounds)) {
-                        // Unset any previous maxbounds
-                        map.setMaxBounds();
-                        return;
-                    }
-
-                    var leafletBounds = leafletBoundsHelpers.createLeafletBounds(maxbounds);
-                    if(isNumber(maxbounds.pad)) {
-                      leafletBounds = leafletBounds.pad(maxbounds.pad);
-                    }
-
-                    map.setMaxBounds(leafletBounds);
-                    if (!attrs.center && !attrs.lfCenter) {
-                        map.fitBounds(leafletBounds);
-                    }
-                });
-            });
-        }
-    };
-}]);
-
-angular.module("leaflet-directive").directive('paths', ["leafletLogger", "$q", "leafletData", "leafletMapDefaults", "leafletHelpers", "leafletPathsHelpers", "leafletEvents", function (leafletLogger, $q, leafletData, leafletMapDefaults, leafletHelpers, leafletPathsHelpers, leafletEvents) {
-    var $log = leafletLogger;
-    return {
-        restrict: "A",
-        scope: false,
-        replace: false,
-        require: ['leaflet', '?layers'],
-
-        link: function(scope, element, attrs, controller) {
-            var mapController = controller[0],
-                isDefined = leafletHelpers.isDefined,
-                isString = leafletHelpers.isString,
-                leafletScope  = mapController.getLeafletScope(),
-                paths     = leafletScope.paths,
-                createPath = leafletPathsHelpers.createPath,
-                bindPathEvents = leafletEvents.bindPathEvents,
-                setPathOptions = leafletPathsHelpers.setPathOptions;
-
-            mapController.getMap().then(function(map) {
-                var defaults = leafletMapDefaults.getDefaults(attrs.id),
-                    getLayers;
-
-                // If the layers attribute is used, we must wait until the layers are created
-                if (isDefined(controller[1])) {
-                    getLayers = controller[1].getLayers;
-                } else {
-                    getLayers = function() {
-                        var deferred = $q.defer();
-                        deferred.resolve();
-                        return deferred.promise;
-                    };
-                }
-
-                if (!isDefined(paths)) {
-                    return;
-                }
-
-                getLayers().then(function(layers) {
-
-                    var leafletPaths = {};
-                    leafletData.setPaths(leafletPaths, attrs.id);
-
-                    // Should we watch for every specific marker on the map?
-                    var shouldWatch = (!isDefined(attrs.watchPaths) || attrs.watchPaths === 'true');
-
-                    // Function for listening every single path once created
-                    var watchPathFn = function(leafletPath, name) {
-                        var clearWatch = leafletScope.$watch("paths[\""+name+"\"]", function(pathData, old) {
-                            if (!isDefined(pathData)) {
-                                if (isDefined(old.layer)) {
-                                    for (var i in layers.overlays) {
-                                        var overlay = layers.overlays[i];
-                                        overlay.removeLayer(leafletPath);
-                                    }
-                                }
-                                map.removeLayer(leafletPath);
-                                clearWatch();
-                                return;
-                            }
-                            setPathOptions(leafletPath, pathData.type, pathData);
-                        }, true);
-                    };
-
-                    leafletScope.$watchCollection("paths", function (newPaths) {
-
-                        // Delete paths (by name) from the array
-                        for (var name in leafletPaths) {
-                            if (!isDefined(newPaths[name])) {
-                                map.removeLayer(leafletPaths[name]);
-                                delete leafletPaths[name];
-                            }
-                        }
-
-                        // Create the new paths
-                        for (var newName in newPaths) {
-                            if (newName.search('\\$') === 0) {
-                                continue;
-                            }
-                            if (newName.search("-") !== -1) {
-                                $log.error('[AngularJS - Leaflet] The path name "' + newName + '" is not valid. It must not include "-" and a number.');
-                                continue;
-                            }
-
-                            if (!isDefined(leafletPaths[newName])) {
-                                var pathData = newPaths[newName];
-                                var newPath = createPath(newName, newPaths[newName], defaults);
-
-                                // bind popup if defined
-                                if (isDefined(newPath) && isDefined(pathData.message)) {
-                                    newPath.bindPopup(pathData.message, pathData.popupOptions);
-                                }
-
-                                // Show label if defined
-                                if (leafletHelpers.LabelPlugin.isLoaded() && isDefined(pathData.label) && isDefined(pathData.label.message)) {
-                                    newPath.bindLabel(pathData.label.message, pathData.label.options);
-                                }
-
-                                // Check if the marker should be added to a layer
-                                if (isDefined(pathData) && isDefined(pathData.layer)) {
-
-                                    if (!isString(pathData.layer)) {
-                                        $log.error('[AngularJS - Leaflet] A layername must be a string');
-                                        continue;
-                                    }
-                                    if (!isDefined(layers)) {
-                                        $log.error('[AngularJS - Leaflet] You must add layers to the directive if the markers are going to use this functionality.');
-                                        continue;
-                                    }
-
-                                    if (!isDefined(layers.overlays) || !isDefined(layers.overlays[pathData.layer])) {
-                                        $log.error('[AngularJS - Leaflet] A path can only be added to a layer of type "group"');
-                                        continue;
-                                    }
-                                    var layerGroup = layers.overlays[pathData.layer];
-                                    if (!(layerGroup instanceof L.LayerGroup || layerGroup instanceof L.FeatureGroup)) {
-                                        $log.error('[AngularJS - Leaflet] Adding a path to an overlay needs a overlay of the type "group" or "featureGroup"');
-                                        continue;
-                                    }
-
-                                    // Listen for changes on the new path
-                                    leafletPaths[newName] = newPath;
-                                    // The path goes to a correct layer group, so first of all we add it
-                                    layerGroup.addLayer(newPath);
-
-                                    if (shouldWatch) {
-                                        watchPathFn(newPath, newName);
-                                    } else {
-                                        setPathOptions(newPath, pathData.type, pathData);
-                                    }
-                                } else if (isDefined(newPath)) {
-                                    // Listen for changes on the new path
-                                    leafletPaths[newName] = newPath;
-                                    map.addLayer(newPath);
-
-                                    if (shouldWatch) {
-                                        watchPathFn(newPath, newName);
-                                    } else {
-                                        setPathOptions(newPath, pathData.type, pathData);
-                                    }
-                                }
-
-                                bindPathEvents(newPath, newName, pathData, leafletScope);
-                            }
-                        }
-                    });
-                });
-            });
-        }
-    };
-}]);
-
-angular.module("leaflet-directive").directive('tiles', ["leafletLogger", "leafletData", "leafletMapDefaults", "leafletHelpers", function (leafletLogger, leafletData, leafletMapDefaults, leafletHelpers) {
-    var $log = leafletLogger;
-    return {
-        restrict: "A",
-        scope: false,
-        replace: false,
-        require: 'leaflet',
-
-        link: function(scope, element, attrs, controller) {
-            var isDefined = leafletHelpers.isDefined,
-                leafletScope  = controller.getLeafletScope(),
-                tiles = leafletScope.tiles;
-
-            if (!isDefined(tiles) ||  !isDefined(tiles.url)) {
-                $log.warn("[AngularJS - Leaflet] The 'tiles' definition doesn't have the 'url' property.");
-                return;
+            // If the layers attribute is used, we must wait until the layers are created
+            if (isDefined(controller[1])) {
+              getLayers = controller[1].getLayers;
+            } else {
+              getLayers = function() {
+                var deferred = $q.defer();
+                deferred.resolve();
+                return deferred.promise;
+              };
             }
 
-            controller.getMap().then(function(map) {
-                var defaults = leafletMapDefaults.getDefaults(attrs.id);
-                var tileLayerObj;
-                leafletScope.$watch("tiles", function(tiles) {
-                    var tileLayerOptions = defaults.tileLayerOptions;
-                    var tileLayerUrl = defaults.tileLayer;
+            var watchOptions = leafletScope.markersWatchOptions || _markersWatchOptions;
 
-                    // If no valid tiles are in the scope, remove the last layer
-                    if (!isDefined(tiles.url) && isDefined(tileLayerObj)) {
-                        map.removeLayer(tileLayerObj);
-                        return;
-                    }
+            // backwards compat
+            if (isDefined(attrs.watchMarkers))
+                watchOptions.doWatch = watchOptions.individual.doWatch =
+                    (!isDefined(attrs.watchMarkers) || Helpers.isTruthy(attrs.watchMarkers));
 
-                    // No leafletTiles object defined yet
-                    if (!isDefined(tileLayerObj)) {
-                        if (isDefined(tiles.options)) {
-                            angular.copy(tiles.options, tileLayerOptions);
-                        }
+            var isNested = (isDefined(attrs.markersNested) && Helpers.isTruthy(attrs.markersNested));
 
-                        if (isDefined(tiles.url)) {
-                            tileLayerUrl = tiles.url;
-                        }
+            getLayers().then(function(layers) {
+              var _clean = function(models, oldModels) {
+                if (isNested) {
+                  $it.each(models, function(markerToMaybeDel, layerName) {
+                    var oldModel = isDefined(oldModel) ? oldModels[layerName] : undefined;
+                    _destroy(markerToMaybeDel, oldModel, leafletMarkers[layerName], map, layers);
+                  });
 
-                        tileLayerObj = L.tileLayer(tileLayerUrl, tileLayerOptions);
-                        tileLayerObj.addTo(map);
-                        leafletData.setTiles(tileLayerObj, attrs.id);
-                        return;
-                    }
+                  return;
+                }
 
-                    // If the options of the tilelayer is changed, we need to redraw the layer
-                    if (isDefined(tiles.url) && isDefined(tiles.options) && !angular.equals(tiles.options, tileLayerOptions)) {
-                        map.removeLayer(tileLayerObj);
-                        tileLayerOptions = defaults.tileLayerOptions;
-                        angular.copy(tiles.options, tileLayerOptions);
-                        tileLayerUrl = tiles.url;
-                        tileLayerObj = L.tileLayer(tileLayerUrl, tileLayerOptions);
-                        tileLayerObj.addTo(map);
-                        leafletData.setTiles(tileLayerObj, attrs.id);
-                        return;
-                    }
+                _destroy(models, oldModels, leafletMarkers, map, layers);
+              };
 
-                    // Only the URL of the layer is changed, update the tiles object
-                    if (isDefined(tiles.url)) {
-                        tileLayerObj.setUrl(tiles.url);
-                    }
-                }, true);
+              var _create = function(models, oldModels) {
+                _clean(models, oldModels);
+                var skips = null;
+                if (isNested) {
+                  $it.each(models, function(markersToAdd, layerName) {
+                    var oldModel = isDefined(oldModel) ? oldModels[layerName] : undefined;
+                    skips = _getNewModelsToSkipp(models[layerName], oldModel, leafletMarkers[layerName]);
+                    _addMarkers(attrs.id, markersToAdd, oldModels, map, layers, leafletMarkers, leafletScope,
+                        watchOptions, layerName, skips);
+                  });
+
+                  return;
+                }
+
+                skips = _getNewModelsToSkipp(models, oldModels, leafletMarkers);
+                _addMarkers(attrs.id, models, oldModels, map, layers, leafletMarkers, leafletScope,
+                    watchOptions, undefined, skips);
+              };
+
+              extendDirectiveControls(attrs.id, 'markers', _create, _clean);
+              leafletData.setMarkers(leafletMarkers, attrs.id);
+
+              maybeWatch(leafletScope, 'markers', watchOptions, function(newMarkers, oldMarkers) {
+                _create(newMarkers, oldMarkers);
+              });
             });
+          });
+        },
+      };
+    }]);
+
+angular.module('leaflet-directive').directive('maxbounds', ["$log", "leafletMapDefaults", "leafletBoundsHelpers", "leafletHelpers", function($log, leafletMapDefaults, leafletBoundsHelpers, leafletHelpers) {
+
+  return {
+    restrict: 'A',
+    scope: false,
+    replace: false,
+    require: 'leaflet',
+
+    link: function(scope, element, attrs, controller) {
+      var leafletScope  = controller.getLeafletScope();
+      var isValidBounds = leafletBoundsHelpers.isValidBounds;
+      var isNumber = leafletHelpers.isNumber;
+
+      controller.getMap().then(function(map) {
+        leafletScope.$watch('maxbounds', function(maxbounds) {
+          if (!isValidBounds(maxbounds)) {
+            // Unset any previous maxbounds
+            map.setMaxBounds();
+            return;
+          }
+
+          var leafletBounds = leafletBoundsHelpers.createLeafletBounds(maxbounds);
+          if (isNumber(maxbounds.pad)) {
+            leafletBounds = leafletBounds.pad(maxbounds.pad);
+          }
+
+          map.setMaxBounds(leafletBounds);
+          if (!attrs.center && !attrs.lfCenter) {
+            map.fitBounds(leafletBounds);
+          }
+        });
+      });
+    },
+  };
+}]);
+
+angular.module('leaflet-directive').directive('paths', ["$log", "$q", "leafletData", "leafletMapDefaults", "leafletHelpers", "leafletPathsHelpers", "leafletPathEvents", function($log, $q, leafletData, leafletMapDefaults, leafletHelpers, leafletPathsHelpers, leafletPathEvents) {
+
+  return {
+    restrict: 'A',
+    scope: false,
+    replace: false,
+    require: ['leaflet', '?layers'],
+
+    link: function(scope, element, attrs, controller) {
+      var mapController = controller[0];
+      var isDefined = leafletHelpers.isDefined;
+      var isString = leafletHelpers.isString;
+      var leafletScope  = mapController.getLeafletScope();
+      var paths     = leafletScope.paths;
+      var createPath = leafletPathsHelpers.createPath;
+      var bindPathEvents = leafletPathEvents.bindPathEvents;
+      var setPathOptions = leafletPathsHelpers.setPathOptions;
+
+      mapController.getMap().then(function(map) {
+        var defaults = leafletMapDefaults.getDefaults(attrs.id);
+        var getLayers;
+
+        // If the layers attribute is used, we must wait until the layers are created
+        if (isDefined(controller[1])) {
+          getLayers = controller[1].getLayers;
+        } else {
+          getLayers = function() {
+            var deferred = $q.defer();
+            deferred.resolve();
+            return deferred.promise;
+          };
         }
-    };
+
+        if (!isDefined(paths)) {
+          return;
+        }
+
+        getLayers().then(function(layers) {
+
+          var leafletPaths = {};
+          leafletData.setPaths(leafletPaths, attrs.id);
+
+          // Should we watch for every specific marker on the map?
+          var shouldWatch = (!isDefined(attrs.watchPaths) || attrs.watchPaths === 'true');
+
+          // Function for listening every single path once created
+          var watchPathFn = function(leafletPath, name) {
+            var clearWatch = leafletScope.$watch('paths["' + name + '"]', function(pathData, old) {
+              if (!isDefined(pathData)) {
+                if (isDefined(old.layer)) {
+                  for (var i in layers.overlays) {
+                    var overlay = layers.overlays[i];
+                    overlay.removeLayer(leafletPath);
+                  }
+                }
+
+                map.removeLayer(leafletPath);
+                clearWatch();
+                return;
+              }
+
+              setPathOptions(leafletPath, pathData.type, pathData);
+            }, true);
+          };
+
+          leafletScope.$watchCollection('paths', function(newPaths) {
+
+            // Delete paths (by name) from the array
+            for (var name in leafletPaths) {
+              if (!isDefined(newPaths[name])) {
+                map.removeLayer(leafletPaths[name]);
+                delete leafletPaths[name];
+              }
+            }
+
+            // Create the new paths
+            for (var newName in newPaths) {
+              if (newName.search('\\$') === 0) {
+                continue;
+              }
+
+              if (newName.search('-') !== -1) {
+                $log.error('[AngularJS - Leaflet] The path name "' + newName + '" is not valid. It must not include "-" and a number.');
+                continue;
+              }
+
+              if (!isDefined(leafletPaths[newName])) {
+                var pathData = newPaths[newName];
+                var newPath = createPath(newName, newPaths[newName], defaults);
+
+                // bind popup if defined
+                if (isDefined(newPath) && isDefined(pathData.message)) {
+                  newPath.bindPopup(pathData.message, pathData.popupOptions);
+                }
+
+                // Show label if defined
+                if (leafletHelpers.LabelPlugin.isLoaded() && isDefined(pathData.label) && isDefined(pathData.label.message)) {
+                  newPath.bindLabel(pathData.label.message, pathData.label.options);
+                }
+
+                // Check if the marker should be added to a layer
+                if (isDefined(pathData) && isDefined(pathData.layer)) {
+
+                  if (!isString(pathData.layer)) {
+                    $log.error('[AngularJS - Leaflet] A layername must be a string');
+                    continue;
+                  }
+
+                  if (!isDefined(layers)) {
+                    $log.error('[AngularJS - Leaflet] You must add layers to the directive if the markers are going to use this functionality.');
+                    continue;
+                  }
+
+                  if (!isDefined(layers.overlays) || !isDefined(layers.overlays[pathData.layer])) {
+                    $log.error('[AngularJS - Leaflet] A path can only be added to a layer of type "group"');
+                    continue;
+                  }
+
+                  var layerGroup = layers.overlays[pathData.layer];
+                  if (!(layerGroup instanceof L.LayerGroup || layerGroup instanceof L.FeatureGroup)) {
+                    $log.error('[AngularJS - Leaflet] Adding a path to an overlay needs a overlay of the type "group" or "featureGroup"');
+                    continue;
+                  }
+
+                  // Listen for changes on the new path
+                  leafletPaths[newName] = newPath;
+
+                  // The path goes to a correct layer group, so first of all we add it
+                  layerGroup.addLayer(newPath);
+
+                  if (shouldWatch) {
+                    watchPathFn(newPath, newName);
+                  } else {
+                    setPathOptions(newPath, pathData.type, pathData);
+                  }
+                } else if (isDefined(newPath)) {
+                  // Listen for changes on the new path
+                  leafletPaths[newName] = newPath;
+                  map.addLayer(newPath);
+
+                  if (shouldWatch) {
+                    watchPathFn(newPath, newName);
+                  } else {
+                    setPathOptions(newPath, pathData.type, pathData);
+                  }
+                }
+
+                bindPathEvents(attrs.id, newPath, newName, pathData, leafletScope);
+              }
+            }
+          });
+        });
+      });
+    },
+  };
+}]);
+
+angular.module('leaflet-directive').directive('tiles', ["$log", "leafletData", "leafletMapDefaults", "leafletHelpers", function($log, leafletData, leafletMapDefaults, leafletHelpers) {
+
+  return {
+    restrict: 'A',
+    scope: false,
+    replace: false,
+    require: 'leaflet',
+
+    link: function(scope, element, attrs, controller) {
+      var isDefined = leafletHelpers.isDefined;
+      var leafletScope  = controller.getLeafletScope();
+      var tiles = leafletScope.tiles;
+
+      if (!isDefined(tiles) ||  !isDefined(tiles.url)) {
+        $log.warn('[AngularJS - Leaflet] The \'tiles\' definition doesn\'t have the \'url\' property.');
+        return;
+      }
+
+      controller.getMap().then(function(map) {
+        var defaults = leafletMapDefaults.getDefaults(attrs.id);
+        var tileLayerObj;
+        leafletScope.$watch('tiles', function(tiles, oldtiles) {
+          var tileLayerOptions = defaults.tileLayerOptions;
+          var tileLayerUrl = defaults.tileLayer;
+
+          // If no valid tiles are in the scope, remove the last layer
+          if (!isDefined(tiles.url) && isDefined(tileLayerObj)) {
+            map.removeLayer(tileLayerObj);
+            return;
+          }
+
+          // No leafletTiles object defined yet
+          if (!isDefined(tileLayerObj)) {
+            if (isDefined(tiles.options)) {
+              angular.copy(tiles.options, tileLayerOptions);
+            }
+
+            if (isDefined(tiles.url)) {
+              tileLayerUrl = tiles.url;
+            }
+
+            if (tiles.type === 'wms') {
+              tileLayerObj = L.tileLayer.wms(tileLayerUrl, tileLayerOptions);
+            } else {
+              tileLayerObj = L.tileLayer(tileLayerUrl, tileLayerOptions);
+            }
+
+            tileLayerObj.addTo(map);
+            leafletData.setTiles(tileLayerObj, attrs.id);
+            return;
+          }
+
+          // If the options of the tilelayer is changed, we need to redraw the layer
+          if (isDefined(tiles.url) && isDefined(tiles.options) &&
+              (tiles.type !== oldtiles.type || !angular.equals(tiles.options, tileLayerOptions))) {
+            map.removeLayer(tileLayerObj);
+            tileLayerOptions = defaults.tileLayerOptions;
+            angular.copy(tiles.options, tileLayerOptions);
+            tileLayerUrl = tiles.url;
+
+            if (tiles.type === 'wms') {
+              tileLayerObj = L.tileLayer.wms(tileLayerUrl, tileLayerOptions);
+            } else {
+              tileLayerObj = L.tileLayer(tileLayerUrl, tileLayerOptions);
+            }
+
+            tileLayerObj.addTo(map);
+            leafletData.setTiles(tileLayerObj, attrs.id);
+            return;
+          }
+
+          // Only the URL of the layer is changed, update the tiles object
+          if (isDefined(tiles.url)) {
+            tileLayerObj.setUrl(tiles.url);
+          }
+        }, true);
+      });
+    },
+  };
 }]);
 
 /*
@@ -19128,585 +18028,619 @@ angular.module("leaflet-directive").directive('tiles', ["leafletLogger", "leafle
     instead. (when watches are disabled)
     NgAnnotate does not work here due to the functional creation
 */
-['markers', 'geojson'].forEach(function(name){
-    angular.module("leaflet-directive").directive(name + 'WatchOptions', [
-        '$log', '$rootScope', '$q', 'leafletData', 'leafletHelpers',
-        function (leafletLogger, $rootScope, $q, leafletData, leafletHelpers) {
+['markers', 'geojson'].forEach(function(name) {
+  angular.module('leaflet-directive').directive(name + 'WatchOptions', [
+      '$log', '$rootScope', '$q', 'leafletData', 'leafletHelpers',
+        function($log, $rootScope, $q, leafletData, leafletHelpers) {
 
-            var isDefined = leafletHelpers.isDefined,
-                errorHeader = leafletHelpers.errorHeader,
-                isObject = leafletHelpers.isObject,
-                _watchOptions = leafletHelpers.watchOptions,
-                $log = leafletLogger;
+          var isDefined = leafletHelpers.isDefined,
+              errorHeader = leafletHelpers.errorHeader,
+              isObject = leafletHelpers.isObject,
+              _watchOptions = leafletHelpers.watchOptions;
 
-            return {
-                restrict: "A",
-                scope: false,
-                replace: false,
-                require: ['leaflet'],
+          return {
+            restrict: 'A',
+            scope: false,
+            replace: false,
+            require: ['leaflet'],
 
-                link: function (scope, element, attrs, controller) {
-                    var mapController = controller[0],
-                        leafletScope = mapController.getLeafletScope();
+            link: function(scope, element, attrs, controller) {
+              var mapController = controller[0],
+                  leafletScope = mapController.getLeafletScope();
 
-                    mapController.getMap().then(function () {
-                        if (isDefined(scope[name + 'WatchOptions'])) {
-                            if (isObject(scope[name + 'WatchOptions']))
-                                angular.extend(_watchOptions, scope[name + 'WatchOptions']);
-                            else
-                                $log.error(errorHeader + '[' + name + 'WatchOptions] is not an object');
-                            leafletScope[name + 'WatchOptions'] = _watchOptions;
-                        }
-                    });
+              mapController.getMap().then(function() {
+                if (isDefined(scope[name + 'WatchOptions'])) {
+                  if (isObject(scope[name + 'WatchOptions']))
+                      angular.extend(_watchOptions, scope[name + 'WatchOptions']);
+                  else
+                      $log.error(errorHeader + '[' + name + 'WatchOptions] is not an object');
+                  leafletScope[name + 'WatchOptions'] = _watchOptions;
                 }
-            };
-    }]);
+              });
+            },
+          };
+        },]);
 });
 
-angular.module("leaflet-directive")
-.factory('leafletEventsHelpersFactory', ["$rootScope", "$q", "leafletLogger", "leafletHelpers", function ($rootScope, $q, leafletLogger, leafletHelpers) {
-        var safeApply = leafletHelpers.safeApply,
-            isDefined = leafletHelpers.isDefined,
-            isObject = leafletHelpers.isObject,
-            isArray = leafletHelpers.isArray,
-            errorHeader = leafletHelpers.errorHeader,
-            $log = leafletLogger;;
+angular.module('leaflet-directive')
+.factory('LeafletEventsHelpersFactory', ["$rootScope", "$q", "$log", "leafletHelpers", function($rootScope, $q, $log, leafletHelpers) {
+  var safeApply = leafletHelpers.safeApply;
+  var isDefined = leafletHelpers.isDefined;
+  var isObject = leafletHelpers.isObject;
+  var isArray = leafletHelpers.isArray;
+  var errorHeader = leafletHelpers.errorHeader;
 
-        var EventsHelper = function(rootBroadcastName, lObjectType){
-            this.rootBroadcastName = rootBroadcastName;
-            //used to path/key out certain properties based on the type , "markers", "geojson"
-            this.lObjectType = lObjectType;
-        };
+  var EventsHelper = function(rootBroadcastName, lObjectType) {
+    this.rootBroadcastName = rootBroadcastName;
+    $log.debug('LeafletEventsHelpersFactory: lObjectType: ' + lObjectType + 'rootBroadcastName: ' + rootBroadcastName);
 
-        EventsHelper.prototype.getAvailableEvents = function(){return []};
+    //used to path/key out certain properties based on the type , "markers", "geojson"
+    this.lObjectType = lObjectType;
+  };
 
-        /*
-         argument: name: Note this can be a single string or dot notation
-         Example:
-         markerModel : {
-         m1: { lat:_, lon: _}
-         }
-         //would yield name of
-         name = "m1"
+  EventsHelper.prototype.getAvailableEvents = function() {return [];};
 
-         If nested:
-         markerModel : {
-         cars: {
-         m1: { lat:_, lon: _}
-         }
-         }
-         //would yield name of
-         name = "cars.m1"
-         */
-        EventsHelper.prototype.genDispatchEvent = function(eventName, logic, leafletScope, lObject, name, model, layerName, extra) {
-            var _this = this;
-            return function (e) {
-                var broadcastName = _this.rootBroadcastName + '.' + eventName;
-                _this.fire(leafletScope, broadcastName, logic, e, e.target || lObject, model, name, layerName, extra);
-            };
-        };
+  /*
+   argument: name: Note this can be a single string or dot notation
+   Example:
+   markerModel : {
+   m1: { lat:_, lon: _}
+   }
+   //would yield name of
+   name = "m1"
 
-        EventsHelper.prototype.fire = function(scope, broadcastName, logic, event, lObject, model, modelName, layerName, extra){
-            // Safely broadcast the event
-            safeApply(scope, function(){
-                var toSend = {
-                    leafletEvent: event,
-                    leafletObject: lObject,
-                    modelName: modelName,
-                    model: model
-                };
-                if (isDefined(layerName))
-                    angular.extend(toSend, {layerName: layerName});
+   If nested:
+   markerModel : {
+   cars: {
+   m1: { lat:_, lon: _}
+   }
+   }
+   //would yield name of
+   name = "cars.m1"
+   */
+  EventsHelper.prototype.genDispatchEvent = function(maybeMapId, eventName, logic, leafletScope, lObject, name, model, layerName, extra) {
+    var _this = this;
 
-                if (logic === "emit") {
-                  scope.$emit(broadcastName, toSend);
+    maybeMapId = maybeMapId || '';
+    if (maybeMapId)
+      maybeMapId = '.' + maybeMapId;
+
+    return function(e) {
+      var broadcastName = _this.rootBroadcastName + maybeMapId + '.' + eventName;
+      $log.debug(broadcastName);
+      _this.fire(leafletScope, broadcastName, logic, e, e.target || lObject, model, name, layerName, extra);
+    };
+  };
+
+  EventsHelper.prototype.fire = function(scope, broadcastName, logic, event, lObject, model, modelName, layerName) {
+    // Safely broadcast the event
+    safeApply(scope, function() {
+      var toSend = {
+        leafletEvent: event,
+        leafletObject: lObject,
+        modelName: modelName,
+        model: model,
+      };
+      if (isDefined(layerName))
+          angular.extend(toSend, {layerName: layerName});
+
+      if (logic === 'emit') {
+        scope.$emit(broadcastName, toSend);
+      } else {
+        $rootScope.$broadcast(broadcastName, toSend);
+      }
+    });
+  };
+
+  EventsHelper.prototype.bindEvents = function(maybeMapId, lObject, name, model, leafletScope, layerName, extra) {
+    var events = [];
+    var logic = 'emit';
+    var _this = this;
+
+    if (!isDefined(leafletScope.eventBroadcast)) {
+      // Backward compatibility, if no event-broadcast attribute, all events are broadcasted
+      events = this.getAvailableEvents();
+    } else if (!isObject(leafletScope.eventBroadcast)) {
+      // Not a valid object
+      $log.error(errorHeader + 'event-broadcast must be an object check your model.');
+    } else {
+      // We have a possible valid object
+      if (!isDefined(leafletScope.eventBroadcast[_this.lObjectType])) {
+        // We do not have events enable/disable do we do nothing (all enabled by default)
+        events = this.getAvailableEvents();
+      } else if (!isObject(leafletScope.eventBroadcast[_this.lObjectType])) {
+        // Not a valid object
+        $log.warn(errorHeader + 'event-broadcast.' + [_this.lObjectType]  + ' must be an object check your model.');
+      } else {
+        // We have a possible valid map object
+        // Event propadation logic
+        if (isDefined(leafletScope.eventBroadcast[this.lObjectType].logic)) {
+          // We take care of possible propagation logic
+          if (leafletScope.eventBroadcast[_this.lObjectType].logic !== 'emit' &&
+              leafletScope.eventBroadcast[_this.lObjectType].logic !== 'broadcast')
+                  $log.warn(errorHeader + 'Available event propagation logic are: \'emit\' or \'broadcast\'.');
+        }
+
+        // Enable / Disable
+        var eventsEnable = false;
+        var eventsDisable = false;
+        if (isDefined(leafletScope.eventBroadcast[_this.lObjectType].enable) &&
+            isArray(leafletScope.eventBroadcast[_this.lObjectType].enable))
+                eventsEnable = true;
+        if (isDefined(leafletScope.eventBroadcast[_this.lObjectType].disable) &&
+            isArray(leafletScope.eventBroadcast[_this.lObjectType].disable))
+                eventsDisable = true;
+
+        if (eventsEnable && eventsDisable) {
+          // Both are active, this is an error
+          $log.warn(errorHeader + 'can not enable and disable events at the same time');
+        } else if (!eventsEnable && !eventsDisable) {
+          // Both are inactive, this is an error
+          $log.warn(errorHeader + 'must enable or disable events');
+        } else {
+          // At this point the object is OK, lets enable or disable events
+          if (eventsEnable) {
+            // Enable events
+            leafletScope.eventBroadcast[this.lObjectType].enable.forEach(function(eventName) {
+              // Do we have already the event enabled?
+              if (events.indexOf(eventName) !== -1) {
+                // Repeated event, this is an error
+                $log.warn(errorHeader + 'This event ' + eventName + ' is already enabled');
+              } else {
+                // Does the event exists?
+                if (_this.getAvailableEvents().indexOf(eventName) === -1) {
+                  // The event does not exists, this is an error
+                  $log.warn(errorHeader + 'This event ' + eventName + ' does not exist');
                 } else {
-                    $rootScope.$broadcast(broadcastName, toSend);
+                  // All ok enable the event
+                  events.push(eventName);
                 }
+              }
             });
-        };
+          } else {
+            // Disable events
+            events = this.getAvailableEvents();
+            leafletScope.eventBroadcast[_this.lObjectType].disable.forEach(function(eventName) {
+              var index = events.indexOf(eventName);
+              if (index === -1) {
+                // The event does not exist
+                $log.warn(errorHeader + 'This event ' + eventName + ' does not exist or has been already disabled');
 
-        EventsHelper.prototype.bindEvents = function (lObject, name, model, leafletScope, layerName, extra) {
-            var events = [];
-            var logic = 'emit';
-            var _this = this;
-
-            if (!isDefined(leafletScope.eventBroadcast)) {
-                // Backward compatibility, if no event-broadcast attribute, all events are broadcasted
-                events = this.getAvailableEvents();
-            } else if (!isObject(leafletScope.eventBroadcast)) {
-                // Not a valid object
-                $log.error(errorHeader + "event-broadcast must be an object check your model.");
-            } else {
-                // We have a possible valid object
-                if (!isDefined(leafletScope.eventBroadcast[_this.lObjectType])) {
-                    // We do not have events enable/disable do we do nothing (all enabled by default)
-                    events = this.getAvailableEvents();
-                } else if (!isObject(leafletScope.eventBroadcast[_this.lObjectType])) {
-                    // Not a valid object
-                    $log.warn(errorHeader + 'event-broadcast.' + [_this.lObjectType]  + ' must be an object check your model.');
-                } else {
-                    // We have a possible valid map object
-                    // Event propadation logic
-                    if (isDefined(leafletScope.eventBroadcast[this.lObjectType].logic)) {
-                        // We take care of possible propagation logic
-                        if (leafletScope.eventBroadcast[_this.lObjectType].logic !== "emit" &&
-                            leafletScope.eventBroadcast[_this.lObjectType].logic !== "broadcast")
-                                $log.warn(errorHeader + "Available event propagation logic are: 'emit' or 'broadcast'.");
-                    }
-                    // Enable / Disable
-                    var eventsEnable = false, eventsDisable = false;
-                    if (isDefined(leafletScope.eventBroadcast[_this.lObjectType].enable) &&
-                        isArray(leafletScope.eventBroadcast[_this.lObjectType].enable))
-                            eventsEnable = true;
-                    if (isDefined(leafletScope.eventBroadcast[_this.lObjectType].disable) &&
-                        isArray(leafletScope.eventBroadcast[_this.lObjectType].disable))
-                            eventsDisable = true;
-
-                    if (eventsEnable && eventsDisable) {
-                        // Both are active, this is an error
-                        $log.warn(errorHeader + "can not enable and disable events at the same time");
-                    } else if (!eventsEnable && !eventsDisable) {
-                        // Both are inactive, this is an error
-                        $log.warn(errorHeader + "must enable or disable events");
-                    } else {
-                        // At this point the object is OK, lets enable or disable events
-                        if (eventsEnable) {
-                            // Enable events
-                            leafletScope.eventBroadcast[this.lObjectType].enable.forEach(function(eventName){
-                                // Do we have already the event enabled?
-                                if (events.indexOf(eventName) !== -1) {
-                                    // Repeated event, this is an error
-                                    $log.warn(errorHeader + "This event " + eventName + " is already enabled");
-                                } else {
-                                    // Does the event exists?
-                                    if (_this.getAvailableEvents().indexOf(eventName) === -1) {
-                                        // The event does not exists, this is an error
-                                        $log.warn(errorHeader + "This event " + eventName + " does not exist");
-                                    } else {
-                                        // All ok enable the event
-                                        events.push(eventName);
-                                    }
-                                }
-                            });
-                        } else {
-                            // Disable events
-                            events = this.getAvailableEvents();
-                            leafletScope.eventBroadcast[_this.lObjectType].disable.forEach(function(eventName) {
-                                var index = events.indexOf(eventName);
-                                if (index === -1) {
-                                    // The event does not exist
-                                    $log.warn(errorHeader + "This event " + eventName + " does not exist or has been already disabled");
-
-                                } else {
-                                    events.splice(index, 1);
-                                }
-                            });
-                        }
-                    }
-                }
-            }
-
-            events.forEach(function(eventName){
-                lObject.on(eventName,_this.genDispatchEvent(eventName, logic, leafletScope, lObject, name, model, layerName, extra));
+              } else {
+                events.splice(index, 1);
+              }
             });
-          return logic;
-        };
+          }
+        }
+      }
+    }
 
-        return EventsHelper;
+    events.forEach(function(eventName) {
+      lObject.on(eventName, _this.genDispatchEvent(maybeMapId, eventName, logic, leafletScope, lObject, name, model, layerName, extra));
+    });
+
+    return logic;
+  };
+
+  return EventsHelper;
 }])
-.service('leafletEventsHelpers', ["leafletEventsHelpersFactory", function(leafletEventsHelpersFactory){
-    return new leafletEventsHelpersFactory();
+.service('leafletEventsHelpers', ["LeafletEventsHelpersFactory", function(LeafletEventsHelpersFactory) {
+  return new LeafletEventsHelpersFactory();
 }]);
 
-angular.module("leaflet-directive")
-.factory('leafletGeoJsonEvents', ["$rootScope", "$q", "leafletLogger", "leafletHelpers", "leafletEventsHelpersFactory", "leafletLabelEvents", "leafletData", function ($rootScope, $q, leafletLogger, leafletHelpers,
-  leafletEventsHelpersFactory, leafletLabelEvents, leafletData) {
-    var safeApply = leafletHelpers.safeApply,
-        EventsHelper = leafletEventsHelpersFactory;
-        // $log = leafletLogger;
+angular.module('leaflet-directive')
+.factory('leafletGeoJsonEvents', ["$rootScope", "$q", "$log", "leafletHelpers", "LeafletEventsHelpersFactory", "leafletData", function($rootScope, $q, $log, leafletHelpers,
+  LeafletEventsHelpersFactory, leafletData) {
+  var safeApply = leafletHelpers.safeApply;
+  var EventsHelper = LeafletEventsHelpersFactory;
 
-    var GeoJsonEvents = function(){
-      EventsHelper.call(this,'leafletDirectiveGeoJson', 'geojson');
+  var GeoJsonEvents = function() {
+      EventsHelper.call(this, 'leafletDirectiveGeoJson', 'geojson');
     };
 
-    GeoJsonEvents.prototype =  new EventsHelper();
+  GeoJsonEvents.prototype =  new EventsHelper();
 
+  GeoJsonEvents.prototype.genDispatchEvent = function(maybeMapId, eventName, logic, leafletScope, lObject, name, model, layerName, extra) {
+    var base = EventsHelper.prototype.genDispatchEvent.call(this, maybeMapId, eventName, logic, leafletScope, lObject, name, model, layerName);
+    var _this = this;
 
-    GeoJsonEvents.prototype.genDispatchEvent = function(eventName, logic, leafletScope, lObject, name, model, layerName, extra) {
-        var base = EventsHelper.prototype.genDispatchEvent.call(this, eventName, logic, leafletScope, lObject, name, model, layerName),
-        _this = this;
-
-        return function(e){
-            if (eventName === 'mouseout') {
-                if (extra.resetStyleOnMouseout) {
-                    leafletData.getGeoJSON(extra.mapId)
-                    .then(function(leafletGeoJSON){
-                        //this is broken on nested needs to traverse or user layerName (nested)
-                        var lobj = layerName? leafletGeoJSON[layerName]: leafletGeoJSON;
-                        lobj.resetStyle(e.target);
+    return function(e) {
+      if (eventName === 'mouseout') {
+        if (extra.resetStyleOnMouseout) {
+          leafletData.getGeoJSON(extra.mapId)
+                    .then(function(leafletGeoJSON) {
+                      //this is broken on nested needs to traverse or user layerName (nested)
+                      var lobj = layerName ? leafletGeoJSON[layerName] : leafletGeoJSON;
+                      lobj.resetStyle(e.target);
                     });
 
-                }
-                safeApply(leafletScope, function() {
-                    $rootScope.$broadcast(_this.rootBroadcastName + '.mouseout', e);
-                });
-            }
-            base(e); //common
-        };
-    };
-
-    GeoJsonEvents.prototype.getAvailableEvents = function(){ return [
-        'click',
-        'dblclick',
-        'mouseover',
-        'mouseout',
-        ];
-    };
-
-    return new GeoJsonEvents();
-}]);
-
-angular.module("leaflet-directive")
-.factory('leafletLabelEvents', ["$rootScope", "$q", "leafletLogger", "leafletHelpers", "leafletEventsHelpersFactory", function ($rootScope, $q, leafletLogger, leafletHelpers, leafletEventsHelpersFactory) {
-    var Helpers = leafletHelpers,
-        EventsHelper = leafletEventsHelpersFactory;
-        //$log = leafletLogger;
-
-        var LabelEvents = function(){
-          EventsHelper.call(this,'leafletDirectiveLabel', 'markers');
-        };
-        LabelEvents.prototype =  new EventsHelper();
-
-        LabelEvents.prototype.genDispatchEvent = function(eventName, logic, leafletScope, lObject, name, model, layerName) {
-            var markerName = name.replace('markers.', '');
-            return EventsHelper.prototype
-                .genDispatchEvent.call(this, eventName, logic, leafletScope, lObject, markerName, model, layerName);
-        };
-
-        LabelEvents.prototype.getAvailableEvents = function(){
-            return [
-                'click',
-                'dblclick',
-                'mousedown',
-                'mouseover',
-                'mouseout',
-                'contextmenu'
-            ];
-        };
-
-        LabelEvents.prototype.genEvents = function (eventName, logic, leafletScope, lObject, name, model, layerName) {
-            var _this = this;
-            var labelEvents = this.getAvailableEvents();
-            var scopeWatchName = Helpers.getObjectArrayPath("markers." + name);
-            labelEvents.forEach(function(eventName) {
-                lObject.label.on(eventName, _this.genDispatchEvent(
-                    eventName, logic, leafletScope, lObject.label, scopeWatchName, model, layerName));
-            });
-        };
-
-        LabelEvents.prototype.bindEvents = function (lObject, name, model, leafletScope, layerName) {};
-
-        return new LabelEvents();
-}]);
-
-angular.module("leaflet-directive")
-.factory('leafletMapEvents', ["$rootScope", "$q", "leafletLogger", "leafletHelpers", "leafletEventsHelpers", function ($rootScope, $q, leafletLogger, leafletHelpers, leafletEventsHelpers) {
-    var isDefined = leafletHelpers.isDefined,
-        fire = leafletEventsHelpers.fire,
-        $log = leafletLogger;
-
-    var _getAvailableMapEvents = function() {
-        return [
-            'click',
-            'dblclick',
-            'mousedown',
-            'mouseup',
-            'mouseover',
-            'mouseout',
-            'mousemove',
-            'contextmenu',
-            'focus',
-            'blur',
-            'preclick',
-            'load',
-            'unload',
-            'viewreset',
-            'movestart',
-            'move',
-            'moveend',
-            'dragstart',
-            'drag',
-            'dragend',
-            'zoomstart',
-            'zoomend',
-            'zoomlevelschange',
-            'resize',
-            'autopanstart',
-            'layeradd',
-            'layerremove',
-            'baselayerchange',
-            'overlayadd',
-            'overlayremove',
-            'locationfound',
-            'locationerror',
-            'popupopen',
-            'popupclose',
-            'draw:created',
-            'draw:edited',
-            'draw:deleted',
-            'draw:drawstart',
-            'draw:drawstop',
-            'draw:editstart',
-            'draw:editstop',
-            'draw:deletestart',
-            'draw:deletestop'
-        ];
-    };
-
-    var _genDispatchMapEvent = function(scope, eventName, logic) {
-        // (nmccready) We should consider passing mapId as an argument or using it from scope
-        return function(e) {
-            // Put together broadcast name
-            // (nmccready) We should consider passing mapId joining mapId to the broadcastName to keep the event unique. Same should be done for all directives so we know what map it comes from.
-            // problem with this is it will cause a minor bump and break backwards compat
-            var broadcastName = 'leafletDirectiveMap.' + eventName;
-            // Safely broadcast the event
-            fire(scope, broadcastName, logic, e, e.target, scope)
-        };
-    };
-
-    var _notifyCenterChangedToBounds = function(scope) {
-        scope.$broadcast("boundsChanged");
-    };
-
-    var _notifyCenterUrlHashChanged = function(scope, map, attrs, search) {
-        if (!isDefined(attrs.urlHashCenter)) {
-            return;
         }
-        var center = map.getCenter();
-        var centerUrlHash = (center.lat).toFixed(4) + ":" + (center.lng).toFixed(4) + ":" + map.getZoom();
-        if (!isDefined(search.c) || search.c !== centerUrlHash) {
-            //$log.debug("notified new center...");
-            scope.$emit("centerUrlHash", centerUrlHash);
-        }
-    };
 
-    return {
-        getAvailableMapEvents: _getAvailableMapEvents,
-        genDispatchMapEvent: _genDispatchMapEvent,
-        notifyCenterChangedToBounds: _notifyCenterChangedToBounds,
-        notifyCenterUrlHashChanged: _notifyCenterUrlHashChanged
+        safeApply(leafletScope, function() {
+          $rootScope.$broadcast(_this.rootBroadcastName + '.mouseout', e);
+        });
+      }
+
+      base(e); //common
     };
+  };
+
+  GeoJsonEvents.prototype.getAvailableEvents = function() { return [
+      'click',
+      'dblclick',
+      'mouseover',
+      'mouseout',
+      ];
+  };
+
+  return new GeoJsonEvents();
 }]);
 
-angular.module("leaflet-directive")
-.factory('leafletMarkerEvents', ["$rootScope", "$q", "leafletLogger", "leafletHelpers", "leafletEventsHelpersFactory", "leafletLabelEvents", function ($rootScope, $q, leafletLogger, leafletHelpers, leafletEventsHelpersFactory, leafletLabelEvents) {
-    var safeApply = leafletHelpers.safeApply,
-        isDefined = leafletHelpers.isDefined,
-        Helpers = leafletHelpers,
-        lblHelp = leafletLabelEvents,
-        EventsHelper = leafletEventsHelpersFactory,
-        $log = leafletLogger;
+angular.module('leaflet-directive')
+.factory('leafletLabelEvents', ["$rootScope", "$q", "$log", "leafletHelpers", "LeafletEventsHelpersFactory", function($rootScope, $q, $log, leafletHelpers, LeafletEventsHelpersFactory) {
+  var Helpers = leafletHelpers;
+  var EventsHelper = LeafletEventsHelpersFactory;
 
-    var MarkerEvents = function(){
-      EventsHelper.call(this,'leafletDirectiveMarker', 'markers');
-    };
-
-    MarkerEvents.prototype =  new EventsHelper();
-
-    MarkerEvents.prototype.genDispatchEvent = function(eventName, logic, leafletScope, lObject, name, model, layerName) {
-        var handle = EventsHelper.prototype
-            .genDispatchEvent.call(this, eventName, logic, leafletScope, lObject, name, model, layerName);
-        return function(e){
-            // Broadcast old marker click name for backwards compatibility
-            if (eventName === "click") {
-                safeApply(leafletScope, function () {
-                    $rootScope.$broadcast('leafletDirectiveMarkersClick', name);
-                });
-            } else if (eventName === 'dragend') {
-                safeApply(leafletScope, function () {
-                    model.lat = lObject.getLatLng().lat;
-                    model.lng = lObject.getLatLng().lng;
-                });
-                if (model.message && model.focus === true) {
-                    lObject.openPopup();
-                }
-            }
-            handle(e); //common
+  var LabelEvents = function() {
+          EventsHelper.call(this, 'leafletDirectiveLabel', 'markers');
         };
-    };
 
-    MarkerEvents.prototype.getAvailableEvents = function(){ return [
+  LabelEvents.prototype =  new EventsHelper();
+
+  LabelEvents.prototype.genDispatchEvent = function(maybeMapId, eventName, logic, leafletScope, lObject, name, model, layerName) {
+    var markerName = name.replace('markers.', '');
+    return EventsHelper.prototype
+        .genDispatchEvent.call(this, maybeMapId, eventName, logic, leafletScope, lObject, markerName, model, layerName);
+  };
+
+  LabelEvents.prototype.getAvailableEvents = function() {
+    return [
         'click',
         'dblclick',
         'mousedown',
         'mouseover',
         'mouseout',
         'contextmenu',
+    ];
+  };
+
+  LabelEvents.prototype.genEvents = function(maybeMapId, eventName, logic, leafletScope, lObject, name, model, layerName) {
+    var _this = this;
+    var labelEvents = this.getAvailableEvents();
+    var scopeWatchName = Helpers.getObjectArrayPath('markers.' + name);
+    labelEvents.forEach(function(eventName) {
+      lObject.label.on(eventName, _this.genDispatchEvent(
+          maybeMapId, eventName, logic, leafletScope, lObject.label, scopeWatchName, model, layerName));
+    });
+  };
+
+  LabelEvents.prototype.bindEvents = function() {};
+
+  return new LabelEvents();
+}]);
+
+angular.module('leaflet-directive')
+.factory('leafletMapEvents', ["$rootScope", "$q", "$log", "leafletHelpers", "leafletEventsHelpers", "leafletIterators", function($rootScope, $q, $log, leafletHelpers, leafletEventsHelpers, leafletIterators) {
+  var isDefined = leafletHelpers.isDefined;
+  var fire = leafletEventsHelpers.fire;
+
+  var _getAvailableMapEvents = function() {
+    return [
+        'click',
+        'dblclick',
+        'mousedown',
+        'mouseup',
+        'mouseover',
+        'mouseout',
+        'mousemove',
+        'contextmenu',
+        'focus',
+        'blur',
+        'preclick',
+        'load',
+        'unload',
+        'viewreset',
+        'movestart',
+        'move',
+        'moveend',
         'dragstart',
         'drag',
         'dragend',
-        'move',
-        'remove',
+        'zoomstart',
+        'zoomanim',
+        'zoomend',
+        'zoomlevelschange',
+        'resize',
+        'autopanstart',
+        'layeradd',
+        'layerremove',
+        'baselayerchange',
+        'overlayadd',
+        'overlayremove',
+        'locationfound',
+        'locationerror',
         'popupopen',
         'popupclose',
-        'touchend',
-        'touchstart',
-        'touchmove',
-        'touchcancel',
-        'touchleave'
-        ];
+        'draw:created',
+        'draw:edited',
+        'draw:deleted',
+        'draw:drawstart',
+        'draw:drawstop',
+        'draw:editstart',
+        'draw:editstop',
+        'draw:deletestart',
+        'draw:deletestop',
+    ];
+  };
+
+  var _genDispatchMapEvent = function(scope, eventName, logic, maybeMapId) {
+    if (maybeMapId)
+      maybeMapId = maybeMapId + '.';
+    return function(e) {
+      // Put together broadcast name
+      var broadcastName = 'leafletDirectiveMap.' + maybeMapId + eventName;
+      $log.debug(broadcastName);
+
+      // Safely broadcast the event
+      fire(scope, broadcastName, logic, e, e.target, scope);
+    };
+  };
+
+  var _notifyCenterChangedToBounds = function(scope) {
+    scope.$broadcast('boundsChanged');
+  };
+
+  var _notifyCenterUrlHashChanged = function(scope, map, attrs, search) {
+    if (!isDefined(attrs.urlHashCenter)) {
+      return;
+    }
+
+    var center = map.getCenter();
+    var centerUrlHash = (center.lat).toFixed(4) + ':' + (center.lng).toFixed(4) + ':' + map.getZoom();
+    if (!isDefined(search.c) || search.c !== centerUrlHash) {
+      //$log.debug("notified new center...");
+      scope.$emit('centerUrlHash', centerUrlHash);
+    }
+  };
+
+  var _addEvents =  function(map, mapEvents, contextName, scope, logic) {
+    leafletIterators.each(mapEvents, function(eventName) {
+      var context = {};
+      context[contextName] = eventName;
+      map.on(eventName, _genDispatchMapEvent(scope, eventName, logic, map._container.id || ''), context);
+    });
+  };
+
+  return {
+    getAvailableMapEvents: _getAvailableMapEvents,
+    genDispatchMapEvent: _genDispatchMapEvent,
+    notifyCenterChangedToBounds: _notifyCenterChangedToBounds,
+    notifyCenterUrlHashChanged: _notifyCenterUrlHashChanged,
+    addEvents: _addEvents,
+  };
+}]);
+
+angular.module('leaflet-directive')
+.factory('leafletMarkerEvents', ["$rootScope", "$q", "$log", "leafletHelpers", "LeafletEventsHelpersFactory", "leafletLabelEvents", function($rootScope, $q, $log, leafletHelpers, LeafletEventsHelpersFactory, leafletLabelEvents) {
+  var safeApply = leafletHelpers.safeApply;
+  var isDefined = leafletHelpers.isDefined;
+  var Helpers = leafletHelpers;
+  var lblHelp = leafletLabelEvents;
+  var EventsHelper = LeafletEventsHelpersFactory;
+
+  var MarkerEvents = function() {
+      EventsHelper.call(this, 'leafletDirectiveMarker', 'markers');
     };
 
-    MarkerEvents.prototype.bindEvents = function (lObject, name, model, leafletScope, layerName) {
-      var logic = EventsHelper.prototype.bindEvents.call(this,lObject, name, model, leafletScope, layerName);
+  MarkerEvents.prototype = new EventsHelper();
+
+  MarkerEvents.prototype.genDispatchEvent = function(maybeMapId, eventName, logic, leafletScope, lObject, name, model, layerName) {
+    var handle = EventsHelper.prototype
+        .genDispatchEvent.call(this, maybeMapId, eventName, logic, leafletScope, lObject, name, model, layerName);
+    return function(e) {
+      // Broadcast old marker click name for backwards compatibility
+      if (eventName === 'click') {
+        safeApply(leafletScope, function() {
+          $rootScope.$broadcast('leafletDirectiveMarkersClick', name);
+        });
+      } else if (eventName === 'dragend') {
+        safeApply(leafletScope, function() {
+          model.lat = lObject.getLatLng().lat;
+          model.lng = lObject.getLatLng().lng;
+        });
+
+        if (model.message && model.focus === true) {
+          lObject.openPopup();
+        }
+      }
+
+      handle(e); //common
+    };
+  };
+
+  MarkerEvents.prototype.getAvailableEvents = function() { return [
+      'click',
+      'dblclick',
+      'mousedown',
+      'mouseover',
+      'mouseout',
+      'contextmenu',
+      'dragstart',
+      'drag',
+      'dragend',
+      'move',
+      'remove',
+      'popupopen',
+      'popupclose',
+      'touchend',
+      'touchstart',
+      'touchmove',
+      'touchcancel',
+      'touchleave',
+      ];
+  };
+
+  MarkerEvents.prototype.bindEvents = function(maybeMapId, lObject, name, model, leafletScope, layerName) {
+      var logic = EventsHelper.prototype.bindEvents.call(this, maybeMapId, lObject, name, model, leafletScope, layerName);
 
       if (Helpers.LabelPlugin.isLoaded() && isDefined(lObject.label)) {
-          lblHelp.genEvents(name, logic, leafletScope, lObject, model, layerName);
+        lblHelp.genEvents(maybeMapId, name, logic, leafletScope, lObject, model, layerName);
       }
     };
 
-    return new MarkerEvents();
+  return new MarkerEvents();
 }]);
 
-angular.module("leaflet-directive")
-.factory('leafletPathEvents', ["$rootScope", "$q", "leafletLogger", "leafletHelpers", "leafletLabelEvents", "leafletEventsHelpers", function ($rootScope, $q, leafletLogger, leafletHelpers, leafletLabelEvents, leafletEventsHelpers) {
-    var isDefined = leafletHelpers.isDefined,
-        isObject = leafletHelpers.isObject,
-        Helpers = leafletHelpers,
-        errorHeader = leafletHelpers.errorHeader,
-        lblHelp = leafletLabelEvents,
-        fire = leafletEventsHelpers.fire,
-        $log = leafletLogger;
+angular.module('leaflet-directive')
+.factory('leafletPathEvents', ["$rootScope", "$q", "$log", "leafletHelpers", "leafletLabelEvents", "leafletEventsHelpers", function($rootScope, $q, $log, leafletHelpers, leafletLabelEvents, leafletEventsHelpers) {
+  var isDefined = leafletHelpers.isDefined;
+  var isObject = leafletHelpers.isObject;
+  var Helpers = leafletHelpers;
+  var errorHeader = leafletHelpers.errorHeader;
+  var lblHelp = leafletLabelEvents;
+  var fire = leafletEventsHelpers.fire;
 
-    var _genDispatchPathEvent = function (eventName, logic, leafletScope, lObject, name, model, layerName) {
-        return function (e) {
-            var broadcastName = 'leafletDirectivePath.' + eventName;
+  /*
+  TODO (nmccready) This EventsHelper needs to be derrived from leafletEventsHelpers to elminate copy and paste code.
+  */
 
-            fire(leafletScope, broadcastName, logic, e, e.target || lObject, model, name, layerName);
-        };
+  var _genDispatchPathEvent = function(maybeMapId, eventName, logic, leafletScope, lObject, name, model, layerName) {
+    maybeMapId = maybeMapId || '';
+
+    if (maybeMapId)
+      maybeMapId = '.' + maybeMapId;
+
+    return function(e) {
+      var broadcastName = 'leafletDirectivePath' + maybeMapId + '.' + eventName;
+      $log.debug(broadcastName);
+      fire(leafletScope, broadcastName, logic, e, e.target || lObject, model, name, layerName);
     };
+  };
 
-    var _bindPathEvents = function (lObject, name, model, leafletScope) {
-        var pathEvents = [],
-            i,
-            eventName,
-            logic = "broadcast";
+  var _bindPathEvents = function(maybeMapId, lObject, name, model, leafletScope) {
+    var pathEvents = [];
+    var i;
+    var eventName;
+    var logic = 'broadcast';
 
-        if (!isDefined(leafletScope.eventBroadcast)) {
-            // Backward compatibility, if no event-broadcast attribute, all events are broadcasted
-            pathEvents = _getAvailablePathEvents();
-        } else if (!isObject(leafletScope.eventBroadcast)) {
-            // Not a valid object
-            $log.error(errorHeader + "event-broadcast must be an object check your model.");
+    if (!isDefined(leafletScope.eventBroadcast)) {
+      // Backward compatibility, if no event-broadcast attribute, all events are broadcasted
+      pathEvents = _getAvailablePathEvents();
+    } else if (!isObject(leafletScope.eventBroadcast)) {
+      // Not a valid object
+      $log.error(errorHeader + 'event-broadcast must be an object check your model.');
+    } else {
+      // We have a possible valid object
+      if (!isDefined(leafletScope.eventBroadcast.path)) {
+        // We do not have events enable/disable do we do nothing (all enabled by default)
+        pathEvents = _getAvailablePathEvents();
+      } else if (isObject(leafletScope.eventBroadcast.paths)) {
+        // Not a valid object
+        $log.warn(errorHeader + 'event-broadcast.path must be an object check your model.');
+      } else {
+        // We have a possible valid map object
+        // Event propadation logic
+        if (leafletScope.eventBroadcast.path.logic !== undefined && leafletScope.eventBroadcast.path.logic !== null) {
+          // We take care of possible propagation logic
+          if (leafletScope.eventBroadcast.path.logic !== 'emit' && leafletScope.eventBroadcast.path.logic !== 'broadcast') {
+            // This is an error
+            $log.warn(errorHeader + 'Available event propagation logic are: \'emit\' or \'broadcast\'.');
+          } else if (leafletScope.eventBroadcast.path.logic === 'emit') {
+            logic = 'emit';
+          }
+        }
+
+        // Enable / Disable
+        var pathEventsEnable = false;
+        var pathEventsDisable = false;
+        if (leafletScope.eventBroadcast.path.enable !== undefined && leafletScope.eventBroadcast.path.enable !== null) {
+          if (typeof leafletScope.eventBroadcast.path.enable === 'object') {
+            pathEventsEnable = true;
+          }
+        }
+
+        if (leafletScope.eventBroadcast.path.disable !== undefined && leafletScope.eventBroadcast.path.disable !== null) {
+          if (typeof leafletScope.eventBroadcast.path.disable === 'object') {
+            pathEventsDisable = true;
+          }
+        }
+
+        if (pathEventsEnable && pathEventsDisable) {
+          // Both are active, this is an error
+          $log.warn(errorHeader + 'can not enable and disable events at the same time');
+        } else if (!pathEventsEnable && !pathEventsDisable) {
+          // Both are inactive, this is an error
+          $log.warn(errorHeader + 'must enable or disable events');
         } else {
-            // We have a possible valid object
-            if (!isDefined(leafletScope.eventBroadcast.path)) {
-                // We do not have events enable/disable do we do nothing (all enabled by default)
-                pathEvents = _getAvailablePathEvents();
-            } else if (isObject(leafletScope.eventBroadcast.paths)) {
-                // Not a valid object
-                $log.warn(errorHeader + "event-broadcast.path must be an object check your model.");
-            } else {
-                // We have a possible valid map object
-                // Event propadation logic
-                if (leafletScope.eventBroadcast.path.logic !== undefined && leafletScope.eventBroadcast.path.logic !== null) {
-                    // We take care of possible propagation logic
-                    if (leafletScope.eventBroadcast.path.logic !== "emit" && leafletScope.eventBroadcast.path.logic !== "broadcast") {
-                        // This is an error
-                        $log.warn(errorHeader + "Available event propagation logic are: 'emit' or 'broadcast'.");
-                    } else if (leafletScope.eventBroadcast.path.logic === "emit") {
-                        logic = "emit";
-                    }
-                }
-                // Enable / Disable
-                var pathEventsEnable = false, pathEventsDisable = false;
-                if (leafletScope.eventBroadcast.path.enable !== undefined && leafletScope.eventBroadcast.path.enable !== null) {
-                    if (typeof leafletScope.eventBroadcast.path.enable === 'object') {
-                        pathEventsEnable = true;
-                    }
-                }
-                if (leafletScope.eventBroadcast.path.disable !== undefined && leafletScope.eventBroadcast.path.disable !== null) {
-                    if (typeof leafletScope.eventBroadcast.path.disable === 'object') {
-                        pathEventsDisable = true;
-                    }
-                }
-                if (pathEventsEnable && pathEventsDisable) {
-                    // Both are active, this is an error
-                    $log.warn(errorHeader + "can not enable and disable events at the same time");
-                } else if (!pathEventsEnable && !pathEventsDisable) {
-                    // Both are inactive, this is an error
-                    $log.warn(errorHeader + "must enable or disable events");
+          // At this point the path object is OK, lets enable or disable events
+          if (pathEventsEnable) {
+            // Enable events
+            for (i = 0; i < leafletScope.eventBroadcast.path.enable.length; i++) {
+              eventName = leafletScope.eventBroadcast.path.enable[i];
+
+              // Do we have already the event enabled?
+              if (pathEvents.indexOf(eventName) !== -1) {
+                // Repeated event, this is an error
+                $log.warn(errorHeader + 'This event ' + eventName + ' is already enabled');
+              } else {
+                // Does the event exists?
+                if (_getAvailablePathEvents().indexOf(eventName) === -1) {
+                  // The event does not exists, this is an error
+                  $log.warn(errorHeader + 'This event ' + eventName + ' does not exist');
                 } else {
-                    // At this point the path object is OK, lets enable or disable events
-                    if (pathEventsEnable) {
-                        // Enable events
-                        for (i = 0; i < leafletScope.eventBroadcast.path.enable.length; i++) {
-                            eventName = leafletScope.eventBroadcast.path.enable[i];
-                            // Do we have already the event enabled?
-                            if (pathEvents.indexOf(eventName) !== -1) {
-                                // Repeated event, this is an error
-                                $log.warn(errorHeader + "This event " + eventName + " is already enabled");
-                            } else {
-                                // Does the event exists?
-                                if (_getAvailablePathEvents().indexOf(eventName) === -1) {
-                                    // The event does not exists, this is an error
-                                    $log.warn(errorHeader + "This event " + eventName + " does not exist");
-                                } else {
-                                    // All ok enable the event
-                                    pathEvents.push(eventName);
-                                }
-                            }
-                        }
-                    } else {
-                        // Disable events
-                        pathEvents = _getAvailablePathEvents();
-                        for (i = 0; i < leafletScope.eventBroadcast.path.disable.length; i++) {
-                            eventName = leafletScope.eventBroadcast.path.disable[i];
-                            var index = pathEvents.indexOf(eventName);
-                            if (index === -1) {
-                                // The event does not exist
-                                $log.warn(errorHeader + "This event " + eventName + " does not exist or has been already disabled");
-
-                            } else {
-                                pathEvents.splice(index, 1);
-                            }
-                        }
-                    }
+                  // All ok enable the event
+                  pathEvents.push(eventName);
                 }
+              }
             }
+          } else {
+            // Disable events
+            pathEvents = _getAvailablePathEvents();
+            for (i = 0; i < leafletScope.eventBroadcast.path.disable.length; i++) {
+              eventName = leafletScope.eventBroadcast.path.disable[i];
+              var index = pathEvents.indexOf(eventName);
+              if (index === -1) {
+                // The event does not exist
+                $log.warn(errorHeader + 'This event ' + eventName + ' does not exist or has been already disabled');
+
+              } else {
+                pathEvents.splice(index, 1);
+              }
+            }
+          }
         }
+      }
+    }
 
-        for (i = 0; i < pathEvents.length; i++) {
-            eventName = pathEvents[i];
-            lObject.on(eventName, _genDispatchPathEvent(eventName, logic, leafletScope, pathEvents, name));
-        }
+    for (i = 0; i < pathEvents.length; i++) {
+      eventName = pathEvents[i];
+      lObject.on(eventName, _genDispatchPathEvent(maybeMapId, eventName, logic, leafletScope, pathEvents, name));
+    }
 
-        if (Helpers.LabelPlugin.isLoaded() && isDefined(lObject.label)) {
-            lblHelp.genEvents(name, logic, leafletScope, lObject, model);
-        }
-    };
+    if (Helpers.LabelPlugin.isLoaded() && isDefined(lObject.label)) {
+      lblHelp.genEvents(maybeMapId, name, logic, leafletScope, lObject, model);
+    }
+  };
 
-    var _getAvailablePathEvents = function () {
-        return [
-            'click',
-            'dblclick',
-            'mousedown',
-            'mouseover',
-            'mouseout',
-            'contextmenu',
-            'add',
-            'remove',
-            'popupopen',
-            'popupclose'
-        ];
-    };
+  var _getAvailablePathEvents = function() {
+    return [
+        'click',
+        'dblclick',
+        'mousedown',
+        'mouseover',
+        'mouseout',
+        'contextmenu',
+        'add',
+        'remove',
+        'popupopen',
+        'popupclose',
+    ];
+  };
 
-    return {
-        getAvailablePathEvents: _getAvailablePathEvents,
-        bindPathEvents: _bindPathEvents
-    };
+  return {
+    getAvailablePathEvents: _getAvailablePathEvents,
+    bindPathEvents: _bindPathEvents,
+  };
 }]);
 
 }(angular));
@@ -19714,15 +18648,15 @@ angular.module("leaflet-directive")
 	var settings = {
 
 	};
-	var configFn = function(FacebookProvider, $httpProvider){
+	var configFn = function($httpProvider){
 
 		$httpProvider.defaults.headers.post["Content-Type"] = "application/x-www-form-urlencoded";
 	};
 
-	configFn.$inject = ['FacebookProvider', '$httpProvider'];
+	configFn.$inject = ['$httpProvider'];
 
 	angular
-		.module('pi', ['ngResource', 'facebook', 'pi.core', 'pi.core.app', 'pi.core.place', 'pi.core.question', 'pi.core.article', 'pi.core.payment', 'pi.core.chat', 'pi.core.likes', 'pi.core.product'])
+		.module('pi', ['ngResource', 'pi.core', 'pi.core.app', 'pi.core.place', 'pi.core.question', 'pi.core.article', 'pi.core.payment', 'pi.core.chat', 'pi.core.likes', 'pi.core.product'])
 		.config(configFn)
 		.provider('pi', [function(){
 			var appId,
@@ -19736,6 +18670,9 @@ angular.module("leaflet-directive")
 				return {
 					getAppId: function() {
 						return appId;
+					},
+					setAppId: function(value) {
+						appId = value;
 					}
 				}
 			}];
@@ -20036,6 +18973,18 @@ angular
 })();
 
 (function(){
+	angular
+		.module('pi.facebook', ['pi', 'facebook']);
+
+	angular
+		.module('pi.facebook')
+		.run(['$rootScope',])
+		.config(['$httpProvider',
+			function($httpProvider) {
+				$httpProvider.defaults.headers.post["Content-Type"] = "application/x-www-form-urlencoded";
+			}]);
+})();
+(function(){
 	
 	angular
 		.module('pi.ionic')
@@ -20053,6 +19002,10 @@ angular
 		    }
 		  });
 		}]);
+})();
+(function(){
+	angular
+		.module('pi.nav', ['pi']);
 })();
 (function(){
 	'use strict';
@@ -20080,290 +19033,6 @@ angular
 
 })();
 
-/**
- *
- */
-(function(){
-	var settings = {};
-
-	var flags = {
-		sdk: false,
-		ready: false
-	};
-
-	var provider = function(){
-		
-      this.setAppId = function(appId){
-      	settings.appId = appId;
-      };
-
-      this.getAppId = function(){
-      	return appId;
-      };
-
-      settings.locale = 'pt_PT';
-
-      this.setLocale = function(locale) {
-      	settings.locale = locale;
-      };
-
-      this.getLocal = function(){
-      	return settings.locale;
-      };
-    
-		settings.status = true;
-
-		this.setStatus = function(status) {
-		  settings.status = status;
-		};
-
-		this.getStatus = function() {
-		  return settings.status;
-		};
-
-	settings.version = '2.0';
-	this.setSdkVersion = function(version) {
-		settings.version = version;
-	};
-
-	this.getSdkVersion = function(){
-		return settings.version;
-	};
-
-	      /*
-         * load SDK
-         */
-        settings.loadSDK = true;
-
-        this.setLoadSDK = function(a) {
-          settings.loadSDK = !!a;
-        };
-
-        this.getLoadSDK = function() {
-          return settings.loadSDK;
-        };
-
-        /**
-         * Custom option setting
-         * key @type {String}
-         * value @type {*}
-         * @return {*}
-         */
-        this.setInitCustomOption = function(key, value) {
-          if (!angular.isString(key)) {
-            return false;
-          }
-
-          settings[key] = value;
-          return settings[key];
-        };
-
-        /**
-         * get init option
-         * @param  {String} key
-         * @return {*}
-         */
-        this.getInitOption = function(key) {
-          // If key is not String or If non existing key return null
-          if (!angular.isString(key) || !settings.hasOwnProperty(key)) {
-            return false;
-          }
-
-          return settings[key];
-        };
-
-      this.shareDialog = function(title, content, url) {
-
-      };
-
-      this.like = function(postId) {
-      	FB.ui(
-		 {
-		  method: 'share',
-		  href: 'https://developers.facebook.com/docs/'
-		}, function(response){});
-      };
-
-      this.getComments = function(url) {
-
-      };
-
-      var getFn = function($q, $rootScope, $timeout, $window){
-
-      		/**
-      		 * The NgFacebook class is retrieved from Facebook Service request
-      		 */
-      		function NgFacebook(){
-      			this.appId = settings.appId;
-      		}
-
-      		NgFacebook.prototype.isReady = function(){
-      			return flags.ready;
-      		};
-
-      		
-      };
-
-      this.$get = [
-      	'$q',
-      	'$rootScope',
-      	'$timeout',
-      	'$window', getFn];
-
-	};
-
-	angular
-		.module('pi')
-		.value('fbSettings', settings)
-		.value('fbFlags', flags)
-
-})();
-(function(){
-  angular
-    .module('pi')
-    .factory('piNavigationBuilder', [function(){
-        function builder(idOrModel) {
-
-          var self = this,
-              cfg = {
-
-              };
-          if(_.isObject(idOrModel)) {
-            cfg['id'] = idOrModel.id;
-          } else if(_.isString(idOrModel)) {
-            cfg['id'] = idOrModel;
-          } else {
-            cfg['id'] = 'random-id';
-          }
-
-          self.highlighted = false;
-          self.hidden = true;
-          self.menu = [];
-          self.isChild = false;
-
-          this.dispose = function() {
-            this.hidden = true;
-            self.menu = [];
-          }
-
-          this.addState = function(name, model) {
-            self.menu.push({
-              'name': name,
-              'model': model,
-              'type': 'link'
-            });
-
-          };
-
-          this.remove = function(name) {
-            for (var i = 0; i < self.menu.length; i++) {
-              if(self.menu[i].name === name) {
-                self.menu.splice(i, 1);
-                break;
-              }
-            };
-          };
-
-          this.addAction = function(name, callback) {
-            self.menu.push({
-              'name': name,
-              'callback': callback,
-              'type': 'callback'
-            })
-          
-          };
-
-          this.hide = function() {
-            if(self.hidden) {
-              $log.info('The menu ' + cfg['id'] + ' is already hidden. Nothing to be done.');
-              return;
-            }
-            self.hidden = true;
-          }
-
-          this.highlight = function() {
-            if(self.highlighted) {
-              $log.info('The menu ' + cfg['id'] + ' is already highlighted. Nothing to be done.');
-              return;
-            }
-            self.highlighted = true;
-          }
-
-          this.show = function() {
-            if(!self.hidden) {
-              $log.info('The menu ' + cfg['id'] + ' is already visible. Nothing to be done.');
-              return;
-            }
-            self.hidden = false;
-          }
-
-          this.id = function() {
-            return cfg['id'];
-          }
-
-          return self;
-        }
-
-        return builder;
-      }])
-      .provider('piNavigation', [function(){
-
-        return {
-          $get: ['$rootScope','$log', 'piNavigationBuilder', 'piStack', '$log',
-            function($rootScope, $log, piNavigationBuilder, piStack, $log) {
-              var menus = piStack.create(),
-                cfg = {
-                  icons: {
-                    remove: 'icon ion-android-delete',
-                    save: 'icon ion-android-delete',
-                    add: 'icon ion-android-delete',
-                    info: 'icon ion-android-delete'  
-                  }
-                };
-
-              this.setIcon = function(type, value) {
-                if(_.isArray(type)) {
-                  if(_.isUndefined(type['type']) || _.isUndefined(type['type'])) {
-                    $log.error('Cant add ' + type);
-                  }
-                  for (var i = 0; i < type.length; i++) {
-                    cfg.icons[type[i].type] = type[i].value;
-                  };
-                }
-                cfg.icons[type] = value;
-              }
-
-              return {
-                create: function(id) {
-                  var menu = piNavigationBuilder(id);
-                  menus.add(id, menu);
-                  return menu;
-                },
-                close: function(id) {
-                  menus.remove(id);
-                }
-              }
-            }]
-
-        }
-      }])
-      .directive('piNavigationTemplate', ['piNavigationProvider',
-        function(piNavigationProvider) {
-          return {
-            scope: {
-              'menu': '@'
-            },
-            link: function(scope, elem, attrs, ngModel) {
-              scope.menu = piNavigationProvider.create();
-
-              scope.close = function() {
-                piNavigationProvider.close(scope.menu.id());
-              }
-            }
-          }
-        }
-      ]);
-})();
 /**
  * Pi Provider
  *
@@ -20482,7 +19151,6 @@ angular
         .value('piSettings', settings)
 		.provider('piApp', providerFn);
 })();
-
 (function(){
   angular
     .module('pi.admin')
@@ -21717,6 +20385,304 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 
 })();
 (function(){
+	
+	angular
+		.module('pi')
+		.factory('wizardService', ['$q', '$log',
+			function($q, $log) {
+
+				var svc = {
+					defaultName: 'defaultWizard'
+				};
+				var wizards = {};
+
+				svc.addWizard = function(name, wizard) {
+					wizards[name] = wizard;
+				};
+
+				svc.removeWizard = function(name) {
+					delete wizards[name];
+				};
+
+				svc.getWizard = function(name) {
+					var nameToUse = name;
+					if(!name) {
+						nameToUse = svc.defaultName;
+					}
+
+					return wizards[nameToUse];
+				}
+
+				return service;
+			}])
+		.directive('piWizard', [function(){
+
+			var firstRun = true;
+
+
+			return {
+				scope: {
+					'currentStep': '=',
+					'onFinish': '&',
+					'hideIndicators': '=',
+					'editMode': '=',
+					'name': '@'
+				},
+				templateUrl: function(elem, attrs) {
+					return attrs.template || 'pi/wizard.tpl.html';
+				},
+				controller: ['$scope', '$element', 'wizardService', '$q',
+					function($scope, $element, wizardService, $q) {
+						var wizardName = $scope.name || wizardService.defaultName;
+
+						wizardService.addWizard(wizardName, this);
+
+						$scope.$on('$destroy', function(){
+							wizardService.remove(wizardName);
+						});
+
+						$scope.steps = [];
+						$scope.context = {};
+						this.context = $scope.context;
+
+						var getStepByTitle = function(title) {
+							var found = null;
+							angular.forEach($scope.getEnabledSteps(), function(step) {
+								if(step.wizardTitle === title) {
+									found = step;
+								}
+							});
+
+							return found;
+						}
+
+						var unselectAll = function() {
+							 angular.forEach($scope.getEnabledSteps(), function (step) {
+			                    step.selected = false;
+			                });
+			                
+			                $scope.selectedStep = null;
+						}	
+
+						$scope.getEnabledSteps = function() {
+
+						}
+
+						$scope.$watch('currentStep', function(step) {
+							if(!step) return;
+							var stepTitle = $scope.selectedStep.wizardTitle;
+							if($scope.selectedStep && stepTitle !== $scope.currentStep) {
+								$scope.goToStep(getStepByTitle($scope.currentStep));
+							}
+						});
+
+						this.addStep = function(step) {
+							$scope.steps.push(step);
+
+							if($scope.getEnabledSteps().length === 1) {
+								$scope.goToStep($scope.getEnabledSteps()[0]);
+							}
+						}
+
+						$scope.getEnabledSteps = function() {
+			                return $scope.steps.filter(function(step){
+			                    return step.disabled !== 'true';
+			                });
+			            };
+						
+						$scope.goToStep = function(step) {
+							if(firstRun) { // bi-passes validation
+								unselectAll();
+								$scope.selectedStep = step;
+
+								if(!_.isUndefined($scope.currentStep)) {
+									$scope.currentStep = step.wizardTitle;
+								}
+								step.selected = true;
+								$scope.$emit('wizard:stepChanged', {step: step});
+								firstRun = false;
+							} else { 
+								var thisStep = $scope.currentStepNumber() > 0
+									? $scope.currentStepNumber() - 1
+									: 0;
+							}
+						}
+					}]
+			}
+		}])
+		.directive('piWizardStep', [function(){
+
+			return {
+				templateUrl: 'pi/wizard-step.tpl.html',
+				controller: ['$scope', '$rootScope',
+					function($scope, $rootScope) {
+
+						
+					}]
+			}
+		}])
+		.directive('piWizardBack', [function(){
+
+			return {
+				templateUrl: 'pi/wizard-step.tpl.html',
+				controller: ['$scope', '$rootScope',
+					function($scope, $rootScope) {
+
+						
+					}]
+			}
+		}])
+		.directive('piWizardButton', [function(){
+
+			return {
+				templateUrl: 'pi/wizard-step.tpl.html',
+				controller: ['$scope', '$rootScope',
+					function($scope, $rootScope) {
+
+						
+					}]
+			}
+		}]);
+})();
+/**
+ *
+ */
+(function(){
+	var settings = {};
+
+	var flags = {
+		sdk: false,
+		ready: false
+	};
+
+	var provider = function(){
+		
+      this.setAppId = function(appId){
+      	settings.appId = appId;
+      };
+
+      this.getAppId = function(){
+      	return appId;
+      };
+
+      settings.locale = 'pt_PT';
+
+      this.setLocale = function(locale) {
+      	settings.locale = locale;
+      };
+
+      this.getLocal = function(){
+      	return settings.locale;
+      };
+    
+		settings.status = true;
+
+		this.setStatus = function(status) {
+		  settings.status = status;
+		};
+
+		this.getStatus = function() {
+		  return settings.status;
+		};
+
+	settings.version = '2.0';
+	this.setSdkVersion = function(version) {
+		settings.version = version;
+	};
+
+	this.getSdkVersion = function(){
+		return settings.version;
+	};
+
+	      /*
+         * load SDK
+         */
+        settings.loadSDK = true;
+
+        this.setLoadSDK = function(a) {
+          settings.loadSDK = !!a;
+        };
+
+        this.getLoadSDK = function() {
+          return settings.loadSDK;
+        };
+
+        /**
+         * Custom option setting
+         * key @type {String}
+         * value @type {*}
+         * @return {*}
+         */
+        this.setInitCustomOption = function(key, value) {
+          if (!angular.isString(key)) {
+            return false;
+          }
+
+          settings[key] = value;
+          return settings[key];
+        };
+
+        /**
+         * get init option
+         * @param  {String} key
+         * @return {*}
+         */
+        this.getInitOption = function(key) {
+          // If key is not String or If non existing key return null
+          if (!angular.isString(key) || !settings.hasOwnProperty(key)) {
+            return false;
+          }
+
+          return settings[key];
+        };
+
+      this.shareDialog = function(title, content, url) {
+
+      };
+
+      this.like = function(postId) {
+      	FB.ui(
+		 {
+		  method: 'share',
+		  href: 'https://developers.facebook.com/docs/'
+		}, function(response){});
+      };
+
+      this.getComments = function(url) {
+
+      };
+
+      var getFn = function($q, $rootScope, $timeout, $window){
+
+      		/**
+      		 * The NgFacebook class is retrieved from Facebook Service request
+      		 */
+      		function NgFacebook(){
+      			this.appId = settings.appId;
+      		}
+
+      		NgFacebook.prototype.isReady = function(){
+      			return flags.ready;
+      		};
+
+      		
+      };
+
+      this.$get = [
+      	'$q',
+      	'$rootScope',
+      	'$timeout',
+      	'$window', getFn];
+
+	};
+
+	angular
+		.module('pi')
+		.value('fbSettings', settings)
+		.value('fbFlags', flags)
+
+})();
+(function(){
 
 	var piFileManager = function(){
 
@@ -22530,6 +21496,152 @@ var INTEGER_REGEXP = /^\-?\d*$/;
   piModalBack.$inject = ['$compile'];
 })();
 
+(function(){
+  angular
+    .module('pi.nav')
+    .factory('piNavigationBuilder', [function(){
+        function builder(idOrModel) {
+
+          var self = this,
+              cfg = {
+
+              };
+          if(_.isObject(idOrModel)) {
+            cfg['id'] = idOrModel.id;
+          } else if(_.isString(idOrModel)) {
+            cfg['id'] = idOrModel;
+          } else {
+            cfg['id'] = 'random-id';
+          }
+
+          self.highlighted = false;
+          self.hidden = true;
+          self.menu = [];
+          self.isChild = false;
+
+          this.dispose = function() {
+            this.hidden = true;
+            self.menu = [];
+          }
+
+          this.addState = function(name, model) {
+            self.menu.push({
+              'name': name,
+              'model': model,
+              'type': 'link'
+            });
+
+          };
+
+          this.remove = function(name) {
+            for (var i = 0; i < self.menu.length; i++) {
+              if(self.menu[i].name === name) {
+                self.menu.splice(i, 1);
+                break;
+              }
+            };
+          };
+
+          this.addAction = function(name, callback) {
+            self.menu.push({
+              'name': name,
+              'callback': callback,
+              'type': 'callback'
+            })
+          
+          };
+
+          this.hide = function() {
+            if(self.hidden) {
+              $log.info('The menu ' + cfg['id'] + ' is already hidden. Nothing to be done.');
+              return;
+            }
+            self.hidden = true;
+          }
+
+          this.highlight = function() {
+            if(self.highlighted) {
+              $log.info('The menu ' + cfg['id'] + ' is already highlighted. Nothing to be done.');
+              return;
+            }
+            self.highlighted = true;
+          }
+
+          this.show = function() {
+            if(!self.hidden) {
+              $log.info('The menu ' + cfg['id'] + ' is already visible. Nothing to be done.');
+              return;
+            }
+            self.hidden = false;
+          }
+
+          this.id = function() {
+            return cfg['id'];
+          }
+
+          return self;
+        }
+
+        return builder;
+      }])
+      .provider('piNavigation', [function(){
+
+        return {
+          $get: ['$rootScope','$log', 'piNavigationBuilder', 'piStack', '$log',
+            function($rootScope, $log, piNavigationBuilder, piStack, $log) {
+              var menus = piStack.create(),
+                cfg = {
+                  icons: {
+                    remove: 'icon ion-android-delete',
+                    save: 'icon ion-android-delete',
+                    add: 'icon ion-android-delete',
+                    info: 'icon ion-android-delete'  
+                  }
+                };
+
+              this.setIcon = function(type, value) {
+                if(_.isArray(type)) {
+                  if(_.isUndefined(type['type']) || _.isUndefined(type['type'])) {
+                    $log.error('Cant add ' + type);
+                  }
+                  for (var i = 0; i < type.length; i++) {
+                    cfg.icons[type[i].type] = type[i].value;
+                  };
+                }
+                cfg.icons[type] = value;
+              }
+
+              return {
+                create: function(id) {
+                  var menu = piNavigationBuilder(id);
+                  menus.add(id, menu);
+                  return menu;
+                },
+                close: function(id) {
+                  menus.remove(id);
+                }
+              }
+            }]
+
+        }
+      }])
+      .directive('piNavigationTemplate', ['piNavigationProvider',
+        function(piNavigationProvider) {
+          return {
+            scope: {
+              'menu': '@'
+            },
+            link: function(scope, elem, attrs, ngModel) {
+              scope.menu = piNavigationProvider.create();
+
+              scope.close = function() {
+                piNavigationProvider.close(scope.menu.id());
+              }
+            }
+          }
+        }
+      ]);
+})();
 /**
  * @ng-doc service
  * @name ApiIsAuthorService
@@ -23490,7 +22602,7 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 				this.persist = false;
 
 				return  {
-					$get: function($http) {
+					$get: function($http, pi) {
 
 						var s = this;
 
@@ -23499,6 +22611,9 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 						function getAugmentedConfig(cfg) {
 							var config  = cfg || {};
 							config.headers = config.headers || {};
+							if(!_.isUndefined(pi.getAppId())) {
+								config.headers['X-Pi-Application'] = pi.getAppId();
+							}
 							//config.headers.someHeaderName = 'some-header-value';
 							return config;
 						}
@@ -23667,6 +22782,9 @@ var INTEGER_REGEXP = /^\-?\d*$/;
               key: key,
               value: value
             });
+          },
+          addAll: function(arr) {
+            stack = stack.concat(arr);
           },
           get: function (key) {
             for (var i = 0; i < stack.length; i++) {
@@ -24069,6 +23187,18 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 (function(){
 	angular
 		.module('pi.core.article')
+		.factory('$piArticleStateEnum', function(){
+			return {
+				Draft: 1,
+				Published: 2,
+				Censored: 3,
+				Removed: 99
+			};
+		});
+})();
+(function(){
+	angular
+		.module('pi.core.article')
 		.factory('pi.core.article.articleSvc', ['piHttp', '$log', function(piHttp, $log){
 
 			var self = this;
@@ -24164,6 +23294,13 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 				return piHttp.post('/article-publish/' + id, {
 					id: id,
 					date: date
+				});
+			}
+
+			this.postCategory = function(id, catId){
+				return piHttp.post('/article-save-category/' + id, {
+					id: id,
+					categoryId: catId
 				});
 			}
 
@@ -24326,6 +23463,18 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 (function(){
 	angular
 		.module('pi.core.app')
+		.factory('$piEventStateEnum', function(){
+			return {
+				Draft: 1,
+				Published: 2,
+				Censored: 3,
+				Removed: 99
+			};
+		});
+})();
+(function(){
+	angular
+		.module('pi.core.app')
 		.factory('pi.core.app.eventSubSvc', ['piHttp', function(piHttp){
 			
 			this.post = function(model) {
@@ -24378,6 +23527,13 @@ var INTEGER_REGEXP = /^\-?\d*$/;
 				return piHttp.post('/event-publish/' + id, {
 					id: id,
 					date: date
+				});
+			}
+
+			this.postCategory = function(id, catId){
+				return piHttp.post('/event-save-category/' + id, {
+					id: id,
+					categoryId: catId
 				});
 			}
 
@@ -26021,1323 +25177,11 @@ angular.module('ngResource', ['ng']).
 
 })(window, window.angular);
 
-/*
----
-name: Facebook Angularjs
-
-description: Provides an easier way to make use of Facebook API with Angularjs
-
-license: MIT-style license
-
-authors:
-  - Ciul
-
-requires: [angular]
-provides: [facebook]
-
-...
-*/
-(function(window, angular, undefined) {
-  'use strict';
-
-  // Module global settings.
-  var settings = {};
-
-  // Module global flags.
-  var flags = {
-    sdk: false,
-    ready: false
-  };
-
-  // Module global loadDeferred
-  var loadDeferred;
-
-  /**
-   * Facebook module
-   */
-  angular.module('facebook', []).
-
-    // Declare module settings value
-    value('settings', settings).
-
-    // Declare module flags value
-    value('flags', flags).
-
-    /**
-     * Facebook provider
-     */
-    provider('Facebook', [
-      function() {
-
-        /**
-         * Facebook appId
-         * @type {Number}
-         */
-        settings.appId = null;
-
-        this.setAppId = function(appId) {
-          settings.appId = appId;
-        };
-
-        this.getAppId = function() {
-          return settings.appId;
-        };
-
-        /**
-         * Locale language, english by default
-         * @type {String}
-         */
-        settings.locale = 'en_US';
-
-        this.setLocale = function(locale) {
-          settings.locale = locale;
-        };
-
-        this.getLocale = function() {
-          return settings.locale;
-        };
-
-        /**
-         * Set if you want to check the authentication status
-         * at the start up of the app
-         * @type {Boolean}
-         */
-        settings.status = true;
-
-        this.setStatus = function(status) {
-          settings.status = status;
-        };
-
-        this.getStatus = function() {
-          return settings.status;
-        };
-
-        /**
-         * Adding a Channel File improves the performance of the javascript SDK,
-         * by addressing issues with cross-domain communication in certain browsers.
-         * @type {String}
-         */
-        settings.channelUrl = null;
-
-        this.setChannel = function(channel) {
-          settings.channelUrl = channel;
-        };
-
-        this.getChannel = function() {
-          return settings.channelUrl;
-        };
-
-        /**
-         * Enable cookies to allow the server to access the session
-         * @type {Boolean}
-         */
-        settings.cookie = true;
-
-        this.setCookie = function(cookie) {
-          settings.cookie = cookie;
-        };
-
-        this.getCookie = function() {
-          return settings.cookie;
-        };
-
-        /**
-         * Parse XFBML
-         * @type {Boolean}
-         */
-        settings.xfbml = true;
-
-        this.setXfbml = function(enable) {
-          settings.xfbml = enable;
-        };
-
-        this.getXfbml = function() {
-          return settings.xfbml;
-        };
-
-        /**
-         * Auth Response
-         * @type {Object}
-         */
-
-        this.setAuthResponse = function(obj) {
-          settings.authResponse = obj || true;
-        };
-
-        this.getAuthResponse = function() {
-          return settings.authResponse;
-        };
-
-        /**
-         * Frictionless Requests
-         * @type {Boolean}
-         */
-        settings.frictionlessRequests = false;
-
-        this.setFrictionlessRequests = function(enable) {
-          settings.frictionlessRequests = enable;
-        };
-
-        this.getFrictionlessRequests = function() {
-          return settings.frictionlessRequests;
-        };
-
-        /**
-         * HideFlashCallback
-         * @type {Object}
-         */
-        settings.hideFlashCallback = null;
-
-        this.setHideFlashCallback = function(obj) {
-          settings.hideFlashCallback = obj || null;
-        };
-
-        this.getHideFlashCallback = function() {
-          return settings.hideFlashCallback;
-        };
-
-        /**
-         * Custom option setting
-         * key @type {String}
-         * value @type {*}
-         * @return {*}
-         */
-        this.setInitCustomOption = function(key, value) {
-          if (!angular.isString(key)) {
-            return false;
-          }
-
-          settings[key] = value;
-          return settings[key];
-        };
-
-        /**
-         * get init option
-         * @param  {String} key
-         * @return {*}
-         */
-        this.getInitOption = function(key) {
-          // If key is not String or If non existing key return null
-          if (!angular.isString(key) || !settings.hasOwnProperty(key)) {
-            return false;
-          }
-
-          return settings[key];
-        };
-
-        /**
-         * load SDK
-         */
-        settings.loadSDK = true;
-
-        this.setLoadSDK = function(a) {
-          settings.loadSDK = !!a;
-        };
-
-        this.getLoadSDK = function() {
-          return settings.loadSDK;
-        };
-
-        /**
-         * SDK version
-         */
-        settings.version = 'v2.0';
-
-        this.setSdkVersion = function(version) {
-          settings.version = version;
-        };
-
-        this.getSdkVersion = function() {
-          return settings.version;
-        };
-
-        /**
-         * Init Facebook API required stuff
-         * This will prepare the app earlier (on settingsuration)
-         * @arg {Object/String} initSettings
-         * @arg {Boolean} _loadSDK (optional, true by default)
-         */
-        this.init = function(initSettings, _loadSDK) {
-          // If string is passed, set it as appId
-          if (angular.isString(initSettings)) {
-            settings.appId = initSettings || settings.appId;
-          }
-
-          // If object is passed, merge it with app settings
-          if (angular.isObject(initSettings)) {
-            angular.extend(settings, initSettings);
-          }
-
-          // Set if Facebook SDK should be loaded automatically or not.
-          if (angular.isDefined(_loadSDK)) {
-            settings.loadSDK = !!_loadSDK;
-          }
-        };
-
-        /**
-         * This defined the Facebook service
-         */
-        this.$get = [
-          '$q',
-          '$rootScope',
-          '$timeout',
-          '$window',
-          function($q, $rootScope, $timeout, $window) {
-            /**
-             * This is the NgFacebook class to be retrieved on Facebook Service request.
-             */
-            function NgFacebook() {
-              this.appId = settings.appId;
-            }
-
-            /**
-             * Ready state method
-             * @return {Boolean}
-             */
-            NgFacebook.prototype.isReady = function() {
-              return flags.ready;
-            };
-
-            NgFacebook.prototype.login = function () {
-
-              var d = $q.defer(),
-                  args = Array.prototype.slice.call(arguments),
-                  userFn,
-                  userFnIndex; // Converts arguments passed into an array
-
-                // Get user function and it's index in the arguments array, to replace it with custom function, allowing the usage of promises
-                angular.forEach(args, function(arg, index) {
-                  if (angular.isFunction(arg)) {
-                    userFn = arg;
-                    userFnIndex = index;
-                  }
-                });
-
-                // Replace user function intended to be passed to the Facebook API with a custom one
-                // for being able to use promises.
-                if (angular.isFunction(userFn) && angular.isNumber(userFnIndex)) {
-                  args.splice(userFnIndex, 1, function(response) {
-                    $timeout(function() {
-                      if (angular.isUndefined(response.error)) {
-                        d.resolve(response);
-                      } else {
-                        d.reject(response);
-                      }
-
-                      if (angular.isFunction(userFn)) {
-                        userFn(response);
-                      }
-                    });
-                  });
-                }
-
-                if (this.isReady()) {
-                  $window.FB.login.apply($window.FB, args);
-                } else {
-                  $timeout(function() {
-                    d.reject("Facebook.login() called before Facebook SDK has loaded.");
-                  });
-                }
-
-                return d.promise;
-            };
-
-            /**
-             * Map some asynchronous Facebook sdk methods to NgFacebook
-             */
-            angular.forEach([
-              'logout',
-              'api',
-              'ui',
-              'getLoginStatus'
-            ], function(name) {
-              NgFacebook.prototype[name] = function() {
-
-                var d = $q.defer(),
-                    args = Array.prototype.slice.call(arguments), // Converts arguments passed into an array
-                    userFn,
-                    userFnIndex;
-
-                // Get user function and it's index in the arguments array, to replace it with custom function, allowing the usage of promises
-                angular.forEach(args, function(arg, index) {
-                  if (angular.isFunction(arg)) {
-                    userFn = arg;
-                    userFnIndex = index;
-                  }
-                });
-
-                // Replace user function intended to be passed to the Facebook API with a custom one
-                // for being able to use promises.
-                if (angular.isFunction(userFn) && angular.isNumber(userFnIndex)) {
-                  args.splice(userFnIndex, 1, function(response) {
-                    $timeout(function() {
-
-                      if (response && typeof response.error === 'undefined') {
-                        d.resolve(response);
-                      } else {
-                        d.reject(response);
-                      }
-
-                      if (angular.isFunction(userFn)) {
-                        userFn(response);
-                      }
-                    });
-                  });
-                }
-
-                $timeout(function() {
-                  // Call when loadDeferred be resolved, meaning Service is ready to be used.
-                  loadDeferred.promise.then(function() {
-                    $window.FB[name].apply(FB, args);
-                  }, function() {
-                    throw 'Facebook API could not be initialized properly';
-                  });
-                });
-
-                return d.promise;
-              };
-            });
-
-            /**
-             * Map Facebook sdk XFBML.parse() to NgFacebook.
-             */
-            NgFacebook.prototype.parseXFBML = function() {
-
-              var d = $q.defer();
-
-              $timeout(function() {
-                // Call when loadDeferred be resolved, meaning Service is ready to be used
-                loadDeferred.promise.then(function() {
-                  $window.FB.XFBML.parse();
-                  d.resolve();
-                }, function() {
-                  throw 'Facebook API could not be initialized properly';
-                });
-              });
-
-              return d.promise;
-            };
-
-            /**
-             * Map Facebook sdk subscribe method to NgFacebook. Renamed as subscribe
-             * Thus, use it as Facebook.subscribe in the service.
-             */
-            NgFacebook.prototype.subscribe = function() {
-
-              var d = $q.defer(),
-                  args = Array.prototype.slice.call(arguments), // Get arguments passed into an array
-                  userFn,
-                  userFnIndex;
-
-              // Get user function and it's index in the arguments array, to replace it with custom function, allowing the usage of promises
-              angular.forEach(args, function(arg, index) {
-                if (angular.isFunction(arg)) {
-                  userFn = arg;
-                  userFnIndex = index;
-                }
-              });
-
-              // Replace user function intended to be passed to the Facebook API with a custom one
-              // for being able to use promises.
-              if (angular.isFunction(userFn) && angular.isNumber(userFnIndex)) {
-                args.splice(userFnIndex, 1, function(response) {
-                  $timeout(function() {
-
-                    if (response && typeof response.error === 'undefined') {
-                      d.resolve(response);
-                    } else {
-                      d.reject(response);
-                    }
-
-                    if (angular.isFunction(userFn)) {
-                      userFn(response);
-                    }
-                  });
-                });
-              }
-
-              $timeout(function() {
-                // Call when loadDeferred be resolved, meaning Service is ready to be used
-                loadDeferred.promise.then(function() {
-                  $window.FB.Event.subscribe.apply(FB, args);
-                }, function() {
-                  throw 'Facebook API could not be initialized properly';
-                });
-              });
-
-              return d.promise;
-            };
-
-            /**
-             * Map Facebook sdk unsubscribe method to NgFacebook. Renamed as unsubscribe
-             * Thus, use it as Facebook.unsubscribe in the service.
-             */
-            NgFacebook.prototype.unsubscribe = function() {
-
-              var d = $q.defer(),
-                  args = Array.prototype.slice.call(arguments), // Get arguments passed into an array
-                  userFn,
-                  userFnIndex;
-
-              // Get user function and it's index in the arguments array, to replace it with custom function, allowing the usage of promises
-              angular.forEach(args, function(arg, index) {
-                if (angular.isFunction(arg)) {
-                  userFn = arg;
-                  userFnIndex = index;
-                }
-              });
-
-              // Replace user function intended to be passed to the Facebook API with a custom one
-              // for being able to use promises.
-              if (angular.isFunction(userFn) && angular.isNumber(userFnIndex)) {
-                args.splice(userFnIndex, 1, function(response) {
-                  $timeout(function() {
-
-                    if (response && typeof response.error === 'undefined') {
-                      d.resolve(response);
-                    } else {
-                      d.reject(response);
-                    }
-
-                    if (angular.isFunction(userFn)) {
-                      userFn(response);
-                    }
-                  });
-                });
-              }
-
-              $timeout(function() {
-                // Call when loadDeferred be resolved, meaning Service is ready to be used
-                loadDeferred.promise.then(
-                  function() {
-                    $window.FB.Event.unsubscribe.apply(FB, args);
-                  },
-                  function() {
-                    throw 'Facebook API could not be initialized properly';
-                  }
-                );
-              });
-
-              return d.promise;
-            };
-
-            return new NgFacebook(); // Singleton
-          }
-        ];
-
-      }
-    ]).
-
-    /**
-     * Module initialization
-     */
-    run([
-      '$rootScope',
-      '$q',
-      '$window',
-      '$timeout',
-      function($rootScope, $q, $window, $timeout) {
-        // Define global loadDeffered to notify when Service callbacks are safe to use
-        loadDeferred = $q.defer();
-
-        var loadSDK = settings.loadSDK;
-        delete(settings['loadSDK']); // Remove loadSDK from settings since this isn't part from Facebook API.
-
-        /**
-         * Define fbAsyncInit required by Facebook API
-         */
-        $window.fbAsyncInit = function() {
-          // Initialize our Facebook app
-          $timeout(function() {
-            if (!settings.appId) {
-              throw 'Missing appId setting.';
-            }
-
-            FB.init(settings);
-
-            // Set ready global flag
-            flags.ready = true;
-
-
-            /**
-             * Subscribe to Facebook API events and broadcast through app.
-             */
-            angular.forEach({
-              'auth.login': 'login',
-              'auth.logout': 'logout',
-              'auth.prompt': 'prompt',
-              'auth.sessionChange': 'sessionChange',
-              'auth.statusChange': 'statusChange',
-              'auth.authResponseChange': 'authResponseChange',
-              'xfbml.render': 'xfbmlRender',
-              'edge.create': 'like',
-              'edge.remove': 'unlike',
-              'comment.create': 'comment',
-              'comment.remove': 'uncomment'
-            }, function(mapped, name) {
-              FB.Event.subscribe(name, function(response) {
-                $timeout(function() {
-                  $rootScope.$broadcast('Facebook:' + mapped, response);
-                });
-              });
-            });
-
-            // Broadcast Facebook:load event
-            $rootScope.$broadcast('Facebook:load');
-
-            loadDeferred.resolve(FB);
-          });
-        };
-
-        /**
-         * Inject Facebook root element in DOM
-         */
-        (function addFBRoot() {
-          var fbroot = document.getElementById('fb-root');
-
-          if (!fbroot) {
-            fbroot = document.createElement('div');
-            fbroot.id = 'fb-root';
-            document.body.insertBefore(fbroot, document.body.childNodes[0]);
-          }
-
-          return fbroot;
-        })();
-
-        /**
-         * SDK script injecting
-         */
-         if(loadSDK) {
-          (function injectScript() {
-            var src           = '//connect.facebook.net/' + settings.locale + '/sdk.js',
-                script        = document.createElement('script');
-                script.id     = 'facebook-jssdk';
-                script.async  = true;
-
-            // Prefix protocol
-            if (['file', 'file:'].indexOf($window.location.protocol) !== -1) {
-              src = 'https:' + src;
-            }
-
-            script.src = src;
-            script.onload = function() {
-              flags.sdk = true; // Set sdk global flag
-            };
-
-            document.getElementsByTagName('head')[0].appendChild(script); // // Fix for IE < 9, and yet supported by lattest browsers
-          })();
-        }
-      }
-    ]);
-
-})(window, angular);
-
-/*
----
-name: Phonegap Facebook Angularjs
-
-description: Provides a dependency for Phonegap projects.
-
-license: MIT-style license
-
-authors:
-  - Ciul
-
-requires: [angular, facebook]
-provides: [angular-facebook-phonegap]
-
-...
-*/
-(function(window, angular, undefined) {
-  'use strict';
-
-  angular.module('facebook').
-
-      /**
-       * Phonegap run code block
-       * This loads the SDK  from a local javascript file on deviceready event,
-       * as demanded by Facebook API documentation.
-       */
-      run([
-        'settings',
-        'flags',
-       function(settings, flags) {
-
-        // Local javascript file that contains the Facebook SDK.
-        var localSDKSrc = angular.isDefined(settings.localSDK) ? settings.localSDK : null;
-        if (angular.isString(localSDKSrc)) {
-          if (localSDKSrc.search('.js') === -1) {
-            localSDKSrc = localSDKSrc + '.js';
-          }
-          // Remove it from settings since it's not an API expected property.
-          delete(settings['localSDK']);
-        }
-
-        // Phonegap deviceready event fired!, now load Facebook SDK
-        function onReady() {
-          if (!angular.isString(localSDKSrc)) {
-            throw 'Missing localSDK setting pointing to the local javascript file with the Facebook SDK';
-          }
-
-          var src           = localSDKSrc,
-              script        = document.createElement('script');
-              script.id     = 'facebook-jssdk';
-              script.async  = true;
-
-          script.src = src;
-          script.onload = function() {
-            flags.sdk = true; // Set sdk global flag
-          };
-
-          document.getElementsByTagName('head')[0].appendChild(script); // // Fix for IE < 9, and yet supported by lattest browsers
-        }
-
-        document.addEventListener("deviceready", onReady, false);
-       }
-      ]);
-
-})(window, angular);
-(function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
-angular.module('nemLogging', []);
-
-angular.module('nemLogging').provider('nemDebug', function (){
-  var ourDebug = null;
-  ourDebug = require('debug');
-
-  this.$get =  function(){
-    //avail as service
-    return ourDebug;
-  };
-
-  //avail at provider, config time
-  this.debug = ourDebug;
-
-  return this;
-});
-var bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; },
-  slice = [].slice;
-
-angular.module('nemLogging').provider('nemSimpleLogger', [
-  'nemDebugProvider', function(nemDebugProvider) {
-    var LEVELS, Logger, _debugCache, _fns, _isValidLogObject, _maybeExecLevel, _wrapDebug, i, key, len, nemDebug, val;
-    nemDebug = nemDebugProvider.debug;
-    _debugCache = {};
-    _fns = ['debug', 'info', 'warn', 'error', 'log'];
-    LEVELS = {};
-    for (key = i = 0, len = _fns.length; i < len; key = ++i) {
-      val = _fns[key];
-      LEVELS[val] = key;
-    }
-    _maybeExecLevel = function(level, current, fn) {
-      if (level >= current) {
-        return fn();
-      }
-    };
-    _isValidLogObject = function(logObject) {
-      var isValid, j, len1;
-      isValid = false;
-      if (!logObject) {
-        return isValid;
-      }
-      for (j = 0, len1 = _fns.length; j < len1; j++) {
-        val = _fns[j];
-        isValid = (logObject[val] != null) && typeof logObject[val] === 'function';
-        if (!isValid) {
-          break;
-        }
-      }
-      return isValid;
-    };
-
-    /*
-      Overide logeObject.debug with a nemDebug instance
-      see: https://github.com/visionmedia/debug/blob/master/Readme.md
-     */
-    _wrapDebug = function(namespace, logObject) {
-      var debugInstance, j, len1, newLogger;
-      if (_debugCache[namespace] == null) {
-        _debugCache[namespace] = nemDebug(namespace);
-      }
-      debugInstance = _debugCache[namespace];
-      newLogger = {};
-      for (j = 0, len1 = _fns.length; j < len1; j++) {
-        val = _fns[j];
-        newLogger[val] = val === 'debug' ? debugInstance : logObject[val];
-      }
-      return newLogger;
-    };
-    Logger = (function() {
-      function Logger($log1) {
-        var fn1, j, len1, level, logFns;
-        this.$log = $log1;
-        this.spawn = bind(this.spawn, this);
-        if (!this.$log) {
-          throw 'internalLogger undefined';
-        }
-        if (!_isValidLogObject(this.$log)) {
-          throw '@$log is invalid';
-        }
-        this.doLog = true;
-        logFns = {};
-        fn1 = (function(_this) {
-          return function(level) {
-            logFns[level] = function() {
-              var args;
-              args = 1 <= arguments.length ? slice.call(arguments, 0) : [];
-              if (_this.doLog) {
-                return _maybeExecLevel(LEVELS[level], _this.currentLevel, function() {
-                  var ref;
-                  return (ref = _this.$log)[level].apply(ref, args);
-                });
-              }
-            };
-            return _this[level] = logFns[level];
-          };
-        })(this);
-        for (j = 0, len1 = _fns.length; j < len1; j++) {
-          level = _fns[j];
-          fn1(level);
-        }
-        this.LEVELS = LEVELS;
-        this.currentLevel = LEVELS.error;
-      }
-
-      Logger.prototype.spawn = function(newInternalLogger) {
-        if (typeof newInternalLogger === 'string') {
-          if (!_isValidLogObject(this.$log)) {
-            throw '@$log is invalid';
-          }
-          if (!nemDebug) {
-            throw 'nemDebug is undefined this is probably the light version of this library sep debug logggers is not supported!';
-          }
-          return _wrapDebug(newInternalLogger, this.$log);
-        }
-        return new Logger(newInternalLogger || this.$log);
-      };
-
-      return Logger;
-
-    })();
-    this.decorator = [
-      '$log', function($delegate) {
-        var log;
-        log = new Logger($delegate);
-        log.currentLevel = LEVELS.debug;
-        return log;
-      }
-    ];
-    this.$get = [
-      '$log', function($log) {
-        return new Logger($log);
-      }
-    ];
-    return this;
-  }
-]);
-
-},{"debug":2}],2:[function(require,module,exports){
-
-/**
- * This is the web browser implementation of `debug()`.
- *
- * Expose `debug()` as the module.
- */
-
-exports = module.exports = require('./debug');
-exports.log = log;
-exports.formatArgs = formatArgs;
-exports.save = save;
-exports.load = load;
-exports.useColors = useColors;
-exports.storage = 'undefined' != typeof chrome
-               && 'undefined' != typeof chrome.storage
-                  ? chrome.storage.local
-                  : localstorage();
-
-/**
- * Colors.
- */
-
-exports.colors = [
-  'lightseagreen',
-  'forestgreen',
-  'goldenrod',
-  'dodgerblue',
-  'darkorchid',
-  'crimson'
-];
-
-/**
- * Currently only WebKit-based Web Inspectors, Firefox >= v31,
- * and the Firebug extension (any Firefox version) are known
- * to support "%c" CSS customizations.
- *
- * TODO: add a `localStorage` variable to explicitly enable/disable colors
- */
-
-function useColors() {
-  // is webkit? http://stackoverflow.com/a/16459606/376773
-  return ('WebkitAppearance' in document.documentElement.style) ||
-    // is firebug? http://stackoverflow.com/a/398120/376773
-    (window.console && (console.firebug || (console.exception && console.table))) ||
-    // is firefox >= v31?
-    // https://developer.mozilla.org/en-US/docs/Tools/Web_Console#Styling_messages
-    (navigator.userAgent.toLowerCase().match(/firefox\/(\d+)/) && parseInt(RegExp.$1, 10) >= 31);
-}
-
-/**
- * Map %j to `JSON.stringify()`, since no Web Inspectors do that by default.
- */
-
-exports.formatters.j = function(v) {
-  return JSON.stringify(v);
-};
-
-
-/**
- * Colorize log arguments if enabled.
- *
- * @api public
- */
-
-function formatArgs() {
-  var args = arguments;
-  var useColors = this.useColors;
-
-  args[0] = (useColors ? '%c' : '')
-    + this.namespace
-    + (useColors ? ' %c' : ' ')
-    + args[0]
-    + (useColors ? '%c ' : ' ')
-    + '+' + exports.humanize(this.diff);
-
-  if (!useColors) return args;
-
-  var c = 'color: ' + this.color;
-  args = [args[0], c, 'color: inherit'].concat(Array.prototype.slice.call(args, 1));
-
-  // the final "%c" is somewhat tricky, because there could be other
-  // arguments passed either before or after the %c, so we need to
-  // figure out the correct index to insert the CSS into
-  var index = 0;
-  var lastC = 0;
-  args[0].replace(/%[a-z%]/g, function(match) {
-    if ('%%' === match) return;
-    index++;
-    if ('%c' === match) {
-      // we only are interested in the *last* %c
-      // (the user may have provided their own)
-      lastC = index;
-    }
-  });
-
-  args.splice(lastC, 0, c);
-  return args;
-}
-
-/**
- * Invokes `console.log()` when available.
- * No-op when `console.log` is not a "function".
- *
- * @api public
- */
-
-function log() {
-  // this hackery is required for IE8/9, where
-  // the `console.log` function doesn't have 'apply'
-  return 'object' === typeof console
-    && console.log
-    && Function.prototype.apply.call(console.log, console, arguments);
-}
-
-/**
- * Save `namespaces`.
- *
- * @param {String} namespaces
- * @api private
- */
-
-function save(namespaces) {
-  try {
-    if (null == namespaces) {
-      exports.storage.removeItem('debug');
-    } else {
-      exports.storage.debug = namespaces;
-    }
-  } catch(e) {}
-}
-
-/**
- * Load `namespaces`.
- *
- * @return {String} returns the previously persisted debug modes
- * @api private
- */
-
-function load() {
-  var r;
-  try {
-    r = exports.storage.debug;
-  } catch(e) {}
-  return r;
-}
-
-/**
- * Enable namespaces listed in `localStorage.debug` initially.
- */
-
-exports.enable(load());
-
-/**
- * Localstorage attempts to return the localstorage.
- *
- * This is necessary because safari throws
- * when a user disables cookies/localstorage
- * and you attempt to access it.
- *
- * @return {LocalStorage}
- * @api private
- */
-
-function localstorage(){
-  try {
-    return window.localStorage;
-  } catch (e) {}
-}
-
-},{"./debug":3}],3:[function(require,module,exports){
-
-/**
- * This is the common logic for both the Node.js and web browser
- * implementations of `debug()`.
- *
- * Expose `debug()` as the module.
- */
-
-exports = module.exports = debug;
-exports.coerce = coerce;
-exports.disable = disable;
-exports.enable = enable;
-exports.enabled = enabled;
-exports.humanize = require('ms');
-
-/**
- * The currently active debug mode names, and names to skip.
- */
-
-exports.names = [];
-exports.skips = [];
-
-/**
- * Map of special "%n" handling functions, for the debug "format" argument.
- *
- * Valid key names are a single, lowercased letter, i.e. "n".
- */
-
-exports.formatters = {};
-
-/**
- * Previously assigned color.
- */
-
-var prevColor = 0;
-
-/**
- * Previous log timestamp.
- */
-
-var prevTime;
-
-/**
- * Select a color.
- *
- * @return {Number}
- * @api private
- */
-
-function selectColor() {
-  return exports.colors[prevColor++ % exports.colors.length];
-}
-
-/**
- * Create a debugger with the given `namespace`.
- *
- * @param {String} namespace
- * @return {Function}
- * @api public
- */
-
-function debug(namespace) {
-
-  // define the `disabled` version
-  function disabled() {
-  }
-  disabled.enabled = false;
-
-  // define the `enabled` version
-  function enabled() {
-
-    var self = enabled;
-
-    // set `diff` timestamp
-    var curr = +new Date();
-    var ms = curr - (prevTime || curr);
-    self.diff = ms;
-    self.prev = prevTime;
-    self.curr = curr;
-    prevTime = curr;
-
-    // add the `color` if not set
-    if (null == self.useColors) self.useColors = exports.useColors();
-    if (null == self.color && self.useColors) self.color = selectColor();
-
-    var args = Array.prototype.slice.call(arguments);
-
-    args[0] = exports.coerce(args[0]);
-
-    if ('string' !== typeof args[0]) {
-      // anything else let's inspect with %o
-      args = ['%o'].concat(args);
-    }
-
-    // apply any `formatters` transformations
-    var index = 0;
-    args[0] = args[0].replace(/%([a-z%])/g, function(match, format) {
-      // if we encounter an escaped % then don't increase the array index
-      if (match === '%%') return match;
-      index++;
-      var formatter = exports.formatters[format];
-      if ('function' === typeof formatter) {
-        var val = args[index];
-        match = formatter.call(self, val);
-
-        // now we need to remove `args[index]` since it's inlined in the `format`
-        args.splice(index, 1);
-        index--;
-      }
-      return match;
-    });
-
-    if ('function' === typeof exports.formatArgs) {
-      args = exports.formatArgs.apply(self, args);
-    }
-    var logFn = enabled.log || exports.log || console.log.bind(console);
-    logFn.apply(self, args);
-  }
-  enabled.enabled = true;
-
-  var fn = exports.enabled(namespace) ? enabled : disabled;
-
-  fn.namespace = namespace;
-
-  return fn;
-}
-
-/**
- * Enables a debug mode by namespaces. This can include modes
- * separated by a colon and wildcards.
- *
- * @param {String} namespaces
- * @api public
- */
-
-function enable(namespaces) {
-  exports.save(namespaces);
-
-  var split = (namespaces || '').split(/[\s,]+/);
-  var len = split.length;
-
-  for (var i = 0; i < len; i++) {
-    if (!split[i]) continue; // ignore empty strings
-    namespaces = split[i].replace(/\*/g, '.*?');
-    if (namespaces[0] === '-') {
-      exports.skips.push(new RegExp('^' + namespaces.substr(1) + '$'));
-    } else {
-      exports.names.push(new RegExp('^' + namespaces + '$'));
-    }
-  }
-}
-
-/**
- * Disable debug output.
- *
- * @api public
- */
-
-function disable() {
-  exports.enable('');
-}
-
-/**
- * Returns true if the given mode name is enabled, false otherwise.
- *
- * @param {String} name
- * @return {Boolean}
- * @api public
- */
-
-function enabled(name) {
-  var i, len;
-  for (i = 0, len = exports.skips.length; i < len; i++) {
-    if (exports.skips[i].test(name)) {
-      return false;
-    }
-  }
-  for (i = 0, len = exports.names.length; i < len; i++) {
-    if (exports.names[i].test(name)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
- * Coerce `val`.
- *
- * @param {Mixed} val
- * @return {Mixed}
- * @api private
- */
-
-function coerce(val) {
-  if (val instanceof Error) return val.stack || val.message;
-  return val;
-}
-
-},{"ms":4}],4:[function(require,module,exports){
-/**
- * Helpers.
- */
-
-var s = 1000;
-var m = s * 60;
-var h = m * 60;
-var d = h * 24;
-var y = d * 365.25;
-
-/**
- * Parse or format the given `val`.
- *
- * Options:
- *
- *  - `long` verbose formatting [false]
- *
- * @param {String|Number} val
- * @param {Object} options
- * @return {String|Number}
- * @api public
- */
-
-module.exports = function(val, options){
-  options = options || {};
-  if ('string' == typeof val) return parse(val);
-  return options.long
-    ? long(val)
-    : short(val);
-};
-
-/**
- * Parse the given `str` and return milliseconds.
- *
- * @param {String} str
- * @return {Number}
- * @api private
- */
-
-function parse(str) {
-  str = '' + str;
-  if (str.length > 10000) return;
-  var match = /^((?:\d+)?\.?\d+) *(milliseconds?|msecs?|ms|seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h|days?|d|years?|yrs?|y)?$/i.exec(str);
-  if (!match) return;
-  var n = parseFloat(match[1]);
-  var type = (match[2] || 'ms').toLowerCase();
-  switch (type) {
-    case 'years':
-    case 'year':
-    case 'yrs':
-    case 'yr':
-    case 'y':
-      return n * y;
-    case 'days':
-    case 'day':
-    case 'd':
-      return n * d;
-    case 'hours':
-    case 'hour':
-    case 'hrs':
-    case 'hr':
-    case 'h':
-      return n * h;
-    case 'minutes':
-    case 'minute':
-    case 'mins':
-    case 'min':
-    case 'm':
-      return n * m;
-    case 'seconds':
-    case 'second':
-    case 'secs':
-    case 'sec':
-    case 's':
-      return n * s;
-    case 'milliseconds':
-    case 'millisecond':
-    case 'msecs':
-    case 'msec':
-    case 'ms':
-      return n;
-  }
-}
-
-/**
- * Short format for `ms`.
- *
- * @param {Number} ms
- * @return {String}
- * @api private
- */
-
-function short(ms) {
-  if (ms >= d) return Math.round(ms / d) + 'd';
-  if (ms >= h) return Math.round(ms / h) + 'h';
-  if (ms >= m) return Math.round(ms / m) + 'm';
-  if (ms >= s) return Math.round(ms / s) + 's';
-  return ms + 'ms';
-}
-
-/**
- * Long format for `ms`.
- *
- * @param {Number} ms
- * @return {String}
- * @api private
- */
-
-function long(ms) {
-  return plural(ms, d, 'day')
-    || plural(ms, h, 'hour')
-    || plural(ms, m, 'minute')
-    || plural(ms, s, 'second')
-    || ms + ' ms';
-}
-
-/**
- * Pluralization helper.
- */
-
-function plural(ms, n, name) {
-  if (ms < n) return;
-  if (ms < n * 1.5) return Math.floor(ms / n) + ' ' + name;
-  return Math.ceil(ms / n) + ' ' + name + 's';
-}
-
-},{}]},{},[1]);
-
 /**!
  * AngularJS file upload directives and services. Supoorts: file upload/drop/paste, resume, cancel/abort,
  * progress, resize, thumbnail, preview, validation and CORS
  * @author  Danial  <danial.farid@gmail.com>
- * @version 10.1.14
+ * @version 12.0.4
  */
 
 if (window.XMLHttpRequest && !(window.FileAPI && FileAPI.shouldLoad)) {
@@ -27358,13 +25202,14 @@ if (window.XMLHttpRequest && !(window.FileAPI && FileAPI.shouldLoad)) {
 
 var ngFileUpload = angular.module('ngFileUpload', []);
 
-ngFileUpload.version = '10.1.14';
+ngFileUpload.version = '12.0.4';
 
 ngFileUpload.service('UploadBase', ['$http', '$q', '$timeout', function ($http, $q, $timeout) {
   var upload = this;
+  upload.promisesCount = 0;
 
   this.isResumeSupported = function () {
-    return window.Blob && (window.Blob instanceof Function) && new window.Blob().slice;
+    return window.Blob && window.Blob.prototype.slice;
   };
 
   var resumeSupported = this.isResumeSupported();
@@ -27390,7 +25235,9 @@ ngFileUpload.service('UploadBase', ['$http', '$q', '$timeout', function ($http, 
     function getNotifyEvent(n) {
       if (config._start != null && resumeSupported) {
         return {
-          loaded: n.loaded + config._start, total: config._file.size, type: n.type, config: config,
+          loaded: n.loaded + config._start,
+          total: (config._file && config._file.size) || n.total,
+          type: n.type, config: config,
           lengthComputable: true, target: n.target
         };
       } else {
@@ -27401,7 +25248,7 @@ ngFileUpload.service('UploadBase', ['$http', '$q', '$timeout', function ($http, 
     if (!config.disableProgress) {
       config.headers.__setXHR_ = function () {
         return function (xhr) {
-          if (!xhr || !(xhr instanceof XMLHttpRequest)) return;
+          if (!xhr || !xhr.upload || !xhr.upload.addEventListener) return;
           config.__XHR = xhr;
           if (config.xhrFn) config.xhrFn(xhr);
           xhr.upload.addEventListener('progress', function (e) {
@@ -27421,18 +25268,24 @@ ngFileUpload.service('UploadBase', ['$http', '$q', '$timeout', function ($http, 
 
     function uploadWithAngular() {
       $http(config).then(function (r) {
-        if (resumeSupported && config._chunkSize && !config._finished) {
-          notifyProgress({loaded: config._end, total: config._file.size, config: config, type: 'progress'});
-          upload.upload(config, true);
-        } else {
-          if (config._finished) delete config._finished;
-          deferred.resolve(r);
+          if (resumeSupported && config._chunkSize && !config._finished && config._file) {
+            notifyProgress({
+                loaded: config._end,
+                total: config._file && config._file.size,
+                config: config, type: 'progress'
+              }
+            );
+            upload.upload(config, true);
+          } else {
+            if (config._finished) delete config._finished;
+            deferred.resolve(r);
+          }
+        }, function (e) {
+          deferred.reject(e);
+        }, function (n) {
+          deferred.notify(n);
         }
-      }, function (e) {
-        deferred.reject(e);
-      }, function (n) {
-        deferred.notify(n);
-      });
+      );
     }
 
     if (!resumeSupported) {
@@ -27463,6 +25316,10 @@ ngFileUpload.service('UploadBase', ['$http', '$q', '$timeout', function ($http, 
         throw e;
       });
     } else {
+      if (config._chunkSize) {
+        config._start = 0;
+        config._end = config._start + config._chunkSize;
+      }
       uploadWithAngular();
     }
 
@@ -27506,8 +25363,16 @@ ngFileUpload.service('UploadBase', ['$http', '$q', '$timeout', function ($http, 
       return promise;
     };
 
+    upload.promisesCount++;
+    promise['finally'](function () {
+      upload.promisesCount--;
+    });
     return promise;
   }
+
+  this.isUploadInProgress = function () {
+    return upload.promisesCount > 0;
+  };
 
   this.rename = function (file, name) {
     file.ngfName = name;
@@ -27537,11 +25402,11 @@ ngFileUpload.service('UploadBase', ['$http', '$q', '$timeout', function ($http, 
     return clone;
   }
 
-  this.upload = function (config, internal) {
-    function isFile(file) {
-      return file != null && (file instanceof window.Blob || (file.flashId && file.name && file.size));
-    }
+  this.isFile = function (file) {
+    return file != null && (file instanceof window.Blob || (file.flashId && file.name && file.size));
+  };
 
+  this.upload = function (config, internal) {
     function toResumeFile(file, formData) {
       if (file._ngfBlob) return file;
       config._file = config._file || file;
@@ -27554,7 +25419,8 @@ ngFileUpload.service('UploadBase', ['$http', '$q', '$timeout', function ($http, 
         slice.name = file.name;
         slice.ngfName = file.ngfName;
         if (config._chunkSize) {
-          formData.append('_chunkSize', config._end - config._start);
+          formData.append('_chunkSize', config._chunkSize);
+          formData.append('_currentChunkSize', config._end - config._start);
           formData.append('_chunkNumber', Math.floor(config._start / config._chunkSize));
           formData.append('_totalSize', config._file.size);
         }
@@ -27570,7 +25436,7 @@ ngFileUpload.service('UploadBase', ['$http', '$q', '$timeout', function ($http, 
         }
         if (angular.isString(val)) {
           formData.append(key, val);
-        } else if (isFile(val)) {
+        } else if (upload.isFile(val)) {
           var file = toResumeFile(val, formData);
           var split = key.split(',');
           if (split[1]) {
@@ -27660,11 +25526,11 @@ ngFileUpload.service('UploadBase', ['$http', '$q', '$timeout', function ($http, 
   this.translateScalars = function (str) {
     if (angular.isString(str)) {
       if (str.search(/kb/i) === str.length - 2) {
-        return parseFloat(str.substring(0, str.length - 2) * 1000);
+        return parseFloat(str.substring(0, str.length - 2) * 1024);
       } else if (str.search(/mb/i) === str.length - 2) {
-        return parseFloat(str.substring(0, str.length - 2) * 1000000);
+        return parseFloat(str.substring(0, str.length - 2) * 1048576);
       } else if (str.search(/gb/i) === str.length - 2) {
-        return parseFloat(str.substring(0, str.length - 2) * 1000000000);
+        return parseFloat(str.substring(0, str.length - 2) * 1073741824);
       } else if (str.search(/b/i) === str.length - 1) {
         return parseFloat(str.substring(0, str.length - 1));
       } else if (str.search(/s/i) === str.length - 1) {
@@ -27676,6 +25542,21 @@ ngFileUpload.service('UploadBase', ['$http', '$q', '$timeout', function ($http, 
       }
     }
     return str;
+  };
+
+  this.urlToBlob = function(url) {
+    var defer = $q.defer();
+    $http({url: url, method: 'get', responseType: 'arraybuffer'}).then(function (resp) {
+      var arrayBufferView = new Uint8Array(resp.data);
+      var type = resp.headers('content-type') || 'image/WebP';
+      var blob = new window.Blob([arrayBufferView], {type: type});
+      defer.resolve(blob);
+      //var split = type.split('[/;]');
+      //blob.name = url.substring(0, 150).replace(/\W+/g, '') + '.' + (split.length > 1 ? split[1] : 'jpg');
+    }, function (e) {
+      defer.reject(e);
+    });
+    return defer.promise;
   };
 
   this.setDefaults = function (defaults) {
@@ -27735,6 +25616,15 @@ ngFileUpload.service('Upload', ['$parse', '$timeout', '$compile', '$q', 'UploadE
     return d.promise;
   };
 
+  upload.rejectPromise = function () {
+    var d = $q.defer();
+    var args = arguments;
+    $timeout(function () {
+      d.reject.apply(d, args);
+    });
+    return d.promise;
+  };
+
   upload.happyPromise = function (promise, data) {
     var d = $q.defer();
     promise.then(function (result) {
@@ -27761,14 +25651,35 @@ ngFileUpload.service('Upload', ['$parse', '$timeout', '$compile', '$q', 'UploadE
   }
 
   function resize(files, attr, scope) {
-    var param = upload.attrGetter('ngfResize', attr, scope);
-    if (!param || !upload.isResizeSupported() || !files.length) return upload.emptyPromise();
+    var resizeVal = upload.attrGetter('ngfResize', attr, scope);
+    if (!resizeVal || !upload.isResizeSupported() || !files.length) return upload.emptyPromise();
+    if (resizeVal instanceof Function) {
+      var defer = $q.defer();
+      resizeVal(files).then(function (p) {
+        resizeWithParams(p, files, attr, scope).then(function (r) {
+          defer.resolve(r);
+        }, function (e) {
+          defer.reject(e);
+        });
+      }, function (e) {
+        defer.reject(e);
+      });
+    } else {
+      return resizeWithParams(resizeVal, files, attr, scope);
+    }
+  }
+
+  function resizeWithParams(param, files, attr, scope) {
     var promises = [upload.emptyPromise()];
-    angular.forEach(files, function (f, i) {
+
+    function handleFile(f, i) {
       if (f.type.indexOf('image') === 0) {
         if (param.pattern && !upload.validatePattern(f, param.pattern)) return;
         var promise = upload.resize(f, param.width, param.height, param.quality,
-          param.type, param.ratio, param.centerCrop);
+          param.type, param.ratio, param.centerCrop, function (width, height) {
+            return upload.attrGetter('ngfResizeIf', attr, scope,
+              {$width: width, $height: height, $file: f});
+          }, param.restoreExif !== false);
         promises.push(promise);
         promise.then(function (resizedFile) {
           files.splice(i, 1, resizedFile);
@@ -27777,43 +25688,20 @@ ngFileUpload.service('Upload', ['$parse', '$timeout', '$compile', '$q', 'UploadE
           f.$errorParam = (e ? (e.message ? e.message : e) + ': ' : '') + (f && f.name);
         });
       }
-    });
-    return $q.all(promises);
-  }
-
-  function handleKeep(files, prevFiles, attr, scope) {
-    var dupFiles = [];
-    var keep = upload.attrGetter('ngfKeep', attr, scope);
-    if (keep) {
-      var hasNew = false;
-
-      if (keep === 'distinct' || upload.attrGetter('ngfKeepDistinct', attr, scope) === true) {
-        var len = prevFiles.length;
-        if (files) {
-          for (var i = 0; i < files.length; i++) {
-            for (var j = 0; j < len; j++) {
-              if (files[i].name === prevFiles[j].name) {
-                dupFiles.push(files[i]);
-                break;
-              }
-            }
-            if (j === len) {
-              prevFiles.push(files[i]);
-              hasNew = true;
-            }
-          }
-        }
-        files = prevFiles;
-      } else {
-        files = prevFiles.concat(files || []);
-      }
     }
-    return {files: files, dupFiles: dupFiles, keep: keep};
+
+    for (var i = 0; i < files.length; i++) {
+      handleFile(files[i], i);
+    }
+    return $q.all(promises);
   }
 
   upload.updateModel = function (ngModel, attr, scope, fileChange, files, evt, noDelay) {
     function update(files, invalidFiles, newFiles, dupFiles, isSingleModel) {
+      attr.$$ngfPrevValidFiles = files;
+      attr.$$ngfPrevInvalidFiles = invalidFiles;
       var file = files && files.length ? files[0] : null;
+      var invalidFile = invalidFiles && invalidFiles.length ? invalidFiles[0] : null;
 
       if (ngModel) {
         upload.applyModelValidation(ngModel, files);
@@ -27827,6 +25715,7 @@ ngFileUpload.service('Upload', ['$parse', '$timeout', '$compile', '$q', 'UploadE
           $newFiles: newFiles,
           $duplicateFiles: dupFiles,
           $invalidFiles: invalidFiles,
+          $invalidFile: invalidFile,
           $event: evt
         });
       }
@@ -27834,7 +25723,7 @@ ngFileUpload.service('Upload', ['$parse', '$timeout', '$compile', '$q', 'UploadE
       var invalidModel = upload.attrGetter('ngfModelInvalid', attr);
       if (invalidModel) {
         $timeout(function () {
-          $parse(invalidModel).assign(scope, invalidFiles);
+          $parse(invalidModel).assign(scope, isSingleModel ? invalidFile : invalidFiles);
         });
       }
       $timeout(function () {
@@ -27842,65 +25731,127 @@ ngFileUpload.service('Upload', ['$parse', '$timeout', '$compile', '$q', 'UploadE
       });
     }
 
-    var newFiles = files;
-    var prevFiles = ngModel && ngModel.$modelValue && (angular.isArray(ngModel.$modelValue) ?
-        ngModel.$modelValue : [ngModel.$modelValue]);
-    prevFiles = (prevFiles || attr.$$ngfPrevFiles || []).slice(0);
-    var keepResult = handleKeep(files, prevFiles, attr, scope);
-    files = keepResult.files;
-    var dupFiles = keepResult.dupFiles;
-    var isSingleModel = !upload.attrGetter('ngfMultiple', attr, scope) && !upload.attrGetter('multiple', attr) && !keepResult.keep;
+    var allNewFiles, dupFiles = [], prevValidFiles, prevInvalidFiles,
+      invalids = [], valids = [];
 
-    attr.$$ngfPrevFiles = files;
-
-    if (keepResult.keep && (!newFiles || !newFiles.length)) return;
-
-    upload.attrGetter('ngfBeforeModelChange', attr, scope, {$files: files,
-      $file: files && files.length ? files[0] : null,
-      $duplicateFiles: dupFiles,
-      $event: evt});
-
-    upload.validate(newFiles, ngModel, attr, scope).then(function () {
-      if (noDelay) {
-        update(files, [], newFiles, dupFiles, isSingleModel);
-      } else {
-        var options = upload.attrGetter('ngModelOptions', attr, scope);
-        if (!options || !options.allowInvalid) {
-          var valids = [], invalids = [];
-          angular.forEach(files, function (file) {
-            if (file.$error) {
-              invalids.push(file);
-            } else {
-              valids.push(file);
-            }
-          });
-          files = valids;
-        }
-        var fixOrientation = upload.emptyPromise(files);
-        if (upload.attrGetter('ngfFixOrientation', attr, scope) && upload.isExifSupported()) {
-          fixOrientation = applyExifRotations(files, attr, scope);
-        }
-        fixOrientation.then(function () {
-          resize(files, attr, scope).then(function () {
-            $timeout(function () {
-              update(files, invalids, newFiles, dupFiles, isSingleModel);
-            }, options && options.debounce ? options.debounce.change || options.debounce : 0);
-          }, function (e) {
-            throw 'Could not resize files ' + e;
-          });
-        });
+    function removeDuplicates() {
+      function equals(f1, f2) {
+        return f1.name === f2.name && (f1.$ngfOrigSize || f1.size) === (f2.$ngfOrigSize || f2.size) &&
+          f1.type === f2.type;
       }
-    });
 
-    // cleaning object url memories
-    var l = prevFiles.length;
-    while (l--) {
-      var prevFile = prevFiles[l];
-      if (window.URL && prevFile.blobUrl) {
-        URL.revokeObjectURL(prevFile.blobUrl);
-        delete prevFile.blobUrl;
+      function isInPrevFiles(f) {
+        var j;
+        for (j = 0; j < prevValidFiles.length; j++) {
+          if (equals(f, prevValidFiles[j])) {
+            return true;
+          }
+        }
+        for (j = 0; j < prevInvalidFiles.length; j++) {
+          if (equals(f, prevInvalidFiles[j])) {
+            return true;
+          }
+        }
+        return false;
+      }
+
+      if (files) {
+        allNewFiles = [];
+        dupFiles = [];
+        for (var i = 0; i < files.length; i++) {
+          if (isInPrevFiles(files[i])) {
+            dupFiles.push(files[i]);
+          } else {
+            allNewFiles.push(files[i]);
+          }
+        }
       }
     }
+
+    function toArray(v) {
+      return angular.isArray(v) ? v : [v];
+    }
+
+    function separateInvalids() {
+      valids = [];
+      invalids = [];
+      angular.forEach(allNewFiles, function (file) {
+        if (file.$error) {
+          invalids.push(file);
+        } else {
+          valids.push(file);
+        }
+      });
+    }
+
+    function resizeAndUpdate() {
+      function updateModel() {
+        $timeout(function () {
+          update(keep ? prevValidFiles.concat(valids) : valids,
+            keep ? prevInvalidFiles.concat(invalids) : invalids,
+            files, dupFiles, isSingleModel);
+        }, options && options.debounce ? options.debounce.change || options.debounce : 0);
+      }
+
+      resize(validateAfterResize ? allNewFiles : valids, attr, scope).then(function () {
+        if (validateAfterResize) {
+          upload.validate(allNewFiles, prevValidFiles.length, ngModel, attr, scope).then(function () {
+            separateInvalids();
+            updateModel();
+          });
+        } else {
+          updateModel();
+        }
+      }, function (e) {
+        throw 'Could not resize files ' + e;
+      });
+    }
+
+    prevValidFiles = attr.$$ngfPrevValidFiles || [];
+    prevInvalidFiles = attr.$$ngfPrevInvalidFiles || [];
+    if (ngModel && ngModel.$modelValue) {
+      prevValidFiles = toArray(ngModel.$modelValue);
+    }
+
+    var keep = upload.attrGetter('ngfKeep', attr, scope);
+    allNewFiles = (files || []).slice(0);
+    if (keep === 'distinct' || upload.attrGetter('ngfKeepDistinct', attr, scope) === true) {
+      removeDuplicates(attr, scope);
+    }
+
+    var isSingleModel = !keep && !upload.attrGetter('ngfMultiple', attr, scope) && !upload.attrGetter('multiple', attr);
+
+    if (keep && !allNewFiles.length) return;
+
+    upload.attrGetter('ngfBeforeModelChange', attr, scope, {
+      $files: files,
+      $file: files && files.length ? files[0] : null,
+      $newFiles: allNewFiles,
+      $duplicateFiles: dupFiles,
+      $event: evt
+    });
+
+    var validateAfterResize = upload.attrGetter('ngfValidateAfterResize', attr, scope);
+
+    var options = upload.attrGetter('ngModelOptions', attr, scope);
+    upload.validate(allNewFiles, prevValidFiles.length, ngModel, attr, scope).then(function () {
+      if (noDelay) {
+        update(allNewFiles, [], files, dupFiles, isSingleModel);
+      } else {
+        if ((!options || !options.allowInvalid) && !validateAfterResize) {
+          separateInvalids();
+        } else {
+          valids = allNewFiles;
+        }
+        if (upload.attrGetter('ngfFixOrientation', attr, scope) && upload.isExifSupported()) {
+          applyExifRotations(valids, attr, scope).then(function () {
+            resizeAndUpdate();
+          });
+        } else {
+          resizeAndUpdate();
+        }
+      }
+    });
   };
 
   return upload;
@@ -28009,7 +25960,8 @@ ngFileUpload.directive('ngfSelect', ['$parse', '$timeout', '$compile', 'Upload',
     var initialTouchStartY = 0;
 
     function clickHandler(evt) {
-      if (elem.attr('disabled') || attrGetter('ngfSelectDisabled', scope)) return false;
+      if (elem.attr('disabled')) return false;
+      if (attrGetter('ngfSelectDisabled', scope)) return;
 
       var r = handleTouch(evt);
       if (r != null) return r;
@@ -28020,7 +25972,7 @@ ngFileUpload.directive('ngfSelect', ['$parse', '$timeout', '$compile', 'Upload',
       try {
         if (!isInputTypeFile() && !document.body.contains(fileElem[0])) {
           generatedElems.push({el: elem, ref: fileElem.parent()});
-          document.body.appendChild(fileElem[0].parent());
+          document.body.appendChild(fileElem.parent()[0]);
           fileElem.bind('change', changeFn);
         }
       } catch(e){/*ignore*/}
@@ -28192,7 +26144,20 @@ ngFileUpload.directive('ngfSelect', ['$parse', '$timeout', '$compile', 'Upload',
             }
             $timeout(function () {
               file.$ngfBlobUrl = url;
-              if (url) deferred.resolve(url, file);
+              if (url) {
+                deferred.resolve(url, file);
+                upload.blobUrls = upload.blobUrls || [];
+                upload.blobUrlsTotalSize = upload.blobUrlsTotalSize || 0;
+                upload.blobUrls.push({url: url, size: file.size});
+                upload.blobUrlsTotalSize += file.size || 0;
+                var maxMemory = upload.defaults.blobUrlsMaxMemory || 268435456;
+                var maxLength = upload.defaults.blobUrlsMaxQueueSize || 200;
+                while ((upload.blobUrlsTotalSize > maxMemory || upload.blobUrls.length > maxLength) && upload.blobUrls.length > 1) {
+                  var obj = upload.blobUrls.splice(0, 1)[0];
+                  URL.revokeObjectURL(obj.url);
+                  upload.blobUrlsTotalSize -= obj.size;
+                }
+              }
             });
           } else {
             var fileReader = new FileReader();
@@ -28200,6 +26165,9 @@ ngFileUpload.directive('ngfSelect', ['$parse', '$timeout', '$compile', 'Upload',
               $timeout(function () {
                 file.$ngfDataUrl = e.target.result;
                 deferred.resolve(e.target.result, file);
+                $timeout(function () {
+                  delete file.$ngfDataUrl;
+                }, 1000);
               });
             };
             fileReader.onerror = function () {
@@ -28212,7 +26180,7 @@ ngFileUpload.directive('ngfSelect', ['$parse', '$timeout', '$compile', 'Upload',
           }
         } else {
           $timeout(function () {
-            file[disallowObjectUrl ? 'dataUrl' : 'blobUrl'] = '';
+            file[disallowObjectUrl ? '$ngfDataUrl' : '$ngfBlobUrl'] = '';
             deferred.reject();
           });
         }
@@ -28440,7 +26408,10 @@ ngFileUpload.service('UploadValidate', ['UploadDataUrl', '$q', '$timeout', funct
     if (ngModel) {
       ngModel.$formatters.push(function (files) {
         if (ngModel.$dirty) {
-          upload.validate(files, ngModel, attr, scope).then(function () {
+          if (files && !angular.isArray(files)) {
+            files = [files];
+          }
+          upload.validate(files, 0, ngModel, attr, scope).then(function () {
             upload.applyModelValidation(ngModel, files);
           });
         }
@@ -28465,7 +26436,23 @@ ngFileUpload.service('UploadValidate', ['UploadDataUrl', '$q', '$timeout', funct
     });
   };
 
-  upload.validate = function (files, ngModel, attr, scope) {
+  upload.getValidationAttr = function (attr, scope, name, validationName, file) {
+    var dName = 'ngf' + name[0].toUpperCase() + name.substr(1);
+    var val = upload.attrGetter(dName, attr, scope, {$file: file});
+    if (val == null) {
+      val = upload.attrGetter('ngfValidate', attr, scope, {$file: file});
+      if (val) {
+        var split = (validationName || name).split('.');
+        val = val[split[0]];
+        if (split.length > 1) {
+          val = val && val[split[1]];
+        }
+      }
+    }
+    return val;
+  };
+
+  upload.validate = function (files, prevLength, ngModel, attr, scope) {
     ngModel = ngModel || {};
     ngModel.$ngfValidations = ngModel.$ngfValidations || [];
 
@@ -28483,21 +26470,17 @@ ngFileUpload.service('UploadValidate', ['UploadDataUrl', '$q', '$timeout', funct
 
     files = files.length === undefined ? [files] : files.slice(0);
 
-    function validateSync(name, validatorVal, fn) {
+    function validateSync(name, validationName, fn) {
       if (files) {
-        var dName = 'ngf' + name[0].toUpperCase() + name.substr(1);
         var i = files.length, valid = null;
         while (i--) {
           var file = files[i];
           if (file) {
-            var val = attrGetter(dName, {'$file': file});
-            if (val == null) {
-              val = validatorVal(attrGetter('ngfValidate') || {});
-              valid = valid == null ? true : valid;
-            }
+            var val = upload.getValidationAttr(attr, scope, name, validationName, file);
             if (val != null) {
-              if (!fn(file, val)) {
+              if (!fn(file, val, i)) {
                 file.$error = name;
+                (file.$errorMessages = (file.$errorMessages || {}))[name] = true;
                 file.$errorParam = val;
                 files.splice(i, 1);
                 valid = false;
@@ -28511,23 +26494,18 @@ ngFileUpload.service('UploadValidate', ['UploadDataUrl', '$q', '$timeout', funct
       }
     }
 
-    validateSync('pattern', function (cons) {
-      return cons.pattern;
-    }, upload.validatePattern);
-    validateSync('minSize', function (cons) {
-      return cons.size && cons.size.min;
-    }, function (file, val) {
-      return file.size >= upload.translateScalars(val);
+    validateSync('maxFiles', null, function (file, val, i) {
+      return prevLength + i < val;
     });
-    validateSync('maxSize', function (cons) {
-      return cons.size && cons.size.max;
-    }, function (file, val) {
-      return file.size <= upload.translateScalars(val);
+    validateSync('pattern', null, upload.validatePattern);
+    validateSync('minSize', 'size.min', function (file, val) {
+      return file.size + 0.1 >= upload.translateScalars(val);
+    });
+    validateSync('maxSize', 'size.max', function (file, val) {
+      return file.size - 0.1 <= upload.translateScalars(val);
     });
     var totalSize = 0;
-    validateSync('maxTotalSize', function (cons) {
-      return cons.maxTotalSize && cons.maxTotalSize;
-    }, function (file, val) {
+    validateSync('maxTotalSize', null, function (file, val) {
       totalSize += file.size;
       if (totalSize > upload.translateScalars(val)) {
         files.splice(0, files.length);
@@ -28536,9 +26514,7 @@ ngFileUpload.service('UploadValidate', ['UploadDataUrl', '$q', '$timeout', funct
       return true;
     });
 
-    validateSync('validateFn', function () {
-      return null;
-    }, function (file, r) {
+    validateSync('validateFn', null, function (file, r) {
       return r === true || r === null || r === '';
     });
 
@@ -28546,10 +26522,35 @@ ngFileUpload.service('UploadValidate', ['UploadDataUrl', '$q', '$timeout', funct
       return upload.emptyPromise(ngModel, ngModel.$ngfValidations);
     }
 
-    function validateAsync(name, validatorVal, type, asyncFn, fn) {
+    function validateAsync(name, validationName, type, asyncFn, fn) {
+      function resolveResult(defer, file, val) {
+        if (val != null) {
+          asyncFn(file, val).then(function (d) {
+            if (!fn(d, val)) {
+              file.$error = name;
+              (file.$errorMessages = (file.$errorMessages || {}))[name] = true;
+              file.$errorParam = val;
+              defer.reject();
+            } else {
+              defer.resolve();
+            }
+          }, function () {
+            if (attrGetter('ngfValidateForce', {$file: file})) {
+              file.$error = name;
+              (file.$errorMessages = (file.$errorMessages || {}))[name] = true;
+              file.$errorParam = val;
+              defer.reject();
+            } else {
+              defer.resolve();
+            }
+          });
+        } else {
+          defer.resolve();
+        }
+      }
+
       var promises = [upload.emptyPromise()];
       if (files) {
-        var dName = 'ngf' + name[0].toUpperCase() + name.substr(1);
         files = files.length === undefined ? [files] : files;
         angular.forEach(files, function (file) {
           var defer = $q.defer();
@@ -28558,27 +26559,23 @@ ngFileUpload.service('UploadValidate', ['UploadDataUrl', '$q', '$timeout', funct
             defer.resolve();
             return;
           }
-          var val = attrGetter(dName, {'$file': file}) || validatorVal(attrGetter('ngfValidate', {'$file': file}) || {});
-          if (val) {
-            asyncFn(file, val).then(function (d) {
-              if (!fn(d, val)) {
-                file.$error = name;
-                file.$errorParam = val;
-                defer.reject();
-              } else {
-                defer.resolve();
-              }
+          if (name === 'dimensions' && upload.attrGetter('ngfDimensions', attr) != null) {
+            upload.imageDimensions(file).then(function (d) {
+              resolveResult(defer, file,
+                attrGetter('ngfDimensions', {$file: file, $width: d.width, $height: d.height}));
             }, function () {
-              if (attrGetter('ngfValidateForce', {'$file': file})) {
-                file.$error = name;
-                file.$errorParam = val;
-                defer.reject();
-              } else {
-                defer.resolve();
-              }
+              defer.reject();
+            });
+          } else if (name === 'duration' && upload.attrGetter('ngfDuration', attr) != null) {
+            upload.mediaDuration(file).then(function (d) {
+              resolveResult(defer, file,
+                attrGetter('ngfDuration', {$file: file, $duration: d}));
+            }, function () {
+              defer.reject();
             });
           } else {
-            defer.resolve();
+            resolveResult(defer, file,
+              upload.getValidationAttr(attr, scope, name, validationName, file));
           }
         });
         return $q.all(promises).then(function () {
@@ -28592,65 +26589,67 @@ ngFileUpload.service('UploadValidate', ['UploadDataUrl', '$q', '$timeout', funct
     var deffer = $q.defer();
     var promises = [];
 
-    promises.push(upload.happyPromise(validateAsync('maxHeight', function (cons) {
-      return cons.height && cons.height.max;
-    }, /image/, this.imageDimensions, function (d, val) {
-      return d.height <= val;
-    })));
-    promises.push(upload.happyPromise(validateAsync('minHeight', function (cons) {
-      return cons.height && cons.height.min;
-    }, /image/, this.imageDimensions, function (d, val) {
-      return d.height >= val;
-    })));
-    promises.push(upload.happyPromise(validateAsync('maxWidth', function (cons) {
-      return cons.width && cons.width.max;
-    }, /image/, this.imageDimensions, function (d, val) {
-      return d.width <= val;
-    })));
-    promises.push(upload.happyPromise(validateAsync('minWidth', function (cons) {
-      return cons.width && cons.width.min;
-    }, /image/, this.imageDimensions, function (d, val) {
-      return d.width >= val;
-    })));
-    promises.push(upload.happyPromise(validateAsync('ratio', function (cons) {
-      return cons.ratio;
-    }, /image/, this.imageDimensions, function (d, val) {
-      var split = val.toString().split(','), valid = false;
-      for (var i = 0; i < split.length; i++) {
-        if (Math.abs((d.width / d.height) - upload.ratioToFloat(split[i])) < 0.0001) {
-          valid = true;
+    promises.push(upload.happyPromise(validateAsync('maxHeight', 'height.max', /image/,
+      this.imageDimensions, function (d, val) {
+        return d.height <= val;
+      })));
+    promises.push(upload.happyPromise(validateAsync('minHeight', 'height.min', /image/,
+      this.imageDimensions, function (d, val) {
+        return d.height >= val;
+      })));
+    promises.push(upload.happyPromise(validateAsync('maxWidth', 'width.max', /image/,
+      this.imageDimensions, function (d, val) {
+        return d.width <= val;
+      })));
+    promises.push(upload.happyPromise(validateAsync('minWidth', 'width.min', /image/,
+      this.imageDimensions, function (d, val) {
+        return d.width >= val;
+      })));
+    promises.push(upload.happyPromise(validateAsync('dimensions', null, /image/,
+      function (file, val) {
+        return upload.emptyPromise(val);
+      }, function (r) {
+        return r;
+      })));
+    promises.push(upload.happyPromise(validateAsync('ratio', null, /image/,
+      this.imageDimensions, function (d, val) {
+        var split = val.toString().split(','), valid = false;
+        for (var i = 0; i < split.length; i++) {
+          if (Math.abs((d.width / d.height) - upload.ratioToFloat(split[i])) < 0.0001) {
+            valid = true;
+          }
         }
-      }
-      return valid;
-    })));
-    promises.push(upload.happyPromise(validateAsync('maxRatio', function (cons) {
-      return cons.ratio;
-    }, /image/, this.imageDimensions, function (d, val) {
-      return (d.width / d.height) - upload.ratioToFloat(val) < 0.0001;
-    })));
-    promises.push(upload.happyPromise(validateAsync('minRatio', function (cons) {
-      return cons.ratio;
-    }, /image/, this.imageDimensions, function (d, val) {
-      return (d.width / d.height) - upload.ratioToFloat(val) > -0.0001;
-    })));
-    promises.push(upload.happyPromise(validateAsync('maxDuration', function (cons) {
-      return cons.duration && cons.duration.max;
-    }, /audio|video/, this.mediaDuration, function (d, val) {
-      return d <= upload.translateScalars(val);
-    })));
-    promises.push(upload.happyPromise(validateAsync('minDuration', function (cons) {
-      return cons.duration && cons.duration.min;
-    }, /audio|video/, this.mediaDuration, function (d, val) {
-      return d >= upload.translateScalars(val);
-    })));
+        return valid;
+      })));
+    promises.push(upload.happyPromise(validateAsync('maxRatio', 'ratio.max', /image/,
+      this.imageDimensions, function (d, val) {
+        return (d.width / d.height) - upload.ratioToFloat(val) < 0.0001;
+      })));
+    promises.push(upload.happyPromise(validateAsync('minRatio', 'ratio.min', /image/,
+      this.imageDimensions, function (d, val) {
+        return (d.width / d.height) - upload.ratioToFloat(val) > -0.0001;
+      })));
+    promises.push(upload.happyPromise(validateAsync('maxDuration', 'duration.max', /audio|video/,
+      this.mediaDuration, function (d, val) {
+        return d <= upload.translateScalars(val);
+      })));
+    promises.push(upload.happyPromise(validateAsync('minDuration', 'duration.min', /audio|video/,
+      this.mediaDuration, function (d, val) {
+        return d >= upload.translateScalars(val);
+      })));
+    promises.push(upload.happyPromise(validateAsync('duration', null, /audio|video/,
+      function (file, val) {
+        return upload.emptyPromise(val);
+      }, function (r) {
+        return r;
+      })));
 
-    promises.push(upload.happyPromise(validateAsync('validateAsyncFn', function () {
-      return null;
-    }, null, function (file, val) {
-      return val;
-    }, function (r) {
-      return r === true || r === null || r === '';
-    })));
+    promises.push(upload.happyPromise(validateAsync('validateAsyncFn', null, null,
+      function (file, val) {
+        return val;
+      }, function (r) {
+        return r === true || r === null || r === '';
+      })));
 
     return $q.all(promises).then(function () {
       deffer.resolve(ngModel, ngModel.$ngfValidations);
@@ -28674,7 +26673,9 @@ ngFileUpload.service('UploadValidate', ['UploadDataUrl', '$q', '$timeout', funct
         return;
       }
       upload.dataUrl(file).then(function (dataUrl) {
-        var img = angular.element('<img>').attr('src', dataUrl).css('visibility', 'hidden').css('position', 'fixed');
+        var img = angular.element('<img>').attr('src', dataUrl)
+          .css('visibility', 'hidden').css('position', 'fixed')
+          .css('max-width', 'none !important').css('max-height', 'none !important');
 
         function success() {
           var width = img[0].clientWidth;
@@ -28808,21 +26809,27 @@ ngFileUpload.service('UploadResize', ['UploadValidate', '$q', function (UploadVa
   var calculateAspectRatioFit = function (srcWidth, srcHeight, maxWidth, maxHeight, centerCrop) {
     var ratio = centerCrop ? Math.max(maxWidth / srcWidth, maxHeight / srcHeight) :
       Math.min(maxWidth / srcWidth, maxHeight / srcHeight);
-    return {width: srcWidth * ratio, height: srcHeight * ratio,
-      marginX: srcWidth * ratio - maxWidth, marginY: srcHeight * ratio - maxHeight};
+    return {
+      width: srcWidth * ratio, height: srcHeight * ratio,
+      marginX: srcWidth * ratio - maxWidth, marginY: srcHeight * ratio - maxHeight
+    };
   };
 
   // Extracted from https://github.com/romelgomez/angular-firebase-image-upload/blob/master/app/scripts/fileUpload.js#L89
-  var resize = function (imagen, width, height, quality, type, ratio, centerCrop) {
+  var resize = function (imagen, width, height, quality, type, ratio, centerCrop, resizeIf) {
     var deferred = $q.defer();
     var canvasElement = document.createElement('canvas');
     var imageElement = document.createElement('img');
 
     imageElement.onload = function () {
+      if (resizeIf != null && resizeIf(imageElement.width, imageElement.height) === false) {
+        deferred.reject('resizeIf');
+        return;
+      }
       try {
         if (ratio) {
           var ratioFloat = upload.ratioToFloat(ratio);
-          var imgRatio = imageElement.width /  imageElement.height;
+          var imgRatio = imageElement.width / imageElement.height;
           if (imgRatio < ratioFloat) {
             width = imageElement.width;
             height = width / ratioFloat;
@@ -28844,7 +26851,7 @@ ngFileUpload.service('UploadResize', ['UploadValidate', '$q', function (UploadVa
         context.drawImage(imageElement,
           Math.min(0, -dimensions.marginX / 2), Math.min(0, -dimensions.marginY / 2),
           dimensions.width, dimensions.height);
-        deferred.resolve(canvasElement.toDataURL(type || 'image/WebP', quality || 1.0));
+        deferred.resolve(canvasElement.toDataURL(type || 'image/WebP', quality || 0.934));
       } catch (e) {
         deferred.reject(e);
       }
@@ -28856,7 +26863,7 @@ ngFileUpload.service('UploadResize', ['UploadValidate', '$q', function (UploadVa
     return deferred.promise;
   };
 
-  upload.dataUrltoBlob = function (dataurl, name) {
+  upload.dataUrltoBlob = function (dataurl, name, origSize) {
     var arr = dataurl.split(','), mime = arr[0].match(/:(.*?);/)[1],
       bstr = atob(arr[1]), n = bstr.length, u8arr = new Uint8Array(n);
     while (n--) {
@@ -28864,12 +26871,13 @@ ngFileUpload.service('UploadResize', ['UploadValidate', '$q', function (UploadVa
     }
     var blob = new window.Blob([u8arr], {type: mime});
     blob.name = name;
+    blob.$ngfOrigSize = origSize;
     return blob;
   };
 
   upload.isResizeSupported = function () {
     var elem = document.createElement('canvas');
-    return window.atob && elem.getContext && elem.getContext('2d');
+    return window.atob && elem.getContext && elem.getContext('2d') && window.Blob;
   };
 
   if (upload.isResizeSupported()) {
@@ -28885,18 +26893,34 @@ ngFileUpload.service('UploadResize', ['UploadValidate', '$q', function (UploadVa
     });
   }
 
-  upload.resize = function (file, width, height, quality, type, ratio, centerCrop) {
+  upload.resize = function (file, width, height, quality, type, ratio, centerCrop, resizeIf, restoreExif) {
     if (file.type.indexOf('image') !== 0) return upload.emptyPromise(file);
 
     var deferred = $q.defer();
     upload.dataUrl(file, true).then(function (url) {
-      resize(url, width, height, quality, type || file.type, ratio, centerCrop).then(function (dataUrl) {
-        deferred.resolve(upload.dataUrltoBlob(dataUrl, file.name));
-      }, function () {
-        deferred.reject();
-      });
-    }, function () {
-      deferred.reject();
+      resize(url, width, height, quality, type || file.type, ratio, centerCrop, resizeIf)
+        .then(function (dataUrl) {
+          if (file.type === 'image/jpeg' && restoreExif) {
+            try {
+              dataUrl = upload.restoreExif(url, dataUrl);
+            } catch (e) {
+              setTimeout(function () {throw e;}, 1);
+            }
+          }
+          try {
+            var blob = upload.dataUrltoBlob(dataUrl, file.name, file.size);
+            deferred.resolve(blob);
+          } catch (e) {
+            deferred.reject(e);
+          }
+        }, function (r) {
+          if (r === 'resizeIf') {
+            deferred.resolve(file);
+          }
+          deferred.reject(r);
+        });
+    }, function (e) {
+      deferred.reject(e);
     });
     return deferred.promise;
   };
@@ -28973,7 +26997,7 @@ ngFileUpload.service('UploadResize', ['UploadValidate', '$q', function (UploadVa
     var actualDragOverClass;
 
     elem[0].addEventListener('dragover', function (evt) {
-      if (isDisabled()) return;
+      if (isDisabled() || !upload.shouldUpdateOn('drop', attr, scope)) return;
       evt.preventDefault();
       if (stopPropagation(scope)) evt.stopPropagation();
       // handling dragover events from the Chrome download bar
@@ -28992,12 +27016,12 @@ ngFileUpload.service('UploadResize', ['UploadValidate', '$q', function (UploadVa
       }
     }, false);
     elem[0].addEventListener('dragenter', function (evt) {
-      if (isDisabled()) return;
+      if (isDisabled() || !upload.shouldUpdateOn('drop', attr, scope)) return;
       evt.preventDefault();
       if (stopPropagation(scope)) evt.stopPropagation();
     }, false);
     elem[0].addEventListener('dragleave', function (evt) {
-      if (isDisabled()) return;
+      if (isDisabled() || !upload.shouldUpdateOn('drop', attr, scope)) return;
       evt.preventDefault();
       if (stopPropagation(scope)) evt.stopPropagation();
       leaveTimeout = $timeout(function () {
@@ -29012,19 +27036,23 @@ ngFileUpload.service('UploadResize', ['UploadValidate', '$q', function (UploadVa
       if (stopPropagation(scope)) evt.stopPropagation();
       if (actualDragOverClass) elem.removeClass(actualDragOverClass);
       actualDragOverClass = null;
+      var items = evt.dataTransfer.items;
       var html;
       try {
-        html = (evt.dataTransfer && evt.dataTransfer.getData && evt.dataTransfer.getData('text/html'));
+        html = evt.dataTransfer && evt.dataTransfer.getData && evt.dataTransfer.getData('text/html');
       } catch (e) {/* Fix IE11 that throw error calling getData */
       }
-      if (upload.shouldUpdateOn('dropUrl', attr, scope) && html) {
-        extractUrlAndUpdateModel(html, evt);
-      } else {
-        extractFiles(evt, function (files) {
-            upload.updateModel(ngModel, attr, scope, attrGetter('ngfChange') || attrGetter('ngfDrop'), files, evt);
-          }, attrGetter('ngfAllowDir', scope) !== false,
-          attrGetter('multiple') || attrGetter('ngfMultiple', scope));
-      }
+
+      extractFiles(items, evt.dataTransfer.files, attrGetter('ngfAllowDir', scope) !== false,
+        attrGetter('multiple') || attrGetter('ngfMultiple', scope)).then(function (files) {
+        if (files.length) {
+          updateModel(files, evt);
+        } else {
+          extractFilesFromHtml('dropUrl', html).then(function (files) {
+            updateModel(files, evt);
+          });
+        }
+      });
     }, false);
     elem[0].addEventListener('paste', function (evt) {
       if (navigator.userAgent.toLowerCase().indexOf('firefox') > -1 &&
@@ -29042,16 +27070,11 @@ ngFileUpload.service('UploadResize', ['UploadValidate', '$q', function (UploadVa
         }
       }
       if (files.length) {
-        upload.updateModel(ngModel, attr, scope, attrGetter('ngfChange') || attrGetter('ngfDrop'), files, evt);
+        updateModel(files, evt);
       } else {
-        var html;
-        try {
-          html = (clipboard && clipboard.getData && clipboard.getData('text/html'));
-        } catch (e) {/* Fix IE11 that throw error calling getData */
-        }
-        if (upload.shouldUpdateOn('pasteUrl', attr, scope) && html) {
-          extractUrlAndUpdateModel(html, evt);
-        }
+        extractFilesFromHtml('pasteUrl', clipboard).then(function (files) {
+          updateModel(files, evt);
+        });
       }
     }, false);
 
@@ -29065,7 +27088,12 @@ ngFileUpload.service('UploadResize', ['UploadValidate', '$q', function (UploadVa
       });
     }
 
-    function extractUrlAndUpdateModel(html, evt) {
+    function updateModel(files, evt) {
+      upload.updateModel(ngModel, attr, scope, attrGetter('ngfChange') || attrGetter('ngfDrop'), files, evt);
+    }
+
+    function extractFilesFromHtml(updateOn, html) {
+      if (!upload.shouldUpdateOn(updateOn, attr, scope) || !html) return upload.rejectPromise([]);
       var urls = [];
       html.replace(/<(img src|img [^>]* src) *=\"([^\"]*)\"/gi, function (m, n, src) {
         urls.push(src);
@@ -29073,19 +27101,19 @@ ngFileUpload.service('UploadResize', ['UploadValidate', '$q', function (UploadVa
       var promises = [], files = [];
       if (urls.length) {
         angular.forEach(urls, function (url) {
-          promises.push($http({url: url, method: 'get', responseType: 'arraybuffer'}).then(function (resp) {
-            var arrayBufferView = new Uint8Array(resp.data);
-            var type = resp.headers('content-type') || 'image/WebP';
-            var blob = new window.Blob([arrayBufferView], {type: type});
+          promises.push(upload.urlToBlob(url).then(function (blob) {
             files.push(blob);
-            //var split = type.split('[/;]');
-            //blob.name = url.substring(0, 150).replace(/\W+/g, '') + '.' + (split.length > 1 ? split[1] : 'jpg');
           }));
         });
+        var defer = $q.defer();
         $q.all(promises).then(function () {
-          upload.updateModel(ngModel, attr, scope, attrGetter('ngfChange') || attrGetter('ngfDrop'), files, evt);
+          defer.resolve(files);
+        }, function (e) {
+          defer.reject(e);
         });
+        return defer.promise;
       }
+      return upload.emptyPromise();
     }
 
     function calculateDragOverClass(scope, attr, evt, callback) {
@@ -29115,57 +27143,72 @@ ngFileUpload.service('UploadResize', ['UploadValidate', '$q', function (UploadVa
       callback(dClass);
     }
 
-    function extractFiles(evt, callback, allowDir, multiple) {
-      var files = [], processing = 0;
+    function extractFiles(items, fileList, allowDir, multiple) {
+      var maxFiles = upload.getValidationAttr(attr, scope, 'maxFiles') || Number.MAX_VALUE;
+      var maxTotalSize = upload.getValidationAttr(attr, scope, 'maxTotalSize') || Number.MAX_VALUE;
+      var includeDir = attrGetter('ngfIncludeDir', scope);
+      var files = [], totalSize = 0;
 
-      function traverseFileTree(files, entry, path) {
+      function traverseFileTree(entry, path) {
+        var defer = $q.defer();
         if (entry != null) {
           if (entry.isDirectory) {
-            var filePath = (path || '') + entry.name;
-            files.push({name: entry.name, type: 'directory', path: filePath});
+            var promises = [upload.emptyPromise()];
+            if (includeDir) {
+              var file = {type: 'directory'};
+              file.name = file.path = (path || '') + entry.name + entry.name;
+              files.push(file);
+            }
             var dirReader = entry.createReader();
             var entries = [];
-            processing++;
             var readEntries = function () {
               dirReader.readEntries(function (results) {
                 try {
                   if (!results.length) {
-                    for (var i = 0; i < entries.length; i++) {
-                      traverseFileTree(files, entries[i], (path ? path : '') + entry.name + '/');
-                    }
-                    processing--;
+                    angular.forEach(entries.slice(0), function (e) {
+                      if (files.length <= maxFiles && totalSize <= maxTotalSize) {
+                        promises.push(traverseFileTree(e, (path ? path : '') + entry.name + '/'));
+                      }
+                    });
+                    $q.all(promises).then(function () {
+                      defer.resolve();
+                    }, function (e) {
+                      defer.reject(e);
+                    });
                   } else {
                     entries = entries.concat(Array.prototype.slice.call(results || [], 0));
                     readEntries();
                   }
                 } catch (e) {
-                  processing--;
-                  console.error(e);
+                  defer.reject(e);
                 }
-              }, function () {
-                processing--;
+              }, function (e) {
+                defer.reject(e);
               });
             };
             readEntries();
           } else {
-            processing++;
             entry.file(function (file) {
               try {
-                processing--;
                 file.path = (path ? path : '') + file.name;
+                if (includeDir) {
+                  file = upload.rename(file, file.path);
+                }
                 files.push(file);
+                totalSize += file.size;
+                defer.resolve();
               } catch (e) {
-                processing--;
-                console.error(e);
+                defer.reject(e);
               }
-            }, function () {
-              processing--;
+            }, function (e) {
+              defer.reject(e);
             });
           }
         }
+        return defer.promise;
       }
 
-      var items = evt.dataTransfer.items;
+      var promises = [upload.emptyPromise()];
 
       if (items && items.length > 0 && $location.protocol() !== 'file') {
         for (var i = 0; i < items.length; i++) {
@@ -29175,45 +27218,46 @@ ngFileUpload.service('UploadResize', ['UploadValidate', '$q', function (UploadVa
               continue;
             }
             if (entry != null) {
-              traverseFileTree(files, entry);
+              promises.push(traverseFileTree(entry));
             }
           } else {
             var f = items[i].getAsFile();
-            if (f != null) files.push(f);
+            if (f != null) {
+              files.push(f);
+              totalSize += f.size;
+            }
           }
-          if (!multiple && files.length > 0) break;
+          if (files.length > maxFiles || totalSize > maxTotalSize ||
+            (!multiple && files.length > 0)) break;
         }
       } else {
-        var fileList = evt.dataTransfer.files;
         if (fileList != null) {
           for (var j = 0; j < fileList.length; j++) {
             var file = fileList.item(j);
             if (file.type || file.size > 0) {
               files.push(file);
+              totalSize += file.size;
             }
-            if (!multiple && files.length > 0) {
-              break;
-            }
+            if (files.length > maxFiles || totalSize > maxTotalSize ||
+              (!multiple && files.length > 0)) break;
           }
         }
       }
-      var delays = 0;
-      (function waitForProcess(delay) {
-        $timeout(function () {
-          if (!processing) {
-            if (!multiple && files.length > 1) {
-              i = 0;
-              while (files[i].type === 'directory') i++;
-              files = [files[i]];
-            }
-            callback(files);
-          } else {
-            if (delays++ * 10 < 20 * 1000) {
-              waitForProcess(10);
-            }
-          }
-        }, delay || 0);
-      })();
+
+      var defer = $q.defer();
+      $q.all(promises).then(function () {
+        if (!multiple && !includeDir && files.length) {
+          var i = 0;
+          while (files[i] && files[i].type === 'directory') i++;
+          defer.resolve([files[i]]);
+        } else {
+          defer.resolve(files);
+        }
+      }, function (e) {
+        defer.reject(e);
+      });
+
+      return defer.promise;
     }
   }
 
@@ -29228,133 +27272,9 @@ ngFileUpload.service('UploadResize', ['UploadValidate', '$q', function (UploadVa
 ngFileUpload.service('UploadExif', ['UploadResize', '$q', function (UploadResize, $q) {
   var upload = UploadResize;
 
-  function findEXIFinJPEG(file) {
-    var dataView = new DataView(file);
-
-    if ((dataView.getUint8(0) !== 0xFF) || (dataView.getUint8(1) !== 0xD8)) {
-      return 'Not a valid JPEG';
-    }
-
-    var offset = 2,
-      length = file.byteLength,
-      marker;
-
-    while (offset < length) {
-      if (dataView.getUint8(offset) !== 0xFF) {
-        return 'Not a valid marker at offset ' + offset + ', found: ' + dataView.getUint8(offset);
-      }
-
-      marker = dataView.getUint8(offset + 1);
-      if (marker === 225) {
-        return readEXIFData(dataView, offset + 4, dataView.getUint16(offset + 2) - 2);
-      } else {
-        offset += 2 + dataView.getUint16(offset + 2);
-      }
-    }
-  }
-
-  function readOrientation(file, tiffStart, dirStart, bigEnd) {
-    var entries = file.getUint16(dirStart, !bigEnd),
-      entryOffset, i;
-
-    for (i = 0; i < entries; i++) {
-      entryOffset = dirStart + i * 12 + 2;
-      var val = file.getUint16(entryOffset, !bigEnd);
-      if (0x0112 === val) {
-        return readTagValue(file, entryOffset, tiffStart, bigEnd);
-      }
-    }
-    return null;
-  }
-
-  function readTagValue(file, entryOffset, tiffStart, bigEnd) {
-    var numValues = file.getUint32(entryOffset + 4, !bigEnd),
-      valueOffset = file.getUint32(entryOffset + 8, !bigEnd) + tiffStart, offset, vals, n;
-
-    if (numValues === 1) {
-      return file.getUint16(entryOffset + 8, !bigEnd);
-    } else {
-      offset = numValues > 2 ? valueOffset : (entryOffset + 8);
-      vals = [];
-      for (n = 0; n < numValues; n++) {
-        vals[n] = file.getUint16(offset + 2 * n, !bigEnd);
-      }
-      return vals;
-    }
-  }
-
-  function getStringFromDB(buffer, start, length) {
-    var outstr = '';
-    for (var n = start; n < start + length; n++) {
-      outstr += String.fromCharCode(buffer.getUint8(n));
-    }
-    return outstr;
-  }
-
-  function readEXIFData(file, start) {
-    if (getStringFromDB(file, start, 4) !== 'Exif') {
-      return 'Not valid EXIF data! ' + getStringFromDB(file, start, 4);
-    }
-
-    var bigEnd,
-      tiffOffset = start + 6;
-
-    // test for TIFF validity and endianness
-    if (file.getUint16(tiffOffset) === 0x4949) {
-      bigEnd = false;
-    } else if (file.getUint16(tiffOffset) === 0x4D4D) {
-      bigEnd = true;
-    } else {
-      return 'Not valid TIFF data! (no 0x4949 or 0x4D4D)';
-    }
-
-    if (file.getUint16(tiffOffset + 2, !bigEnd) !== 0x002A) {
-      return 'Not valid TIFF data! (no 0x002A)';
-    }
-
-    var firstIFDOffset = file.getUint32(tiffOffset + 4, !bigEnd);
-
-    if (firstIFDOffset < 0x00000008) {
-      return 'Not valid TIFF data! (First offset less than 8)', file.getUint32(tiffOffset + 4, !bigEnd);
-    }
-
-    return readOrientation(file, tiffOffset, tiffOffset + firstIFDOffset, bigEnd);
-
-  }
-
-  upload.isExifSupported = function() {
+  upload.isExifSupported = function () {
     return window.FileReader && new FileReader().readAsArrayBuffer && upload.isResizeSupported();
   };
-
-  upload.orientation = function (file) {
-    if (file.$ngfOrientation != null) {
-      return upload.emptyPromise(file.$ngfOrientation);
-    }
-    var defer = $q.defer();
-    var fileReader = new FileReader();
-    fileReader.onload = function (e) {
-      var orientation;
-      try {
-        orientation = findEXIFinJPEG(e.target.result);
-      } catch (e) {
-        defer.reject(e);
-        return;
-      }
-      if (angular.isString(orientation)) {
-        defer.resolve(1);
-      } else {
-        file.$ngfOrientation = orientation;
-        defer.resolve(orientation);
-      }
-    };
-    fileReader.onerror = function (e) {
-      defer.reject(e);
-    };
-
-    fileReader.readAsArrayBuffer(file);
-    return defer.promise;
-  };
-
 
   function applyTransform(ctx, orientation, width, height) {
     switch (orientation) {
@@ -29375,15 +27295,68 @@ ngFileUpload.service('UploadExif', ['UploadResize', '$q', function (UploadResize
     }
   }
 
+  upload.readOrientation = function (file) {
+    var defer = $q.defer();
+    var reader = new FileReader();
+    var slicedFile = file.slice ? file.slice(0, 64 * 1024) : file;
+    reader.readAsArrayBuffer(slicedFile);
+    reader.onerror = function (e) {
+      return defer.reject(e);
+    };
+    reader.onload = function (e) {
+      var result = {orientation: 1};
+      var view = new DataView(this.result);
+      if (view.getUint16(0, false) !== 0xFFD8) return defer.resolve(result);
+
+      var length = view.byteLength,
+        offset = 2;
+      while (offset < length) {
+        var marker = view.getUint16(offset, false);
+        offset += 2;
+        if (marker === 0xFFE1) {
+          if (view.getUint32(offset += 2, false) !== 0x45786966) return defer.resolve(result);
+
+          var little = view.getUint16(offset += 6, false) === 0x4949;
+          offset += view.getUint32(offset + 4, little);
+          var tags = view.getUint16(offset, little);
+          offset += 2;
+          for (var i = 0; i < tags; i++)
+            if (view.getUint16(offset + (i * 12), little) === 0x0112) {
+              var orientation = view.getUint16(offset + (i * 12) + 8, little);
+              if (orientation >= 2 && orientation <= 8) {
+                view.setUint16(offset + (i * 12) + 8, 1, little);
+                result.fixedArrayBuffer = e.target.result;
+              }
+              result.orientation = orientation;
+              return defer.resolve(result);
+            }
+        } else if ((marker & 0xFF00) !== 0xFF00) break;
+        else offset += view.getUint16(offset, false);
+      }
+      return defer.resolve(result);
+    };
+    return defer.promise;
+  };
+
+  function arrayBufferToBase64(buffer) {
+    var binary = '';
+    var bytes = new Uint8Array(buffer);
+    var len = bytes.byteLength;
+    for (var i = 0; i < len; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return window.btoa(binary);
+  }
+
   upload.applyExifRotation = function (file) {
     if (file.type.indexOf('image/jpeg') !== 0) {
       return upload.emptyPromise(file);
     }
 
     var deferred = $q.defer();
-    upload.orientation(file).then(function (orientation) {
-      if (!orientation || orientation < 2 || orientation > 8) {
-        deferred.resolve(file);
+    upload.readOrientation(file).then(function (result) {
+      if (result.orientation < 2 || result.orientation > 8) {
+        return deferred.resolve(file);
       }
       upload.dataUrl(file, true).then(function (url) {
         var canvas = document.createElement('canvas');
@@ -29391,16 +27364,17 @@ ngFileUpload.service('UploadExif', ['UploadResize', '$q', function (UploadResize
 
         img.onload = function () {
           try {
-            canvas.width = orientation > 4 ? img.height : img.width;
-            canvas.height = orientation > 4 ? img.width : img.height;
+            canvas.width = result.orientation > 4 ? img.height : img.width;
+            canvas.height = result.orientation > 4 ? img.width : img.height;
             var ctx = canvas.getContext('2d');
-            applyTransform(ctx, orientation, img.width, img.height);
+            applyTransform(ctx, result.orientation, img.width, img.height);
             ctx.drawImage(img, 0, 0);
-            var dataUrl = canvas.toDataURL(file.type || 'image/WebP', 1.0);
+            var dataUrl = canvas.toDataURL(file.type || 'image/WebP', 0.934);
+            dataUrl = upload.restoreExif(arrayBufferToBase64(result.fixedArrayBuffer), dataUrl);
             var blob = upload.dataUrltoBlob(dataUrl, file.name);
             deferred.resolve(blob);
           } catch (e) {
-            deferred.reject(e);
+            return deferred.reject(e);
           }
         };
         img.onerror = function () {
@@ -29416,12 +27390,175 @@ ngFileUpload.service('UploadExif', ['UploadResize', '$q', function (UploadResize
     return deferred.promise;
   };
 
+  upload.restoreExif = function (orig, resized) {
+    var ExifRestorer = {};
+
+    ExifRestorer.KEY_STR = 'ABCDEFGHIJKLMNOP' +
+      'QRSTUVWXYZabcdef' +
+      'ghijklmnopqrstuv' +
+      'wxyz0123456789+/' +
+      '=';
+
+    ExifRestorer.encode64 = function (input) {
+      var output = '',
+        chr1, chr2, chr3 = '',
+        enc1, enc2, enc3, enc4 = '',
+        i = 0;
+
+      do {
+        chr1 = input[i++];
+        chr2 = input[i++];
+        chr3 = input[i++];
+
+        enc1 = chr1 >> 2;
+        enc2 = ((chr1 & 3) << 4) | (chr2 >> 4);
+        enc3 = ((chr2 & 15) << 2) | (chr3 >> 6);
+        enc4 = chr3 & 63;
+
+        if (isNaN(chr2)) {
+          enc3 = enc4 = 64;
+        } else if (isNaN(chr3)) {
+          enc4 = 64;
+        }
+
+        output = output +
+          this.KEY_STR.charAt(enc1) +
+          this.KEY_STR.charAt(enc2) +
+          this.KEY_STR.charAt(enc3) +
+          this.KEY_STR.charAt(enc4);
+        chr1 = chr2 = chr3 = '';
+        enc1 = enc2 = enc3 = enc4 = '';
+      } while (i < input.length);
+
+      return output;
+    };
+
+    ExifRestorer.restore = function (origFileBase64, resizedFileBase64) {
+      if (origFileBase64.match('data:image/jpeg;base64,')) {
+        origFileBase64 = origFileBase64.replace('data:image/jpeg;base64,', '');
+      }
+
+      var rawImage = this.decode64(origFileBase64);
+      var segments = this.slice2Segments(rawImage);
+
+      var image = this.exifManipulation(resizedFileBase64, segments);
+
+      return 'data:image/jpeg;base64,' + this.encode64(image);
+    };
+
+
+    ExifRestorer.exifManipulation = function (resizedFileBase64, segments) {
+      var exifArray = this.getExifArray(segments),
+        newImageArray = this.insertExif(resizedFileBase64, exifArray);
+      return new Uint8Array(newImageArray);
+    };
+
+
+    ExifRestorer.getExifArray = function (segments) {
+      var seg;
+      for (var x = 0; x < segments.length; x++) {
+        seg = segments[x];
+        if (seg[0] === 255 & seg[1] === 225) //(ff e1)
+        {
+          return seg;
+        }
+      }
+      return [];
+    };
+
+
+    ExifRestorer.insertExif = function (resizedFileBase64, exifArray) {
+      var imageData = resizedFileBase64.replace('data:image/jpeg;base64,', ''),
+        buf = this.decode64(imageData),
+        separatePoint = buf.indexOf(255, 3),
+        mae = buf.slice(0, separatePoint),
+        ato = buf.slice(separatePoint),
+        array = mae;
+
+      array = array.concat(exifArray);
+      array = array.concat(ato);
+      return array;
+    };
+
+
+    ExifRestorer.slice2Segments = function (rawImageArray) {
+      var head = 0,
+        segments = [];
+
+      while (1) {
+        if (rawImageArray[head] === 255 & rawImageArray[head + 1] === 218) {
+          break;
+        }
+        if (rawImageArray[head] === 255 & rawImageArray[head + 1] === 216) {
+          head += 2;
+        }
+        else {
+          var length = rawImageArray[head + 2] * 256 + rawImageArray[head + 3],
+            endPoint = head + length + 2,
+            seg = rawImageArray.slice(head, endPoint);
+          segments.push(seg);
+          head = endPoint;
+        }
+        if (head > rawImageArray.length) {
+          break;
+        }
+      }
+
+      return segments;
+    };
+
+
+    ExifRestorer.decode64 = function (input) {
+      var chr1, chr2, chr3 = '',
+        enc1, enc2, enc3, enc4 = '',
+        i = 0,
+        buf = [];
+
+      // remove all characters that are not A-Z, a-z, 0-9, +, /, or =
+      var base64test = /[^A-Za-z0-9\+\/\=]/g;
+      if (base64test.exec(input)) {
+        console.log('There were invalid base64 characters in the input text.\n' +
+          'Valid base64 characters are A-Z, a-z, 0-9, ' + ', ' / ',and "="\n' +
+          'Expect errors in decoding.');
+      }
+      input = input.replace(/[^A-Za-z0-9\+\/\=]/g, '');
+
+      do {
+        enc1 = this.KEY_STR.indexOf(input.charAt(i++));
+        enc2 = this.KEY_STR.indexOf(input.charAt(i++));
+        enc3 = this.KEY_STR.indexOf(input.charAt(i++));
+        enc4 = this.KEY_STR.indexOf(input.charAt(i++));
+
+        chr1 = (enc1 << 2) | (enc2 >> 4);
+        chr2 = ((enc2 & 15) << 4) | (enc3 >> 2);
+        chr3 = ((enc3 & 3) << 6) | enc4;
+
+        buf.push(chr1);
+
+        if (enc3 !== 64) {
+          buf.push(chr2);
+        }
+        if (enc4 !== 64) {
+          buf.push(chr3);
+        }
+
+        chr1 = chr2 = chr3 = '';
+        enc1 = enc2 = enc3 = enc4 = '';
+
+      } while (i < input.length);
+
+      return buf;
+    };
+
+    return ExifRestorer.restore(orig, resized);  //<= EXIF
+  };
+
   return upload;
 }]);
 
 
 /*!
- * angular-translate - v2.9.0 - 2016-01-24
+ * angular-translate - v2.11.0 - 2016-03-20
  * 
  * Copyright (c) 2016 The angular-translate team, Pascal Precht; Licensed MIT
  */
@@ -29448,6 +27585,13 @@ ngFileUpload.service('UploadExif', ['UploadResize', '$q', function (UploadResize
  * @description
  * The main module which holds everything together.
  */
+runTranslate.$inject = ['$translate'];
+$translate.$inject = ['$STORAGE_KEY', '$windowProvider', '$translateSanitizationProvider', 'pascalprechtTranslateOverrider'];
+$translateDefaultInterpolation.$inject = ['$interpolate', '$translateSanitization'];
+translateDirective.$inject = ['$translate', '$q', '$interpolate', '$compile', '$parse', '$rootScope'];
+translateCloakDirective.$inject = ['$translate', '$rootScope'];
+translateFilterFactory.$inject = ['$parse', '$translate'];
+$translationCache.$inject = ['$cacheFactory'];
 angular.module('pascalprecht.translate', ['ng'])
   .run(runTranslate);
 
@@ -29481,7 +27625,6 @@ function runTranslate($translate) {
     $translate.use($translate.preferredLanguage());
   }
 }
-runTranslate.$inject = ['$translate'];
 
 runTranslate.displayName = 'runTranslate';
 
@@ -29726,13 +27869,23 @@ function $translateSanitizationProvider () {
     return $sanitize(value);
   };
 
-  var mapInterpolationParameters = function (value, iteratee) {
+  var mapInterpolationParameters = function (value, iteratee, stack) {
     if (angular.isObject(value)) {
       var result = angular.isArray(value) ? [] : {};
 
+      if (!stack) {
+        stack = [];
+      } else {
+        if (stack.indexOf(value) > -1) {
+          throw new Error('pascalprecht.translate.$translateSanitization: Error cannot interpolate parameter due recursive object');
+        }
+      }
+
+      stack.push(value);
       angular.forEach(value, function (propertyValue, propertyKey) {
-        result[propertyKey] = mapInterpolationParameters(propertyValue, iteratee);
+        result[propertyKey] = mapInterpolationParameters(propertyValue, iteratee, stack);
       });
+      stack.splice(-1, 1); // remove last
 
       return result;
     } else if (angular.isNumber(value)) {
@@ -29786,6 +27939,7 @@ function $translate($STORAGE_KEY, $windowProvider, $translateSanitizationProvide
       loaderCache,
       directivePriority = 0,
       statefulFilter = true,
+      postProcessFn,
       uniformLanguageTagResolver = 'default',
       languageTagResolver = {
         'default': function (tag) {
@@ -29800,10 +27954,15 @@ function $translate($STORAGE_KEY, $windowProvider, $translateSanitizationProvide
           var temp = (tag || '').split('_').join('-');
           var parts = temp.split('-');
           return parts.length > 1 ? (parts[0].toLowerCase() + '-' + parts[1].toUpperCase()) : temp;
+        },
+        'iso639-1': function (tag) {
+          var temp = (tag || '').split('_').join('-');
+          var parts = temp.split('-');
+          return parts[0].toLowerCase();
         }
       };
 
-  var version = '2.9.0';
+  var version = '2.11.0';
 
   // tries to determine the browsers language
   var getFirstBrowserLanguage = function () {
@@ -29906,17 +28065,19 @@ function $translate($STORAGE_KEY, $windowProvider, $translateSanitizationProvide
     if ($languageKeyAliases) {
       var alias;
       for (var langKeyAlias in $languageKeyAliases) {
-        var hasWildcardKey = false;
-        var hasExactKey = Object.prototype.hasOwnProperty.call($languageKeyAliases, langKeyAlias) &&
-          angular.lowercase(langKeyAlias) === angular.lowercase(preferred);
+        if ($languageKeyAliases.hasOwnProperty(langKeyAlias)) {
+          var hasWildcardKey = false;
+          var hasExactKey = Object.prototype.hasOwnProperty.call($languageKeyAliases, langKeyAlias) &&
+            angular.lowercase(langKeyAlias) === angular.lowercase(preferred);
 
-        if (langKeyAlias.slice(-1) === '*') {
-          hasWildcardKey = langKeyAlias.slice(0, -1) === preferred.slice(0, langKeyAlias.length-1);
-        }
-        if (hasExactKey || hasWildcardKey) {
-          alias = $languageKeyAliases[langKeyAlias];
-          if (indexOf(avail, angular.lowercase(alias)) > -1) {
-            return alias;
+          if (langKeyAlias.slice(-1) === '*') {
+            hasWildcardKey = langKeyAlias.slice(0, -1) === preferred.slice(0, langKeyAlias.length - 1);
+          }
+          if (hasExactKey || hasWildcardKey) {
+            alias = $languageKeyAliases[langKeyAlias];
+            if (indexOf(avail, angular.lowercase(alias)) > -1) {
+              return alias;
+            }
           }
         }
       }
@@ -29965,7 +28126,7 @@ function $translate($STORAGE_KEY, $windowProvider, $translateSanitizationProvide
    * registered with no language key. Invoking it with a language key returns the
    * related translation table.
    *
-   * @param {string} key A language key.
+   * @param {string} langKey A language key.
    * @param {object} translationTable A plain old JavaScript object that represents a translation table.
    *
    */
@@ -30282,6 +28443,20 @@ function $translate($STORAGE_KEY, $windowProvider, $translateSanitizationProvide
       return this;
     }
     return $uses;
+  };
+
+  /**
+   * @ngdoc function
+   * @name pascalprecht.translate.$translateProvider#resolveClientLocale
+   * @methodOf pascalprecht.translate.$translateProvider
+   *
+   * @description
+   * This returns the current browser/client's language key. The result is processed with the configured uniform tag resolver.
+   *
+   * @returns {string} the current client/browser language key
+   */
+  this.resolveClientLocale = function () {
+    return getLocale();
   };
 
  /**
@@ -30697,6 +28872,25 @@ function $translate($STORAGE_KEY, $windowProvider, $translateSanitizationProvide
   };
 
   /**
+   * @ngdoc function
+   * @name pascalprecht.translate.$translateProvider#postProcess
+   * @methodOf pascalprecht.translate.$translateProvider
+   *
+   * @description
+   * The post processor will be intercept right after the translation result. It can modify the result.
+   *
+   * @param {object} fn Function or service name (string) to be called after the translation value has been set / resolved. The function itself will enrich every value being processed and then continue the normal resolver process
+   */
+  this.postProcess = function (fn) {
+    if (fn) {
+      postProcessFn = fn;
+    } else {
+      postProcessFn = undefined;
+    }
+    return this;
+  };
+
+  /**
    * @ngdoc object
    * @name pascalprecht.translate.$translate
    * @requires $interpolate
@@ -30739,9 +28933,16 @@ function $translate($STORAGE_KEY, $windowProvider, $translateSanitizationProvide
           startFallbackIteration;
 
       var $translate = function (translationId, interpolateParams, interpolationId, defaultTranslationText, forceLanguage) {
-
+        if (!$uses && $preferredLanguage) {
+          $uses = $preferredLanguage;
+        }
         var uses = (forceLanguage && forceLanguage !== $uses) ? // we don't want to re-negotiate $uses
               (negotiateLocale(forceLanguage) || forceLanguage) : $uses;
+
+        // Check forceLanguage is present
+        if (forceLanguage) {
+          loadTranslationsIfMissing(forceLanguage);
+        }
 
         // Duck detection: If the first argument is an array, a bunch of translations was requested.
         // The result is an object.
@@ -30828,7 +29029,7 @@ function $translate($STORAGE_KEY, $windowProvider, $translateSanitizationProvide
           };
           promiseResolved.displayName = 'promiseResolved';
 
-          promiseToWaitFor['finally'](promiseResolved, deferred.reject);
+          promiseToWaitFor['finally'](promiseResolved);
         }
         return deferred.promise;
       };
@@ -31036,7 +29237,11 @@ function $translate($STORAGE_KEY, $windowProvider, $translateSanitizationProvide
               getFallbackTranslation(langKey, translation.substr(2), interpolateParams, Interpolator)
                 .then(deferred.resolve, deferred.reject);
             } else {
-              deferred.resolve(Interpolator.interpolate(translationTable[translationId], interpolateParams));
+              var interpolatedValue = Interpolator.interpolate(translationTable[translationId], interpolateParams);
+              interpolatedValue = applyPostProcessing(translationId, translationTable[translationId], interpolatedValue, interpolateParams, langKey);
+
+              deferred.resolve(interpolatedValue);
+
             }
             Interpolator.setLocale($uses);
           } else {
@@ -31087,14 +29292,16 @@ function $translate($STORAGE_KEY, $windowProvider, $translateSanitizationProvide
        * Translate by missing translation handler.
        *
        * @param translationId
+       * @param interpolateParams
+       * @param defaultTranslationText
        * @returns translation created by $missingTranslationHandler or translationId is $missingTranslationHandler is
        * absent
        */
-      var translateByHandler = function (translationId, interpolateParams) {
+      var translateByHandler = function (translationId, interpolateParams, defaultTranslationText) {
         // If we have a handler factory - we might also call it here to determine if it provides
         // a default text for a translationid that can't be found anywhere in our tables
         if ($missingTranslationHandlerFactory) {
-          var resultString = $injector.get($missingTranslationHandlerFactory)(translationId, $uses, interpolateParams);
+          var resultString = $injector.get($missingTranslationHandlerFactory)(translationId, $uses, interpolateParams, defaultTranslationText);
           if (resultString !== undefined) {
             return resultString;
           } else {
@@ -31124,11 +29331,13 @@ function $translate($STORAGE_KEY, $windowProvider, $translateSanitizationProvide
         if (fallbackLanguageIndex < $fallbackLanguage.length) {
           var langKey = $fallbackLanguage[fallbackLanguageIndex];
           getFallbackTranslation(langKey, translationId, interpolateParams, Interpolator).then(
-            deferred.resolve,
+            function (data) {
+                deferred.resolve(data);
+            },
             function () {
               // Look in the next fallback language for a translation.
               // It delays the resolving by passing another promise to resolve.
-              resolveForFallbackLanguage(fallbackLanguageIndex + 1, translationId, interpolateParams, Interpolator, defaultTranslationText).then(deferred.resolve);
+              return resolveForFallbackLanguage(fallbackLanguageIndex + 1, translationId, interpolateParams, Interpolator, defaultTranslationText).then(deferred.resolve, deferred.reject);
             }
           );
         } else {
@@ -31139,7 +29348,12 @@ function $translate($STORAGE_KEY, $windowProvider, $translateSanitizationProvide
           } else {
             // if no default translation is set and an error handler is defined, send it to the handler
             // and then return the result
-            deferred.resolve(translateByHandler(translationId, interpolateParams));
+            if ($missingTranslationHandlerFactory) {
+              deferred.resolve(translateByHandler(translationId, interpolateParams));
+            } else {
+              deferred.reject(translateByHandler(translationId, interpolateParams));
+            }
+
           }
         }
         return deferred.promise;
@@ -31214,13 +29428,16 @@ function $translate($STORAGE_KEY, $windowProvider, $translateSanitizationProvide
             $translate(translation.substr(2), interpolateParams, interpolationId, defaultTranslationText, uses)
               .then(deferred.resolve, deferred.reject);
           } else {
-            deferred.resolve(Interpolator.interpolate(translation, interpolateParams));
+            //
+            var resolvedTranslation = Interpolator.interpolate(translation, interpolateParams);
+            resolvedTranslation = applyPostProcessing(translationId, translation, resolvedTranslation, interpolateParams, uses);
+            deferred.resolve(resolvedTranslation);
           }
         } else {
           var missingTranslationHandlerTranslation;
           // for logging purposes only (as in $translateMissingTranslationHandlerLog), value is not returned to promise
           if ($missingTranslationHandlerFactory && !pendingLoader) {
-            missingTranslationHandlerTranslation = translateByHandler(translationId, interpolateParams);
+            missingTranslationHandlerTranslation = translateByHandler(translationId, interpolateParams, defaultTranslationText);
           }
 
           // since we couldn't translate the inital requested translation id,
@@ -31304,6 +29521,31 @@ function $translate($STORAGE_KEY, $windowProvider, $translateSanitizationProvide
           $nextLang = undefined;
         }
         langPromises[key] = undefined;
+      };
+
+      var applyPostProcessing = function (translationId, translation, resolvedTranslation, interpolateParams, uses) {
+        var fn = postProcessFn;
+
+        if (fn) {
+
+          if (typeof(fn) === 'string') {
+            // getting on-demand instance
+            fn = $injector.get(fn);
+          }
+          if (fn) {
+            return fn(translationId, translation, resolvedTranslation, interpolateParams, uses);
+          }
+        }
+
+        return resolvedTranslation;
+      };
+
+      var loadTranslationsIfMissing = function (key) {
+        if (!$translationTable[key] && $loaderFactory && !langPromises[key]) {
+          langPromises[key] = loadAsync(key).then(function (translation) {
+            translations(translation.key, translation.table);
+          });
+        }
       };
 
       /**
@@ -31497,14 +29739,19 @@ function $translate($STORAGE_KEY, $windowProvider, $translateSanitizationProvide
 
         // Try to get the aliased language key
         var aliasedKey = negotiateLocale(key);
+        // Ensure only registered language keys will be loaded
+        if ($availableLanguageKeys.length > 0 && !aliasedKey) {
+          return $q.reject(key);
+        }
+
         if (aliasedKey) {
           key = aliasedKey;
         }
 
         // if there isn't a translation table for the language we've requested,
         // we load it asynchronously
+        $nextLang = key;
         if (($forceAsyncReloadEnabled || !$translationTable[key]) && $loaderFactory && !langPromises[key]) {
-          $nextLang = key;
           langPromises[key] = loadAsync(key).then(function (translation) {
             translations(translation.key, translation.table);
             deferred.resolve(translation.key);
@@ -31521,15 +29768,22 @@ function $translate($STORAGE_KEY, $windowProvider, $translateSanitizationProvide
           langPromises[key]['finally'](function () {
             clearNextLangAndPromise(key);
           });
-        } else if ($nextLang === key && langPromises[key]) {
+        } else if (langPromises[key]) {
           // we are already loading this asynchronously
           // resolve our new deferred when the old langPromise is resolved
           langPromises[key].then(function (translation) {
+            if ($nextLang === translation.key) {
+              useLanguage(translation.key);
+            }
             deferred.resolve(translation.key);
             return translation;
           }, function (key) {
-            deferred.reject(key);
-            return $q.reject(key);
+            // find first available fallback language if that request has failed
+            if (!$uses && $fallbackLanguage && $fallbackLanguage.length > 0) {
+              return $translate.use($fallbackLanguage[0]).then(deferred.resolve, deferred.reject);
+            } else {
+              return deferred.reject(key);
+            }
           });
         } else {
           deferred.resolve(key);
@@ -31537,6 +29791,20 @@ function $translate($STORAGE_KEY, $windowProvider, $translateSanitizationProvide
         }
 
         return deferred.promise;
+      };
+
+      /**
+       * @ngdoc function
+       * @name pascalprecht.translate.$translate#resolveClientLocale
+       * @methodOf pascalprecht.translate.$translate
+       *
+       * @description
+       * This returns the current browser/client's language key. The result is processed with the configured uniform tag resolver.
+       *
+       * @returns {string} the current client/browser language key
+       */
+      $translate.resolveClientLocale = function () {
+        return getLocale();
       };
 
       /**
@@ -31711,6 +29979,11 @@ function $translate($STORAGE_KEY, $windowProvider, $translateSanitizationProvide
           return translationId;
         }
 
+        // Check forceLanguage is present
+        if (forceLanguage) {
+          loadTranslationsIfMissing(forceLanguage);
+        }
+
         // Duck detection: If the first argument is an array, a bunch of translations was requested.
         // The result is an object.
         if (angular.isArray(translationId)) {
@@ -31853,6 +30126,25 @@ function $translate($STORAGE_KEY, $windowProvider, $translateSanitizationProvide
         return deferred.promise;
       };
 
+      /**
+       * @ngdoc function
+       * @name pascalprecht.translate.$translate#getAvailableLanguageKeys
+       * @methodOf pascalprecht.translate.$translate
+       *
+       * @description
+       * This function simply returns the registered language keys being defined before in the config phase
+       * With this, an application can use the array to provide a language selection dropdown or similar
+       * without any additional effort
+       *
+       * @returns {object} returns the list of possibly registered language keys and mapping or null if not defined
+       */
+      $translate.getAvailableLanguageKeys = function () {
+        if ($availableLanguageKeys.length > 0) {
+          return $availableLanguageKeys;
+        }
+        return null;
+      };
+
       // Whenever $translateReady is being fired, this will ensure the state of $isReady
       var globalOnReadyListener = $rootScope.$on('$translateReady', function () {
         $onReadyDeferred.resolve();
@@ -31898,7 +30190,6 @@ function $translate($STORAGE_KEY, $windowProvider, $translateSanitizationProvide
     }
   ];
 }
-$translate.$inject = ['$STORAGE_KEY', '$windowProvider', '$translateSanitizationProvider', 'pascalprechtTranslateOverrider'];
 
 $translate.displayName = 'displayName';
 
@@ -31987,7 +30278,6 @@ function $translateDefaultInterpolation ($interpolate, $translateSanitization) {
 
   return $translateInterpolator;
 }
-$translateDefaultInterpolation.$inject = ['$interpolate', '$translateSanitization'];
 
 $translateDefaultInterpolation.displayName = '$translateDefaultInterpolation';
 
@@ -32012,6 +30302,7 @@ angular.module('pascalprecht.translate')
  * @param {string=} translate-attr-ATTR translate Translation id and put it into ATTR attribute.
  * @param {string=} translate-default will be used unless translation was successful
  * @param {boolean=} translate-compile (default true if present) defines locally activation of {@link pascalprecht.translate.$translateProvider#methods_usePostCompiling}
+ * @param {boolean=} translate-keep-content (default true if present) defines that in case a KEY could not be translated, that the existing content is left in the innerHTML}
  *
  * @example
    <example module="ngView">
@@ -32240,7 +30531,6 @@ function translateDirective($translate, $q, $interpolate, $compile, $parse, $roo
         // Master update function
         var updateTranslations = function () {
           for (var key in translationIds) {
-
             if (translationIds.hasOwnProperty(key) && translationIds[key] !== undefined) {
               updateTranslation(key, translationIds[key], scope, scope.interpolateParams, scope.defaultText, scope.translateNamespace);
             }
@@ -32268,12 +30558,16 @@ function translateDirective($translate, $q, $interpolate, $compile, $parse, $roo
         };
 
         var applyTranslation = function (value, scope, successful, translateAttr) {
-          if (translateAttr === 'translate') {
-            // default translate into innerHTML
-            if (!successful && typeof scope.defaultText !== 'undefined') {
+          if (!successful) {
+            if (typeof scope.defaultText !== 'undefined') {
               value = scope.defaultText;
             }
-            iElement.empty().append(scope.preText + value + scope.postText);
+          }
+          if (translateAttr === 'translate') {
+            // default translate into innerHTML
+            if (successful || (!successful && typeof iAttr.translateKeepContent === 'undefined')) {
+              iElement.empty().append(scope.preText + value + scope.postText);
+            }
             var globallyEnabled = $translate.isPostCompilingEnabled();
             var locallyDefined = typeof tAttr.translateCompile !== 'undefined';
             var locallyEnabled = locallyDefined && tAttr.translateCompile !== 'false';
@@ -32282,9 +30576,6 @@ function translateDirective($translate, $q, $interpolate, $compile, $parse, $roo
             }
           } else {
             // translate attribute
-            if (!successful && typeof scope.defaultText !== 'undefined') {
-              value = scope.defaultText;
-            }
             var attributeName = iAttr.$attr[translateAttr];
             if (attributeName.substr(0, 5) === 'data-') {
               // ensure html5 data prefix is stripped
@@ -32298,7 +30589,9 @@ function translateDirective($translate, $q, $interpolate, $compile, $parse, $roo
         if (translateValuesExist || translateValueExist || iAttr.translateDefault) {
           scope.$watch('interpolateParams', updateTranslations, true);
         }
-        scope.$watch('translateLanguage', updateTranslations);
+
+        // Replaced watcher on translateLanguage with event listener
+        var unbindTranslateLanguage = scope.$on('translateLanguageChanged', updateTranslations);
 
         // Ensures the text will be refreshed after the current language was changed
         // w/ $translate.use(...)
@@ -32316,12 +30609,14 @@ function translateDirective($translate, $q, $interpolate, $compile, $parse, $roo
           observeElementTranslation(iAttr.translate);
         }
         updateTranslations();
-        scope.$on('$destroy', unbind);
+        scope.$on('$destroy', function(){
+          unbindTranslateLanguage();
+          unbind();
+        });
       };
     }
   };
 }
-translateDirective.$inject = ['$translate', '$q', '$interpolate', '$compile', '$parse', '$rootScope'];
 
 /**
  * Returns the scope's namespace.
@@ -32397,7 +30692,6 @@ function translateCloakDirective($translate, $rootScope) {
     }
   };
 }
-translateCloakDirective.$inject = ['$translate', '$rootScope'];
 
 translateCloakDirective.displayName = 'translateCloakDirective';
 
@@ -32550,8 +30844,13 @@ function translateLanguageDirective() {
     scope: true,
     compile: function () {
       return function linkFn(scope, iElement, iAttrs) {
+
         iAttrs.$observe('translateLanguage', function (newTranslateLanguage) {
           scope.translateLanguage = newTranslateLanguage;
+        });
+
+        scope.$watch('translateLanguage', function(){
+          scope.$broadcast('translateLanguageChanged');
         });
       };
     }
@@ -32559,7 +30858,6 @@ function translateLanguageDirective() {
 }
 
 translateLanguageDirective.displayName = 'translateLanguageDirective';
-
 
 angular.module('pascalprecht.translate')
 /**
@@ -32620,7 +30918,6 @@ function translateFilterFactory($parse, $translate) {
   'use strict';
 
   var translateFilter = function (translationId, interpolateParams, interpolation, forceLanguage) {
-
     if (!angular.isObject(interpolateParams)) {
       interpolateParams = $parse(interpolateParams)(this);
     }
@@ -32634,7 +30931,6 @@ function translateFilterFactory($parse, $translate) {
 
   return translateFilter;
 }
-translateFilterFactory.$inject = ['$parse', '$translate'];
 
 translateFilterFactory.displayName = 'translateFilterFactory';
 
@@ -32660,7 +30956,6 @@ function $translationCache($cacheFactory) {
 
   return $cacheFactory('translations');
 }
-$translationCache.$inject = ['$cacheFactory'];
 
 $translationCache.displayName = '$translationCache';
 return 'pascalprecht.translate';
@@ -32724,7 +31019,7 @@ return 'pascalprecht.translate';
         readonly: '=?'
       },
       controller: 'RatingController',
-      template: '<ul class="rating" ng-keydown="onKeydown($event)">' + '<li ng-repeat="r in range track by $index" ng-click="rate($index + 1)"><i class="icon" ng-class="value === undefined ? (r === 1 ? \'ion-ios-star\' : (r === 2 ? \'ion-ios-star-half\' : \'ion-ios-star-outline\')) : (value > $index ? \'ion-ios-star\' : \'ion-ios-star-outline\')"></i></li>' + '</ul>',
+      template: '<ul class="rating" ng-keydown="onKeydown($event)">' + '<li ng-repeat="r in range track by $index" ng-click="rate($index + 1)"><i class="icon" ng-class="value === undefined ? (r === 1 ? \'ion-ios-star\' : (r === 2 ? \'ion-ios-star-half\' : \'ion-ios-star-outline\')) : (value > $index ? (value < $index+1 ? \'ion-ios-star-half\' : \'ion-ios-star\') : \'ion-ios-star-outline\')"></i></li>' + '</ul>',
       replace: true,
       link: function(scope, element, attrs, ctrls) {
         var ngModelCtrl, ratingCtrl;
