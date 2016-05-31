@@ -1,0 +1,35 @@
+<ion-view view-title="Media">
+    <ion-content has-header="true">
+        <div class="list card">
+            <div class="item item-divider">
+                <i class="ion-videocamera"></i>
+                Video
+            </div>
+            <div class=="padding">
+                Vídeos promocionais da Cidade de Viseu.
+            </div>
+            <div class="padding" ng-repeat="video in">
+                <iframe width="560" height="315" src="https://www.youtube.com/embed/uT_sscHwbgY" frameborder="0" allowfullscreen></iframe>
+            </div>
+        </div>  
+    </ion-content>
+</ion-view>
+
+<ion-view view-title="Media">
+    <ion-content has-header="true">
+        <div class="list card">
+            <div class="item item-divider">
+                <i class="ion-videocamera"></i>
+                Video
+            </div>
+            <div class=="padding">
+                Vídeos promocionais da Cidade de Viseu.
+            </div>
+            <div class="padding" ng-repeat="video in ctrl.videos">
+                <a ui-sref="media-view({id: video.id})">
+                    <img ng-src="http://img.youtube.com/vi/{{video.id}}/0.jpg" />
+                </a>
+            </div>
+        </div>  
+    </ion-content>
+</ion-view>

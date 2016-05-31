@@ -394,6 +394,18 @@ var appVersion = "0.0.0";
 					.state('natural-course', {
 						url: '/percursos-naturais',
 						templateUrl: 'core/tourism/natural-course.tpl.html'
+					})
+					.state('media', {
+						url: '/media',
+						templateUrl: 'core/tourism/media.tpl.html',
+						controller: 'stuv.core.tourism.mediaCtrl',
+						controllerAs: 'ctrl'
+					})
+					.state('media-view', {
+						url: '/media/:id',
+						templateUrl: 'core/tourism/media-view.tpl.html',
+						controller: 'stuv.core.tourism.mediaViewCtrl',
+						controllerAs: 'ctrl'
 					});
 			}]);
 })();
@@ -569,6 +581,15 @@ appDirectives.directive('datetimepicker', function($rootScope, $state, $ionicPop
 				}]
 			}
 		}]);
+})();
+(function(){
+	angular
+		.module('stuv.common')
+		.filter('youtubeEmbedUrl', function ($sce) {
+		    return function(videoId) {
+		      return $sce.trustAsResourceUrl('http://www.youtube.com/embed/' + videoId);
+		    };
+		 });
 })();
 (function(){
 	angular
@@ -920,9 +941,14 @@ appDirectives.directive('datetimepicker', function($rootScope, $state, $ionicPop
 				templateUrl: 'core/viseu-intro.tpl.html',
 				controller: ['$scope', '$timeout', function($scope, $timeout){
 
-					$scope.images = ['http://3.bp.blogspot.com/-sxFZ_kOXshM/Vhq4mYYwmFI/AAAAAAAAICE/XIfjUEHhXbo/s1600/Viseu.jpg', 'http://img14.deviantart.net/eeff/i/2008/338/0/9/se_viseu_by_miguelhp.jpg'];
+					var total = 8;
+					$scope.images = [];
 					$scope.currentIndex = 0;
-
+ 
+					for (var i = 0 ; i <= total -1; i++) {
+						$scope.images.push('/img/' + i + '.jpg')
+					}
+					
 					var timer,
 						sliderFunc = function() {
 						  timer = $timeout(function() {
@@ -3592,4 +3618,54 @@ appDirectives.directive('datetimepicker', function($rootScope, $state, $ionicPop
                     $scope.place = googlePlaceUtils.formatDetail(data);
                 });
         }]);
+})();
+(function(){
+	angular
+		.module('stuv.core.tourism')
+		.controller('stuv.core.tourism.mediaViewCtrl', ['stuv.core.tourism.videosSvc', '$stateParams', '$sce',
+			function(videosSvc, $stateParams, $sce) {
+
+				this.video = videosSvc.getById($stateParams.id);
+			}]);
+})();
+(function(){
+	angular
+		.module('stuv.core.tourism')
+		.controller('stuv.core.tourism.mediaCtrl', ['stuv.core.tourism.videosSvc',
+			function(videosSvc) {
+
+				this.videos = videosSvc.getAll();
+			}]);
+})();
+
+(function(){
+	
+	angular
+		.module('stuv.core.tourism')
+		.factory('stuv.core.tourism.videosSvc', ['$rootScope',
+			function($rootScope) {
+				var videos = [
+					{id: 'uT_sscHwbgY', name: 'Viseu: spot promocional da melhor cidade para viver!'},
+					{id: 'W6_cZwST45M', name: 'Passagem de ano viseu 2016 (video mapping)'},
+					{id: 'Pv6HzJCD3b0', name: 'Reportagem Viseu a melhor cidade para se viver em Portugal'},
+					{id: 'GS3Cilkh0R0', name: 'Viseu: a primeira rede de ciclovias urbanas nasce em 2018'},
+					{id: 'uT_sscHwbgY', name: 'Viseu: spot promocional da melhor cidade para viver!'}
+					];
+				this.getAll = function() {
+					return videos;
+				};
+
+				this.getById = function(id) {
+					var video;
+					
+					angular.forEach(videos, function(obj) {
+						if(obj.id === id) {
+							video = obj;
+						}
+					});
+					return video;
+
+				}
+				return this;
+			}]);
 })();

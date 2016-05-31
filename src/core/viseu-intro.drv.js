@@ -7,9 +7,14 @@
 				templateUrl: 'core/viseu-intro.tpl.html',
 				controller: ['$scope', '$timeout', function($scope, $timeout){
 
-					$scope.images = ['http://3.bp.blogspot.com/-sxFZ_kOXshM/Vhq4mYYwmFI/AAAAAAAAICE/XIfjUEHhXbo/s1600/Viseu.jpg', 'http://img14.deviantart.net/eeff/i/2008/338/0/9/se_viseu_by_miguelhp.jpg'];
+					var total = 8;
+					$scope.images = [];
 					$scope.currentIndex = 0;
-
+ 
+					for (var i = 0 ; i <= total -1; i++) {
+						$scope.images.push('/img/' + i + '.jpg')
+					}
+					
 					var timer,
 						sliderFunc = function() {
 						  timer = $timeout(function() {

@@ -24,6 +24,18 @@
 					.state('natural-course', {
 						url: '/percursos-naturais',
 						templateUrl: 'core/tourism/natural-course.tpl.html'
+					})
+					.state('media', {
+						url: '/media',
+						templateUrl: 'core/tourism/media.tpl.html',
+						controller: 'stuv.core.tourism.mediaCtrl',
+						controllerAs: 'ctrl'
+					})
+					.state('media-view', {
+						url: '/media/:id',
+						templateUrl: 'core/tourism/media-view.tpl.html',
+						controller: 'stuv.core.tourism.mediaViewCtrl',
+						controllerAs: 'ctrl'
 					});
 			}]);
 })();
