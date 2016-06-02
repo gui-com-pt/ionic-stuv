@@ -1,6 +1,9 @@
 (function(){
     angular
         .module('stuv.core')
+        .factory('eventList', function($rootScope) {
+
+        })
         .controller('stuv.core.event.eventListCtrl', ['stuv.common.responseUtilsSvc', 'pi.core.app.eventSvc', '$scope', '$ionicModal', '$q', '$rootScope', function(responseUtilsSvc, eventSvc, $scope, $ionicModal, $q, $rootScope){
             var modalDefer,
                 openModal = function() {
@@ -15,6 +18,7 @@
                 self = this,
                 queryKeys = ['name', 'categoryId'];
 
+            
         	$scope.eventsPerDay = [];
             $scope.cachedEvents = [];
             $scope.queryModel = {
@@ -104,7 +108,5 @@
                
                 
             };
-
-            find({});
         }]);
 })();

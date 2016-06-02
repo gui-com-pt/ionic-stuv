@@ -3,9 +3,9 @@
 
 $ionicons-font-path: "../lib/ionic/fonts" !default;
 $light:                           #fff !default;
-$stable:                          #ea4e3c !default;
+$stable:                          #ed2e7c !default;
 $positive:                        #00a651 !default;
-$calm:                            #353535 !default;
+$calm:                            #bfdb52 !default;
 $balanced:                        #33cd5f !default;
 $energized:                       #ffc900 !default;
 $item-energized-text:             #353535 !default;
@@ -19,8 +19,8 @@ $button-stable-border:            #b2b2b2 !default;
 $button-stable-active-bg:         #e5e5e5 !default;
 $button-stable-active-border:     #a2a2a2 !default;
 
-@import "www/lib/ionic/scss/ionic";
-@import "www/lib/pi-sass-mixins/src/mixins";
+@import "../www/lib/ionic/scss/ionic";
+@import "../www/lib/pi-sass/src/mixins";
 @import
         "directives/angular.scss",
         "directives/md-label.scss",
@@ -68,4 +68,129 @@ img {
 
 .col-right {
     text-align: right;
+}
+
+
+#profile-bg {
+        position: fixed;
+        left: 0;
+        top: 44px;
+        width: 100%;
+        height: 150px;
+
+        background: url('https://s3-us-west-2.amazonaws.com/s.cdpn.io/94311/bg.jpg') no-repeat transparent;
+        background-size: 100%;
+        background-position: 50% 20%;
+
+        text-align: center;
+      }
+
+      #content {
+        position: relative;
+        margin-top: 150px;
+        background-color: white;
+        box-shadow: 0px -1px 10px rgba(0,0,0,0.4);
+        padding-top: 200px;
+      }
+
+      #profile-info {
+        position: absolute;
+        top: -95px;
+        width: 100%;
+        z-index: 2;
+        text-align: center;
+      }
+      #profile-name {
+        color: #444;
+        font-size: 26px;
+      }
+      #profile-description {
+        font-size: 15px;
+        color: #888;
+      }
+      #profile-description a {
+        color: #888;
+      }
+
+      #profile-image {
+        display: block;
+        border-radius: 100px;
+        border: 1px solid #fff;
+        width: 128px;
+        height: 128px;
+        margin: 30px auto 0;
+        box-shadow: 0px 0px 4px rgba(0,0,0,0.7);
+      }
+
+      .list-item-content {
+        padding: 5px;
+      }
+
+      .list-item {
+        color: #666666;
+      }
+
+      .post {
+        color: #444;
+      }
+
+      .post-time {
+        position: absolute;
+        right: 5px;
+        top: 5px;
+        font-size: 11px;
+        color: #888;
+      }
+
+      .post-profile-image {
+        display: inline-block;
+        vertical-align: top;
+        width: 48px;
+        height: 48px;
+        margin-right: 10px;
+      }
+      .post-options {
+        position: absolute;
+        font-size: 16px;
+        right: 5px;
+        bottom: 5px;
+        color: #888;
+      }
+
+
+#list {
+  width: 170px;
+  margin: 30px auto;
+  font-size: 20px;
+}
+#list ol {
+  margin-top: 30px;
+}
+#list ol li {
+  text-align: left;
+  list-style: decimal;
+  margin: 10px 0px;
+}
+
+.button.ng-hide{
+  display:none;
+}
+
+.slider {
+  height: 100%;
+}
+.slider-slide {
+  padding-top: 80px;
+  color: #000;
+  background-color: #fff;
+  text-align: center;
+  font-weight: 300;
+}
+
+#logo {
+  margin: 30px 0px;
+}
+
+.leaflet-container {
+    min-height: 200px;
 }

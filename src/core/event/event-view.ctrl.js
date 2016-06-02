@@ -1,14 +1,15 @@
 (function(){
     angular
         .module('stuv.core')
-        .controller('stuv.core.event.eventViewCtrl', ['pi.core.app.eventSvc', '$scope', '$stateParams', '$cordovaSocialSharing', function(eventSvc, $scope, $stateParams, $cordovaSocialSharing){
+        .controller('stuv.core.event.eventViewCtrl', ['pi.core.app.eventSvc', '$scope', '$stateParams', '$cordovaSocialSharing', '$rootScope', function(eventSvc, $scope, $stateParams, $cordovaSocialSharing, $rootScope){
            var self = this;
             $scope.id = $stateParams.id;
 
-            eventSvc.get($stateParams.id)
+/*            eventSvc.get($stateParams.id)
                 .then(function(res){
                     $scope.event = res.data.event;
-                });
+                });*/
+                $scope.event = $rootScope.events[$scope.id];
 
             $scope.shareEmail = function(){
                 $cordovaSocialSharing

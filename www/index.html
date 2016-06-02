@@ -76,8 +76,14 @@
                 <ion-item menu-close ui-sref="home" class="item item-icon-left item-stable">
                     <i class="icon ion-home"></i> Home
                 </ion-item>
+                <ion-item menu-close ui-sref="profile" class="item item-icon-left item-stable">
+                    <i class="icon ion-person"></i> Perfil
+                </ion-item>
                 <ion-item menu-close ui-sref="bus-home" class="item item-icon-left item-stable">
                     <i class="icon ion-android-bus"></i> Autocarros
+                </ion-item>
+                <ion-item menu-close ui-sref="register-stop" class="item item-icon-left item-stable">
+                    <i class="icon ion-android-stopwatch"></i> Registar Horário
                 </ion-item>
                 <ion-item menu-close ui-sref="event-list" class="item item-icon-left item-stable">
                     <i class="icon ion-calendar"></i> Eventos
@@ -100,9 +106,11 @@
                 <ion-item menu-close ui-sref="roadmap" class="item item-icon-left item-stable">
                     <i class="icon ion-heart"></i> A App
                 </ion-item>
-                
                 <ion-item menu-close ui-sref="support" class="item item-icon-left item-stable">
                     <i class="icon ion-help-circled"></i> Ajuda & Suporte
+                </ion-item>
+                <ion-item menu-close ui-sref="event-create" class="item item-icon-left item-stable">
+                    <i class="icon ion-help-circled"></i> Criar Evento
                 </ion-item>
             </ion-list>
         </ion-content>
@@ -154,5 +162,66 @@
           </div>
       </div>
 </script>
+ <script id="core/wizard.tpl.html" type="text/ng-template"> 
+      <ion-view view-title="Intro">
+        <ion-nav-buttons side="left">
+          <button class="button button-clear no-animation"
+                  ui-sref="home" ng-show="!slideIndex">
+            Saltar Introdução
+          </button>
+          <button class="button  button-clear no-animation"
+                  ng-click="previous()" ng-show="slideIndex > 0">
+            Anterior
+          </button>
+        </ion-nav-buttons>
+        <ion-nav-buttons side="right"> 
+          <button class="button button-clear no-animation"
+                  ng-click="next()" ng-show="slideIndex != 2">
+            Próximo
+          </button>
+          <button class="button button-clear no-animation"
+                  ui-sref="home" ng-show="slideIndex == 2">
+            Usar a App
+          </button>
+        </ion-nav-buttons>
+        <ion-slide-box on-slide-changed="slideChanged(index)">
+          <ion-slide>
+            <h3>Obrigado pela confiança!</h3>
+            <div id="logo">
+              <img src="http://code.ionicframework.com/assets/img/app_icon.png">
+            </div>
+            <p>
+              Tudo isto é opensource
+            </p>
+            <p>
+              Desfruta <i class="icon ion-hear"></i>
+            </p>
+          </ion-slide>
+          <ion-slide>
+            <h3>Tudo resumindo</h3>
+            
+            <div id="list">
+              <h5>A tua App:</h5>
+              <ol>
+                <li>Consumir</li>
+                <li>Publicar</li>
+                <li>Avaliar</li>
+              </ol>
+              <ol>
+                <li>Eventos</li>
+                <li>Notícias</li>
+              </ol>
+              
+            </div>
+          </ion-slide>
+          <ion-slide>
+            <h3>Alguma questão?</h3>
+            <p>
+              <button class="button button-block"><i class="icon ion-help">Ajuda</i></button>
+            </p>
+          </ion-slide>
+        </ion-slide-box>
+      </ion-view>
+    </script>
 </body>
 </html>

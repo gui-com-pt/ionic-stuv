@@ -1,3 +1,4 @@
 <img ng-src="{{place.image}}"/>
-<h2>{{place.name}} <span google-place-icon ng-repeat="type in place.types" type="type"></span></h2>
+<h2>{{place.name}}</span></h2>
 <p ng-bind="place.address"></p>
+<span google-place-icon ng-repeat="type in place.types" type="type">

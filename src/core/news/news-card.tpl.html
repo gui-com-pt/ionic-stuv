@@ -1,10 +1,8 @@
 <img ng-src="{{article.image}}"/>
 <h2 ng-bind="article.name"></h2>
 <div class="row">
-	<div class="col">
-		<span am-time-ago="article.datePublished"></span>
-	</div>
-	<div class="col">
-		<span ng-repeat="name in article.keywords" ng-bind="name" class="keyword"></span>
-	</div>
+	<span ng-bind="article.datePublished"></span
+</div>
+<div class="row">
+	<span ng-repeat="name in article.keywords" ng-bind="name" class="keyword"></span>
 </div>

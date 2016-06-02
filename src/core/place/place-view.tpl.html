@@ -7,13 +7,7 @@
             <h3 class="item__name">{{place.name}} <span google-place-icon ng-repeat="type in place.types" type="type"></span></h3>
             <img class="item__img" ng-src="{{place.image}}" />
         </div>
-        <div class="item">
-        {{place.openingHours | json}}
-            <div ng-repeat="detail in place.opening_hours.weekday_text">
-                <span ng-bind="detail"></span>
-            </div>
-        </div>
-        <div class="item item-icon-left">
+        <div class="item item-icon-left item-text-wrap" style="white-space: initial;">
             <i class="icon ion-map"></i>
             {{place.address}}
         </div>
@@ -21,15 +15,30 @@
             <div class="col">
                 <div class="item item-icon-left">
                     <i class="icon ion-android-star"></i>
-                    {{place.rating}}
+                    Rating 0
                 </div>
             </div>
             <div class="col">
                 <div class="item item-icon-left">
                     <i class="icon ion-android-star-outline"></i>
-                    {{place.ratingTotal}}
+                    Votos 0
                 </div>
             </div>
+        </div>
+        <div class="list card">
+            <div class="item item-text-wrap item-icon-left">
+                <i class="icon ion-calendar"></i>
+                Horário Indisponível
+            </div>
+            <div class="item item-icon-left">
+                <i class="icon item-text-wrap ion-share"></i>
+                Partilhar
+            </div>
+            <div class="item item-text-wrap item-icon-left">
+                <i class="icon ion-ios-star"></i>
+                Classifique esta aplicação
+            </div>
+            
         </div>
         <!--<leaflet defaults="defaults" markers="markers" center="place.position" height="200" width="640px"></leaflet>
         <div class="cnt" ng-bind-html="place.placeBody"></div>

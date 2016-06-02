@@ -11,13 +11,13 @@
             <div class="item">
                 <div class="item-icon-left resource-view__date" href="#">
                     <i class="icon ion-android-calendar"></i>
-                    <strong>Abertura</strong> <span ng-bind="event.doorTime | amDateFormat:'dddd, MMMM Do YYYY, h:mm:ss'"></span>
+                    <strong>Aconselhado a </strong> Família
                 </div>
             </div>
-            <div class="item">
+            <div class="item" ng-show="event.doorTime">
                 <div class="item-icon-left resource-view__date" href="#">
                     <i class="icon ion-android-calendar"></i>
-                    <strong>Encerro</strong> <span ng-bind="event.endDate | amDateFormat:'dddd, MMMM Do YYYY, h:mm:ss'"></span> - <span am-time-ago="event.endDate | amFromUnix"></span>
+                    <strong>Horário</strong> <span ng-bind="event.doorTime"></span>
                 </div>
             </div>
             <div class="item">

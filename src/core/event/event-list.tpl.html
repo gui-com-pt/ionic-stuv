@@ -3,11 +3,9 @@
         <button class="button button-clear" ng-click="filter()"><i class="icon ion-android-search"></i></button>
     </ion-nav-buttons>
     <ion-content>
+
         
-        <div ng-repeat="current in eventsPerDay">
-            <div class="row">
-            <a ng-repeat="event in current.results" event-card event="event" ui-sref="event-view({id: event.id})"></a>
-            </div>
-        </div>
+        <a ng-repeat="event in $root.events" event-card event="event" ui-sref="event-view({id: event.id})"></a>
+
     </ion-content>
 </ion-view>

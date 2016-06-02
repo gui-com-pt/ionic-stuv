@@ -5,7 +5,7 @@ var changed = require("gulp-changed");
 var rename = require("gulp-rename");
 var concat = require('gulp-concat');
 var concurrent = require('concurrent-transform');
-//var sass = require('gulp-sass');
+var sass = require('gulp-sass');
 var imageResize = require('gulp-image-resize');
 var minifyCss = require('gulp-minify-css');
 var rename = require('gulp-rename');
@@ -84,7 +84,7 @@ gulp.task('dependencies', function(){
        .pipe(gulp.dest('./www/js'));
 });
 
-/*
+
 gulp.task('sass', function(done) {
   gulp.src('./scss/index.scss')
     .pipe(sass({
@@ -97,7 +97,7 @@ gulp.task('sass', function(done) {
     .pipe(rename({ extname: '.min.css' }))
     .pipe(gulp.dest('./www/css/'))
     .on('end', done);
-});*/
+});
 
 gulp.task('images', function() {
   for(var i = 0; i < imgSizes.length; i++) {
@@ -142,4 +142,4 @@ gulp.task('git-check', function(done) {
   done();
 });
 
-gulp.task('default', ['scripts', 'dependencies', 'templates']);
+gulp.task('default', ['scripts', 'dependencies', 'templates', 'sass']);

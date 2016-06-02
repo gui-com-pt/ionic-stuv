@@ -111,7 +111,7 @@
 					'type': '='
 				},
 				replace: true,
-				template: '<i class="google-place-icon" ng-show="!hide" ng-class="icon {{icon}}"></i>',
+				template: '<i class="google-place-icon" ng-show="!hide" class="icon" ng-class="{{icon}}"></i>',
 				link: function(scope, elem, attrs){
 					scope.hide = false;
 

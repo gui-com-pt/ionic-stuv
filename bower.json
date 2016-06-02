@@ -18,5 +18,8 @@
     "angular-sanitize": "1.5.3",
     "angular-ui-router": "^0.2.18",
     "underscore": "^1.8.3"
+  },
+  "devDependencies": {
+    "pi-sass": "dev"
   }
 }

@@ -46,6 +46,9 @@
                 <a ui-sref="weather" class="item item-weather item-positive" viseu-item-temp day="0"></a>
             </div>
         </div>
+        <div class="item-padding">
+            <a news-card article="article" ng-repeat="article in $root.articles" class="item-news-card item-light" href="" ui-sref="news-view({id: article.id})" ></a>
+        </div>
         <!--<div class="row home-tiles">
             <div class="col">
                 <a ui-sref="media" class="item item-positive">

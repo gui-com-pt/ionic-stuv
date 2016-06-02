@@ -13,7 +13,7 @@
                 <div class="col">
                     <div class="item-icon-left resource-view__date" href="#">
                         <i class="icon ion-android-calendar"></i>
-                        <span ng-bind="article.datePublished | amDateFormat:'dddd, MMMM Do YYYY, h:mm:ss'"></span>
+                        <span ng-bind="article.datePublished"></span>
                     </div>
                 </div>
                 <div class="col col-right">
@@ -26,9 +26,9 @@
         <div class="cnt">
             <p ng-bind-html="article.articleBody"></p>
         </div>
-        <a class="creative-reffer" target="_blank" ng-ref="{{article.refferUrl">
+        <a class="creative-reffer" target="_blank">
             <div class="creative-reffer__img">
-                <img ng-src="{{article.refferImage}}" />
+                <img src="http://www.engisun.pt/wp-content/uploads/2013/04/municipio-de-viseu.png" />
             </div>
             
         </a>
