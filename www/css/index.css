@@ -10520,6 +10520,11 @@ h3.item__name {
   .item-blocks:after {
     clear: both; }
 
+/* Development Mode */
+ion-side-menus {
+  max-width: 360px;
+  max-height: 640px; }
+
 img {
   max-width: 100%; }
 
