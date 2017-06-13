@@ -52,8 +52,8 @@ var appVersion = "0.0.0";
 				ngGPlacesAPIProvider.setDefaults({
 					radius: 500,
 					nearbySearchKeys: ['name', 'reference', 'vicinity', 'id', 'place_id', 'icon', 'reference', 'photos', 'types'],
-					 placeDetailsKeys: ['formatted_address', 'formatted_phone_number',
-				        'reference', 'website', 'place_id', 'geometry', 'name', 'photos', 'formatted_phone_number',
+					placeDetailsKeys: ['formatted_address', 'formatted_phone_number',
+				    	'reference', 'website', 'place_id', 'geometry', 'name', 'photos', 'formatted_phone_number',
 				        'international_phone_number', 'rating', 'reviews', 'types'
 				    ],
 				});
@@ -115,22 +115,22 @@ var appVersion = "0.0.0";
 		}])
 		.controller('wizardCt', function($scope, $state, $ionicSlideBoxDelegate) {
  
-  // Called to navigate to the main app
-  $scope.startApp = function() {
-    $state.go('main');
-  };
-  $scope.next = function() {
-    $ionicSlideBoxDelegate.next();
-  };
-  $scope.previous = function() {
-    $ionicSlideBoxDelegate.previous();
-  };
+		  // Called to navigate to the main app
+		  $scope.startApp = function() {
+		    $state.go('main');
+		  };
+		  $scope.next = function() {
+		    $ionicSlideBoxDelegate.next();
+		  };
+		  $scope.previous = function() {
+		    $ionicSlideBoxDelegate.previous();
+		  };
 
-  // Called each time the slide changes
-  $scope.slideChanged = function(index) {
-    $scope.slideIndex = index;
-  };
-})
+		  // Called each time the slide changes
+		  $scope.slideChanged = function(index) {
+		    $scope.slideIndex = index;
+		  };
+		})
 		.run(['$cordovaGoogleAnalytics', 'googlePlaceTypeEnum', '$ionicPlatform', '$ionicLoading', '$cordovaGeolocation', '$state', 'stuv.core.setupSvc', 'pi.core.app.eventCategorySvc', 'pi.core.article.articleCategorySvc', '$rootScope', 'stuv', '$log', 
 			function($cordovaGoogleAnalytics, googlePlaceTypeEnum, $ionicPlatform, $ionicLoading, $cordovaGeolocation, $state, setupSvc, eventCategorySvc, articleCategorySvc, $rootScope, stuv, $log){
 
