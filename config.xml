@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <widget id="com.guilhermecardoso.viseu" version="0.0.1" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
-  <name>Viseu App</name>
+  <name>IBusiness</name>
   <description>
-        Aplicacao para conhecer e viver em Viseu com noticias, horarios autocarros, eventos e mito mais!
+        Aplicação Empresarial de Portugal
     </description>
-  <author email="contact@guilherme.ovh" href="https://guilherme.ovh/">
+  <author email="gc@digitalconsulting.pt" href="https://digitalconsulting.pt">
       Guilherme Cardoso
     </author>
   <content src="index.html"/>

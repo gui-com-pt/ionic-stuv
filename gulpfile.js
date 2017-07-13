@@ -49,7 +49,10 @@ coreDep: [
   './www/lib/ng-file-upload/ng-file-upload.js',
   './www/lib/angular-translate/angular-translate.js',
   './www/lib/ionic-rating/ionic-rating.js',
-  './www/lib/angularjs-google-places/dist/angularjs-google-places.min.js'
+  './www/lib/angularjs-google-places/dist/angularjs-google-places.min.js',
+  './www/lib/pouchdb/dist/pouchdb.js',
+  './www/lib/pouchdb-authentication/dist/pouchdb.authentication.js',
+  './www/lib/angular-pouchdb/angular-pouchdb.js'
 ]
 };
 

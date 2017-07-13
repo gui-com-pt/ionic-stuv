@@ -1,7 +1,7 @@
 {
-  "name": "stuv",
+  "name": "ibusiness",
   "version": "1.0.0",
-  "description": "stuv: An Ionic project",
+  "description": "Business Application",
   "dependencies": {
     "concurrent-transform": "^1.0.0",
     "gulp": "^3.5.6",

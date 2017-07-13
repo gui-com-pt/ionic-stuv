@@ -1,0 +1,17 @@
+<ion-view view-title="Companies ({{vm.total}})">
+	<ion-nav-buttons side="right">
+        <button class="button icon-left ion-plus-round button-clear" ui-sref="company-create"></button>
+    </ion-nav-buttons>
+  	<ion-content class="has-header">
+    	<ion-list">
+        <div class="item item-text-wrap" ng-show="vm.companies.length == 0">No companies founded.</div>
+    		<ion-item class="item item-avatar" ng-repeat="company in vm.companies" ui-sref="user-view.info({id: company.id})" can-swipe="true">
+          <img ng-src="{{company.avatarHref}}" >
+    			<h2><span ng-bind="company.ecsCode"></span></h2>
+          <p><span ng-bind="company.firstName"></span> <span ng-bind="company.lastName"></span></p>
+          <ion-option-button class="button-positive" ui-sref="company-edit({id: company.id})">Edit</ion-option-button>
+          <ion-option-button class="button-assertive" ui-sref="company-remove({id: company.id})">Remove</ion-option-button>
+    		</ion-item>
+    	</ion-list>
+    </ion-content>
+</ion-view>

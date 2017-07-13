@@ -1,5 +1,5 @@
 {
-  "name": "viseu-app",
+  "name": "ibusiness",
   "private": "true",
   "dependencies": {
     "ionic": "^1.2.4",
@@ -9,7 +9,10 @@
     "angular": "^1.5.3",
     "angular-translate": "^2.11.0",
     "ionic-rating": "^0.3.0",
-    "angular-leaflet-directive": "^0.10.0"
+    "angular-leaflet-directive": "^0.10.0",
+    "angularjs-google-places": "^0.1.0",
+    "pi-angular": "*",
+    "angular-pouchdb": "^5.0.0"
   },
   "resolutions": {
     "angular": ">= 1.0.8",

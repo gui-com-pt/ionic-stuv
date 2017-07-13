@@ -1,24 +1,17 @@
-<ion-view view-title="Viseu">
-
+<ion-view view-title="DC Business">
     <ion-content>
-        <!--<ion-scroll direction="x" class="wide-as-needed">
-            <ul class="list list-h">
-            <li class="item-news-h-card" news-card-h article="item" ng-repeat="item in articles"></li>
-            </ul>
-        </ion-scroll>-->
-        <div viseu-intro></div>
         <div class="list">
         <div class="row home-tiles">
             <div class="col">
-                <a ui-sref="bus-home" class="item item-positive">
+                <a ui-sref="company-list" class="item item-positive">
                     <i class="icon ion-android-bus"></i>
-                    <div>Autocarros</div>
+                    Empresas
                 </a>
             </div>
             <div class="col">
-                <a ui-sref="news-list" class="item item-positive">
+                <a ui-sref="company-create" class="item item-positive">
                     <i class="icon ion-document-text"></i>
-                    Noticias
+                    Registar Empresa
                 </a>
             </div>
             <div class="col">
@@ -28,46 +21,5 @@
                 </a>
             </div>
         </div>
-        <div class="row home-tiles">
-            <div class="col">
-                <a ui-sref="place-list" class="item item-positive">
-                    <i class="icon ion-wineglass"></i>
-                    Sitios
-                </a>
-            </div>
-            <div class="col">
-                <a ui-sref="tourism" class="item item-positive">
-                    <i class="icon ion-map"></i>
-                    Turismo
-                </a>
-            </div>
-            
-            <div class="col">
-                <a ui-sref="weather" class="item item-weather item-positive" viseu-item-temp day="0"></a>
-            </div>
-        </div>
-        <div class="item-padding">
-            <a news-card article="article" ng-repeat="article in $root.articles" class="item-news-card item-light" href="" ui-sref="news-view({id: article.id})" ></a>
-        </div>
-        <!--<div class="row home-tiles">
-            <div class="col">
-                <a ui-sref="media" class="item item-positive">
-                    <i class="icon ion-videocamera"></i>
-                    Média
-                </a>
-            </div>
-            <div class="col">
-                <a ui-sref="webcam" class="item item-positive">
-                    <i class="icon ion-camera"></i>
-                    Webcam Sé
-                </a>
-            </div>
-            <div class="col">
-                <a ui-sref="webcam" class="item item-positive">
-                    <i class="icon ion-help-circled"></i>
-                    Suporte
-                </a>
-            </div>
-        </div>-->
     </ion-content>
 </ion-view>

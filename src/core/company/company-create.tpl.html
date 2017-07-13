@@ -1,0 +1,137 @@
+<ion-view view-title="Register Company">
+  <ion-content>
+    <form class="list card" name="userForm">
+    	<div class="row responsive-sm">
+    		<div class="col">
+		    	<label class="item item-input item-stacked-label">
+			    	<span class="input-label">First Name</span>
+			    	<input type="text" placeholder="John" ng-model="vm.firstName" name="firstName" id="firstName" ng-minlength="3" required>
+		    	</label>
+		    </div>
+		    <div class="col">
+		    	<label class="item item-input item-stacked-label">
+		    		<span class="input-label">Last Name</span>
+		    		<input type="text" placeholder="Suhr" ng-model="vm.lastName" name="lastName" id="lastName" ng-minlength="3" required>
+		    	</label>
+		    </div>
+		 </div>
+    	<label class="item item-input item-stacked-label">
+    		<span class="input-label">Full Name</span>
+			<input type="text" placeholder="John Suhr" ng-model="vm.fullName" name="fullName" id="fullName" ng-minlength="3" required>
+		</label>
+		<div class="row responsive-sm">
+			<div class="col">
+				<label class="item item-input item-stacked-label">
+		    		<span class="input-label">Email</span>
+					<input type="text" placeholder="email@gmail.com" ng-model="vm.email" name="email" id="email" ng-minlength="3" required>
+				</label>
+			</div>
+			<div class="col">
+				<label class="item item-input item-stacked-label">
+		    		<span class="input-label">Phone</span>
+					<input type="text" placeholder="+351 960 000 000" ng-model="vm.phone" name="phone" id="phone" ng-minlength="3" required>
+				</label>
+			</div>
+		</div>
+		<div class="row responsive-sm">
+			<div class="col">
+				<label class="item item-input item-stacked-label">
+		    		<span class="input-label">VCS Code</span>
+					<input type="text" placeholder="XXXX" ng-model="vm.ecsCode" name="ecsCode" id="ecsCode" ng-minlength="3" required>
+				</label>
+			</div>
+			<div class="col">
+				<label class="item item-input item-stacked-label">
+		    		<span class="input-label">Company</span>
+					<input type="text" placeholder="Related Company" ng-model="vm.company" name="company" id="company">
+				</label>
+			</div>
+		</div>
+		<label class="item item-input item-stacked-label">
+    		<span class="input-label">Address</span>
+			<input type="text" placeholder="John Suhr" ng-model="vm.address" name="address" id="address" ng-minlength="3" required>
+		</label>
+		<div class="row responsive-sm">
+			<div class="col">
+				<label class="item item-input item-stacked-label">
+		    		<span class="input-label">City</span>
+					<input type="text" placeholder="Lisbon" ng-model="vm.city" name="city" id="city" ng-minlength="3" required>
+				</label>
+			</div>
+			<div class="col">
+				<label class="item item-input item-stacked-label">
+		    		<span class="input-label">Postal Code</span>
+					<input type="text" placeholder="3510-154" ng-model="vm.postCode" name="postCode" id="postCode" ng-minlength="3" required>
+				</label>
+			</div>
+		</div>
+		<div class="row responsive-sm">
+			<div class="col">
+				<label class="item item-input item-stacked-label">
+		    		<span class="input-label">Country</span>
+					<input type="text" placeholder="Portugal" ng-model="vm.country" name="country" id="country" ng-minlength="3" required>
+				</label>
+			</div>
+			<div class="col">
+	          <label class="item item-input item-stacked-label">
+	              <span class="input-label">Birthday</span>
+	            <input type="text" placeholder="01/01/1970" ng-model="vm.birthday" name="country" id="country" ng-minlength="3" required>
+	          </label>
+	        </div>
+		</div>
+		<div class="item item-divider item-calm">Financial</div>
+		<div class="row responsive-sm">
+			<div class="col">
+			  <label class="item item-input item-stacked-label">
+			    <span class="input-label">NIF</span>
+			    <input type="text" placeholder="000 000 000" ng-model="vm.nif" name="nif" id="nif" ng-minlength="3" required>
+			  </label>
+			</div>
+			<div class="col">
+			  <label class="item item-input item-stacked-label">
+			    <span class="input-label">Citizen Card</span>
+			    <input type="text" placeholder="000 000 000 000" ng-model="vm.cc" name="cc" id="cc" ng-minlength="3" required>
+			  </label>
+			</div>
+		</div>
+		<label class="item item-input item-stacked-label">
+    		<span class="input-label">Observation</span>
+			<input type="text" placeholder="A few words Suhr" ng-model="vm.observation" name="observation" id="observation">
+		</label>
+		<div class="item button-bar">
+			<button ng-click="$root.goBack()" class="button button-stable">Cancel</button>
+			<button ng-click="vm.create()" class="button button-calm" ng-disabled="userForm.$invalid">Create</button>
+		</div>
+		<div class="item item-validation">
+            <p ng-show="userForm.firstName.$dirty && userForm.firstName.$error.required">* First Name is required</p>
+            <p ng-show="userForm.firstName.$dirty && userForm.firstName.$error.minlength">* First Name must be longer than 3 characters</p>
+            <p ng-show="userForm.lastName.$dirty && userForm.lastName.$error.required">* Last Name is required</p>
+            <p ng-show="userForm.lastName.$dirty && userForm.lastName.$error.minlength">* Last Name must be longer than 3 characters</p>
+            <p ng-show="userForm.fullName.$dirty && userForm.fullName.$error.required">* Full Name is required</p>
+            <p ng-show="userForm.fullName.$dirty && userForm.fullName.$error.minlength">* Full Name must be longer than 3 characters</p>
+            <p ng-show="userForm.email.$dirty && userForm.email.$error.required">* Email is required</p>
+            <p ng-show="userForm.email.$dirty && userForm.email.$error.minlength">* Email must be longer than 3 characters</p>
+            <p ng-show="userForm.phone.$dirty && userForm.phone.$error.required">* Phone is required</p>
+            <p ng-show="userForm.phone.$dirty && userForm.phone.$error.minlength">* Phone must be longer than 3 characters</p>
+            <p ng-show="userForm.ecsCode.$dirty && userForm.ecsCode.$error.required">* VCS Code is required</p>
+            <p ng-show="userForm.ecsCode.$dirty && userForm.ecsCode.$error.minlength">* VCS Code must be longer than 3 characters</p>
+            <p ng-show="userForm.company.$dirty && userForm.company.$error.required">* Company is required</p>
+            <p ng-show="userForm.company.$dirty && userForm.company.$error.minlength">* Company must be longer than 3 characters</p>
+            <p ng-show="userForm.address.$dirty && userForm.address.$error.required">* Address is required</p>
+            <p ng-show="userForm.address.$dirty && userForm.address.$error.minlength">* Address must be longer than 3 characters</p>
+            <p ng-show="userForm.city.$dirty && userForm.city.$error.required">* City is required</p>
+            <p ng-show="userForm.city.$dirty && userForm.city.$error.minlength">* City must be longer than 3 characters</p>
+            <p ng-show="userForm.postCode.$dirty && userForm.postCode.$error.required">* Post Code is required</p>
+            <p ng-show="userForm.postCode.$dirty && userForm.postCode.$error.minlength">* Post Code must be longer than 3 characters</p>
+            <p ng-show="userForm.country.$dirty && userForm.country.$error.required">* Country is required</p>
+            <p ng-show="userForm.country.$dirty && userForm.country.$error.minlength">* Country must be longer than 3 characters</p>
+            <p ng-show="userForm.birthday.$dirty && userForm.birthday.$error.required">* Birthday is required</p>
+            <p ng-show="userForm.birthday.$dirty && userForm.birthday.$error.minlength">* Birthday must be longer than 3 characters</p>
+            <p ng-show="userForm.nif.$dirty && userForm.nif.$error.required">* NIF is required</p>
+            <p ng-show="userForm.nif.$dirty && userForm.nif.$error.minlength">* NIF must be longer than 3 characters</p>
+            <p ng-show="userForm.cc.$dirty && userForm.cc.$error.required">* Citizen Card is required</p>
+            <p ng-show="userForm.cc.$dirty && userForm.cc.$error.minlength">* Citizen Card must be longer than 3 characters</p>
+        </div>
+	</form>
+  </ion-content>
+</ion-view>
