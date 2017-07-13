@@ -286,10 +286,6 @@ var appVersion = "0.0.0";
 		}]);
 })();
 (function(){
-	angular
-		.module('stuv.common', ['pi']);
-})();
-(function(){
 	var coreDeps = ['ngCordova', 'ngCordova.plugins.preferences', 'ui.router', 'pi', 'ionic', 'ngCordova', 'pascalprecht.translate'];
 	angular
 		.module('stuv.core', coreDeps);
@@ -313,6 +309,10 @@ var appVersion = "0.0.0";
 				});
 			}
 		]);
+})();
+(function(){
+	angular
+		.module('stuv.common', ['pi']);
 })();
 (function(){
 	angular
@@ -371,6 +371,61 @@ var appVersion = "0.0.0";
 })();
 (function(){
 	angular
+		.module('stuv.core.news', ['ngCordova', 'stuv.core']);
+	angular
+		.module('stuv.core.news')
+		.config(['$stateProvider', function($stateProvider){
+
+			$stateProvider
+				.state('news-create', {
+					url: '/criar-noticia',
+					templateUrl: 'core/news/news-create.tpl.html',
+					controller: 'stuv.core.news.newsCreateCtrl'
+				})
+				.state('news-list', {
+                    url: '/news-list',
+                    controller: 'stuv.core.news.newsListCtrl',
+                    templateUrl: 'core/news/news-list.tpl.html'
+                })
+                .state('news-view', {
+                    url: '/newso/:id',
+                    controller: 'stuv.core.news.newsViewCtrl',
+                    templateUrl: 'core/news/news-view.tpl.html'
+                })
+                .state('news-update', {
+                    url: '/newso-editar/:id',
+                    controller: 'stuv.core.news.newsUpdateCtrl',
+                    templateUrl: 'core/news/news-update.tpl.html'
+                });
+		}]);
+})();
+(function(){
+	angular
+		.module('stuv.core.place', ['ngCordova', 'stuv.core']);
+	angular
+		.module('stuv.core.place')
+		.config(['$stateProvider', function($stateProvider){
+
+			$stateProvider
+				.state('place-list', {
+                    url: '/place-list',
+                    controller: 'stuv.core.place.placeListCtrl',
+                    templateUrl: 'core/place/place-list.tpl.html'
+                })
+                .state('place-list-map', {
+                    url: '/place-list-map',
+                    controller: 'stuv.core.place.placeListMapCtrl',
+                    templateUrl: 'core/place/place-list-map.tpl.html'
+                })
+                .state('place-view', {
+                    url: '/placeo/:id',
+                    controller: 'stuv.core.place.placeViewCtrl',
+                    templateUrl: 'core/place/place-view.tpl.html'
+                });
+		}]);
+})();
+(function(){
+	angular
 		.module('stuv.core.tourism')
 		.config(['$stateProvider',
 			function($stateProvider) {
@@ -409,293 +464,6 @@ var appVersion = "0.0.0";
 						controllerAs: 'ctrl'
 					});
 			}]);
-})();
-(function(){
-	angular
-		.module('stuv.core.place', ['ngCordova', 'stuv.core']);
-	angular
-		.module('stuv.core.place')
-		.config(['$stateProvider', function($stateProvider){
-
-			$stateProvider
-				.state('place-list', {
-                    url: '/place-list',
-                    controller: 'stuv.core.place.placeListCtrl',
-                    templateUrl: 'core/place/place-list.tpl.html'
-                })
-                .state('place-list-map', {
-                    url: '/place-list-map',
-                    controller: 'stuv.core.place.placeListMapCtrl',
-                    templateUrl: 'core/place/place-list-map.tpl.html'
-                })
-                .state('place-view', {
-                    url: '/placeo/:id',
-                    controller: 'stuv.core.place.placeViewCtrl',
-                    templateUrl: 'core/place/place-view.tpl.html'
-                });
-		}]);
-})();
-(function(){
-	angular
-		.module('stuv.core.news', ['ngCordova', 'stuv.core']);
-	angular
-		.module('stuv.core.news')
-		.config(['$stateProvider', function($stateProvider){
-
-			$stateProvider
-				.state('news-create', {
-					url: '/criar-noticia',
-					templateUrl: 'core/news/news-create.tpl.html',
-					controller: 'stuv.core.news.newsCreateCtrl'
-				})
-				.state('news-list', {
-                    url: '/news-list',
-                    controller: 'stuv.core.news.newsListCtrl',
-                    templateUrl: 'core/news/news-list.tpl.html'
-                })
-                .state('news-view', {
-                    url: '/newso/:id',
-                    controller: 'stuv.core.news.newsViewCtrl',
-                    templateUrl: 'core/news/news-view.tpl.html'
-                })
-                .state('news-update', {
-                    url: '/newso-editar/:id',
-                    controller: 'stuv.core.news.newsUpdateCtrl',
-                    templateUrl: 'core/news/news-update.tpl.html'
-                });
-		}]);
-})();
-var appDirectives = angular.module('appDirectives', []);
-
-appDirectives.directive('datetimepicker', function($rootScope, $state, $ionicPopup, $cordovaDatePicker, $timeout, $translate) {
-	return {
-		restrict: 'A',
-		replace: true,
-		scope: {
-			selectedDateTime: '=datetime',
-			mode: '='
-		},
-		link: function(scope) {
-
-			scope.selectDateTime = function() {
-
-				if (!scope.selectedDateTime) {
-					scope.selectedDateTime = new Date();
-				}
-
-				var options = {
-					date: scope.selectedDateTime,
-					mode: scope.mode
-				};
-
-				/***
-				*
-				* Make sure that the user's browser/device can use the datepicker functionality
-				*
-				***/
-
-				if (navigator.userAgent.match(/(iPhone|iPod|iPad|Android)/gi)) {
-
-					$cordovaDatePicker.show(options).then(function(date) {
-						$timeout(function() {
-							scope.selectedDateTime = date;
-						}, 50);
-					}, function(err) {
-						alert(err);
-					});
-
-				} else if ( ionic.Platform.platform() === 'windowsphone') {
-
-
-					// $cordova datepicker doesn't support wp8 
-					// so we'll use https://github.com/michaelfranz89/cordova-plugin-datepicker for this instead
-
-					// If we are getting date & time, we need to do them separately.
-					// First of all, get the date
-					if (scope.mode === 'datetime') {
-						options.mode = 'date';
-					}
-
-					datePicker.show(options, function(date) {
-
-						if (scope.mode === 'datetime') {
-							// If we are getting date & time, we now need to get the time and then combine the 2 values together
-							datePicker.show({
-								mode: 'time',
-								date: scope.selectedDateTime
-							}, function(time) {
-								// Create a new date with year, month and date from the date variable and hours, minutes and seconds from the time variable
-								$timeout(function() {
-									scope.selectedDateTime = new Date(date.getFullYear(), date.getMonth(), date.getDate(), time.getHours(), time.getMinutes(), time.getSeconds());
-								}, 50);
-							});
-						} else {
-							// If we're only getting the date OR time, send the value back
-							$timeout(function() {
-								scope.selectedDateTime = date;
-							}, 50);
-						}
-
-					});
-
-				} else {
-
-					$translate(['directives.datepicker.DATEPICKER_ERROR_TITLE', 'directives.datepicker.DATEPICKER_ERROR'])
-						.then(function(translations) {
-
-							$ionicPopup.alert({
-								title: translations['directives.datepicker.DATEPICKER_ERROR_TITLE'],
-								template: translations['directives.datepicker.DATEPICKER_ERROR']
-							});
-
-						});
-
-				}
-
-			};
-
-		},
-		template: '<button type="button" class="button button-icon icon ion-ios-calendar-outline" ng-click="selectDateTime()"></button>'
-	}
-});
-
-
-(function(){
-	angular
-		.module('stuv.common')
-		.directive('piFacebookComment', function () {
-		    function createHTML(href, numposts, colorscheme) {
-		        return '<div class="fb-comments" ' +
-		                       'data-href="' + href + '" ' +
-		                       'data-numposts="' + numposts + '" ' +
-		                       'data-colorsheme="' + colorscheme + '">' +
-		               '</div>';
-		    }
-
-		    return {
-		        restrict: 'A',
-		        scope: {},
-		        link: function postLink(scope, elem, attrs) {
-		            attrs.$observe('pageHref', function (newValue) {
-		                var href        = newValue;
-		                var numposts    = attrs.numposts    || 5;
-		                var colorscheme = attrs.colorscheme || 'light';
-
-		                elem.html(createHTML(href, numposts, colorscheme));
-		                FB.XFBML.parse(elem[0]);
-		            });
-		        }
-		    };
-		});
-})();
-(function(){
-	angular
-		.module('stuv.common')
-		.provider('stuv.common.responseUtilsSvc', [function(){
-
-			var getModelFromStateParams = function(names, model){
-                angular.forEach(names, function(value){
-                    if(!_.isUndefined($stateParams[value])) {
-                        model[value] = $stateParams[value];
-                    }
-                });
-
-                return model;
-            };
-			return {
-				$get: ['$stateParams', function($stateParams){
-					return {
-						orderByNewest: function(items, keyDate) {
-							if(!_.isArray(items) || !_.isString(keyDate)) {
-								return null;
-							}
-
-							var events = _.groupBy(items, function (event) {
-		                      return moment.utc(event[keyDate], 'X').startOf('day').format('DD-MM-YYYY');
-		                    });
-
-		                    events = _.map(events, function(group, day){
-		                        return {
-		                            day: day,
-		                            results: group
-		                        }
-		                    });
-
-							return events;
-						},
-						getModelFromStateParams: function(names, model){
-		                    getModelFromStateParams(names, model);
-		                },
-		                getQueryModel: function(data, queryKeys, take){
-		                	var take = _.isInt(take) ? take : 12,
-		                		model = {skip: data.length, take: take};
-
-		                    getModelFromStateParams(queryKeys, model);
-		                    return model;
-		                },
-					}
-				}]
-			}
-		}]);
-})();
-(function(){
-	angular
-		.module('stuv.common')
-		.filter('youtubeEmbedUrl', function ($sce) {
-		    return function(videoId) {
-		      return $sce.trustAsResourceUrl('http://www.youtube.com/embed/' + videoId);
-		    };
-		 });
-})();
-(function(){
-	angular
-		.module('stuv')
-		  .directive('piScroller', ['$timeout', function($timeout) {
-		      return {
-		        restrict: 'E',
-		        template: '<div class="pi-scroller" ng-transclude></div>',
-		        replace: true,
-		        transclude: true,
-
-		        compile: function(element, attr) {
-		          return function($scope, $element, $attr) {
-
-		            var el = $element[0];
-		            angular.element(el).bind("scroll", function(){
-		              var left = $element[0].scrollLeft;
-		              // console.log($element.childNodes);
-		            });
-
-
-		          }
-		        },
-		      }
-		    }
-		])
-		.directive('piCardH', ['$rootScope', function($rootScope) {
-		      return {
-		        restrict: 'E',
-		        template: '<div class="pi-card-h" ng-transclude></div>',
-		        replace: true,
-		        transclude: true,
-		        scope: {
-		          desc: '@',
-		          image: '@',
-		          index: '@'
-		        },
-		        link: function(scope, element, attrs){
-		          var img = angular.element("<img class='pi-scroller-img' src='"+attrs.image+"' />");
-		          element.append(img);
-		          element.append('<div class="pi-scroller-label">'+attrs.desc+'</div>');
-		          var animationClass = 'pi-scroller-card-animated-' + attrs.index.toString();
-		          element.addClass(animationClass);
-
-		        },
-
-		      }
-		    }
-		]);
-
 })();
 (function(){
 	angular
@@ -1098,6 +866,238 @@ appDirectives.directive('datetimepicker', function($rootScope, $state, $ionicPop
 			}, 3000);
 
 		}]);
+})();
+var appDirectives = angular.module('appDirectives', []);
+
+appDirectives.directive('datetimepicker', function($rootScope, $state, $ionicPopup, $cordovaDatePicker, $timeout, $translate) {
+	return {
+		restrict: 'A',
+		replace: true,
+		scope: {
+			selectedDateTime: '=datetime',
+			mode: '='
+		},
+		link: function(scope) {
+
+			scope.selectDateTime = function() {
+
+				if (!scope.selectedDateTime) {
+					scope.selectedDateTime = new Date();
+				}
+
+				var options = {
+					date: scope.selectedDateTime,
+					mode: scope.mode
+				};
+
+				/***
+				*
+				* Make sure that the user's browser/device can use the datepicker functionality
+				*
+				***/
+
+				if (navigator.userAgent.match(/(iPhone|iPod|iPad|Android)/gi)) {
+
+					$cordovaDatePicker.show(options).then(function(date) {
+						$timeout(function() {
+							scope.selectedDateTime = date;
+						}, 50);
+					}, function(err) {
+						alert(err);
+					});
+
+				} else if ( ionic.Platform.platform() === 'windowsphone') {
+
+
+					// $cordova datepicker doesn't support wp8 
+					// so we'll use https://github.com/michaelfranz89/cordova-plugin-datepicker for this instead
+
+					// If we are getting date & time, we need to do them separately.
+					// First of all, get the date
+					if (scope.mode === 'datetime') {
+						options.mode = 'date';
+					}
+
+					datePicker.show(options, function(date) {
+
+						if (scope.mode === 'datetime') {
+							// If we are getting date & time, we now need to get the time and then combine the 2 values together
+							datePicker.show({
+								mode: 'time',
+								date: scope.selectedDateTime
+							}, function(time) {
+								// Create a new date with year, month and date from the date variable and hours, minutes and seconds from the time variable
+								$timeout(function() {
+									scope.selectedDateTime = new Date(date.getFullYear(), date.getMonth(), date.getDate(), time.getHours(), time.getMinutes(), time.getSeconds());
+								}, 50);
+							});
+						} else {
+							// If we're only getting the date OR time, send the value back
+							$timeout(function() {
+								scope.selectedDateTime = date;
+							}, 50);
+						}
+
+					});
+
+				} else {
+
+					$translate(['directives.datepicker.DATEPICKER_ERROR_TITLE', 'directives.datepicker.DATEPICKER_ERROR'])
+						.then(function(translations) {
+
+							$ionicPopup.alert({
+								title: translations['directives.datepicker.DATEPICKER_ERROR_TITLE'],
+								template: translations['directives.datepicker.DATEPICKER_ERROR']
+							});
+
+						});
+
+				}
+
+			};
+
+		},
+		template: '<button type="button" class="button button-icon icon ion-ios-calendar-outline" ng-click="selectDateTime()"></button>'
+	}
+});
+
+
+(function(){
+	angular
+		.module('stuv.common')
+		.directive('piFacebookComment', function () {
+		    function createHTML(href, numposts, colorscheme) {
+		        return '<div class="fb-comments" ' +
+		                       'data-href="' + href + '" ' +
+		                       'data-numposts="' + numposts + '" ' +
+		                       'data-colorsheme="' + colorscheme + '">' +
+		               '</div>';
+		    }
+
+		    return {
+		        restrict: 'A',
+		        scope: {},
+		        link: function postLink(scope, elem, attrs) {
+		            attrs.$observe('pageHref', function (newValue) {
+		                var href        = newValue;
+		                var numposts    = attrs.numposts    || 5;
+		                var colorscheme = attrs.colorscheme || 'light';
+
+		                elem.html(createHTML(href, numposts, colorscheme));
+		                FB.XFBML.parse(elem[0]);
+		            });
+		        }
+		    };
+		});
+})();
+(function(){
+	angular
+		.module('stuv.common')
+		.provider('stuv.common.responseUtilsSvc', [function(){
+
+			var getModelFromStateParams = function(names, model){
+                angular.forEach(names, function(value){
+                    if(!_.isUndefined($stateParams[value])) {
+                        model[value] = $stateParams[value];
+                    }
+                });
+
+                return model;
+            };
+			return {
+				$get: ['$stateParams', function($stateParams){
+					return {
+						orderByNewest: function(items, keyDate) {
+							if(!_.isArray(items) || !_.isString(keyDate)) {
+								return null;
+							}
+
+							var events = _.groupBy(items, function (event) {
+		                      return moment.utc(event[keyDate], 'X').startOf('day').format('DD-MM-YYYY');
+		                    });
+
+		                    events = _.map(events, function(group, day){
+		                        return {
+		                            day: day,
+		                            results: group
+		                        }
+		                    });
+
+							return events;
+						},
+						getModelFromStateParams: function(names, model){
+		                    getModelFromStateParams(names, model);
+		                },
+		                getQueryModel: function(data, queryKeys, take){
+		                	var take = _.isInt(take) ? take : 12,
+		                		model = {skip: data.length, take: take};
+
+		                    getModelFromStateParams(queryKeys, model);
+		                    return model;
+		                },
+					}
+				}]
+			}
+		}]);
+})();
+(function(){
+	angular
+		.module('stuv.common')
+		.filter('youtubeEmbedUrl', function ($sce) {
+		    return function(videoId) {
+		      return $sce.trustAsResourceUrl('http://www.youtube.com/embed/' + videoId);
+		    };
+		 });
+})();
+(function(){
+	angular
+		.module('stuv')
+		  .directive('piScroller', ['$timeout', function($timeout) {
+		      return {
+		        restrict: 'E',
+		        template: '<div class="pi-scroller" ng-transclude></div>',
+		        replace: true,
+		        transclude: true,
+
+		        compile: function(element, attr) {
+		          return function($scope, $element, $attr) {
+
+		            var el = $element[0];
+		            angular.element(el).bind("scroll", function(){
+		              var left = $element[0].scrollLeft;
+		              // console.log($element.childNodes);
+		            });
+
+
+		          }
+		        },
+		      }
+		    }
+		])
+		.directive('piCardH', ['$rootScope', function($rootScope) {
+		      return {
+		        restrict: 'E',
+		        template: '<div class="pi-card-h" ng-transclude></div>',
+		        replace: true,
+		        transclude: true,
+		        scope: {
+		          desc: '@',
+		          image: '@',
+		          index: '@'
+		        },
+		        link: function(scope, element, attrs){
+		          var img = angular.element("<img class='pi-scroller-img' src='"+attrs.image+"' />");
+		          element.append(img);
+		          element.append('<div class="pi-scroller-label">'+attrs.desc+'</div>');
+		          var animationClass = 'pi-scroller-card-animated-' + attrs.index.toString();
+		          element.addClass(animationClass);
+
+		        },
+
+		      }
+		    }
+		]);
+
 })();
 (function(){
 	angular
@@ -3036,53 +3036,276 @@ appDirectives.directive('datetimepicker', function($rootScope, $state, $ionicPop
 })();
 (function(){
 	angular
-		.module('stuv.core.tourism')
-		.controller('stuv.core.tourism.mediaViewCtrl', ['stuv.core.tourism.videosSvc', '$stateParams', '$sce',
-			function(videosSvc, $stateParams, $sce) {
+		.module('stuv.core')
+		.directive('newsCardH', [function(){
 
-				this.video = videosSvc.getById($stateParams.id);
-			}]);
+			return {
+				templateUrl: 'core/news/news-card-h.tpl.html',
+				scope: {
+					'article': '='
+				},
+				controller: ['$scope', function($scope){
+
+				}],
+				replace: false
+			}
+		}]);
 })();
 (function(){
 	angular
-		.module('stuv.core.tourism')
-		.controller('stuv.core.tourism.mediaCtrl', ['stuv.core.tourism.videosSvc',
-			function(videosSvc) {
+		.module('stuv.core')
+		.directive('newsCard', [function(){
 
-				this.videos = videosSvc.getAll();
-			}]);
+			return {
+				templateUrl: 'core/news/news-card.tpl.html',
+				scope: {
+					'article': '='
+				},
+				controller: ['$scope', function($scope){
+
+				}],
+				replace: false
+			}
+		}]);
 })();
-
 (function(){
-	
 	angular
-		.module('stuv.core.tourism')
-		.factory('stuv.core.tourism.videosSvc', ['$rootScope',
-			function($rootScope) {
-				var videos = [
-					{id: 'uT_sscHwbgY', name: 'Viseu: spot promocional da melhor cidade para viver!'},
-					{id: 'W6_cZwST45M', name: 'Passagem de ano viseu 2016 (video mapping)'},
-					{id: 'Pv6HzJCD3b0', name: 'Reportagem Viseu a melhor cidade para se viver em Portugal'},
-					{id: 'GS3Cilkh0R0', name: 'Viseu: a primeira rede de ciclovias urbanas nasce em 2018'},
-					{id: 'uT_sscHwbgY', name: 'Viseu: spot promocional da melhor cidade para viver!'}
-					];
-				this.getAll = function() {
-					return videos;
-				};
+		.module('stuv.core')
+		.controller('stuv.core.news.newsCreateCtrl', ['pi.core.app.articleSvc', '$scope', '$cordovaFileOpener2', function(newsSvc, $scope, $cordovaFileOpener2){
+			var self = this;
+			
+			$scope.showFileDialog = function(){
+				$cordovaFileOpener2.open(
+			    '/sdcard/Download/gmail.apk',
+			    'application/vnd.android.package-archive'
+			  ).then(function() {
+			      // Success!
+			  }, function(err) {
+			      // An error occurred. Show a message to the user
+			  });	
+			}
+			
+			$scope.news = {};
 
-				this.getById = function(id) {
-					var video;
-					
-					angular.forEach(videos, function(obj) {
-						if(obj.id === id) {
-							video = obj;
-						}
-					});
-					return video;
+			this.prepareRequest = function(){
+				var dto = angular.copy($scope.news);
+				dto.city = 'Viseu';
+				return dto;
+			}
 
+			var submitErrorFn = function(response) {
+
+			}
+
+			$scope.submitForm = function(){
+				try {
+					var model = self.prepareRequest();
+					newsSvc.post(model)
+						.then(function(res){
+
+						}, submitErrorFn);	
 				}
-				return this;
-			}]);
+				catch(e){
+					submitErrorFn();
+				}
+				
+			}
+		}]);
+})();
+(function(){
+    angular
+        .module('stuv.core')
+        .controller('stuv.core.news.newsListFilterCtrl', ['stuv.common.responseUtilsSvc', 'pi.core.article.articleSvc', '$scope', '$stateParams', function(responseUtilsSvc, articleSvc, $scope, $stateParams){
+            
+            $scope.queryModel = {};
+
+            
+        }]);
+})();
+(function(){
+    angular
+        .module('stuv.core')
+        .controller('stuv.core.news.newsListCtrl', ['$ionicModal', 'pi.core.responseUtilsSvc', 'pi.core.article.articleSvc', '$scope', '$stateParams', '$rootScope', '$q', function($ionicModal, responseUtilsSvc, articleSvc, $scope, $stateParams, $rootScope, $q){
+            
+            $scope.cachedArticles = [];
+                        
+            $scope.queryModel = {
+                busy: false,
+                noResult: false,
+                hasMoreData: false,
+                data: [],
+                currentCategory: 'Todas'
+            };
+
+            $scope.modalScope = $rootScope.$new();
+
+            $ionicModal.fromTemplateUrl('core/news/news-list-filter.tpl.html', {
+                scope: $scope.modalScope,
+                animation: 'slide-in-up',
+                controller: 'stuv.core.news.newsListFilterCtrl'
+            }).then(function(modal) {
+                $scope.modalScope.modal = modal;
+                $scope.modalScope.closeModal = closeModal;
+            });
+
+            var modalDefer,
+                openModal = function() {
+                    modalDefer = $q.defer();
+                    $scope.modalScope.modal.show();
+                    return modalDefer.promise;
+                },
+                closeModal = function(model) {
+                    var res = $scope.modalScope.modal.hide();
+                    modalDefer.resolve(model);
+                };
+
+            $scope.modalScope.queryModel = {};
+
+            $scope.modalScope.filterByCategory = function(id){
+                $scope.modalScope.queryModel.text = null;
+                $scope.modalScope.queryModel.categoryId = id;
+                closeModal($scope.modalScope.queryModel);
+            }
+
+            $scope.clearText = function() {
+                $scope.modalScope.queryModel.text = null;
+                $scope.modalScope.queryModel.categoryId = null;
+            }
+
+            $scope.modalScope.filterByText = function(){
+                $scope.queryModel.categoryId = null;
+                closeModal($scope.modalScope.queryModel);
+            }
+
+            var self = this,
+                queryKeys = ['name', 'categoryId'];
+
+            $scope.$on('$destroy', function(){
+                $scope.queryModel.data = [];
+                $scope.cachedArticles = [];
+                resetModel();
+            });
+
+            $scope.filter = function(){
+                openModal()
+                    .then(function(model){
+                        reset();
+                        find(model);
+                    });
+            }
+
+            $scope.findMore = function(){
+                var model = responseUtilsSvc.getQueryModel(queryKeys);
+                find(model);
+            }
+
+            $scope.doRefresh = function() {
+                reset();
+                find({});
+            }
+
+            $scope.canFind = function() {
+                return $scope.queryModel.busy === false;
+            }
+
+            $scope.reset = function(){
+                reset();
+                find({});
+            }
+
+            var resetModel = function(){
+                $scope.queryModel = {
+                    text: null,
+                    categoryId: null
+                };    
+            }
+
+            var find = function(model) {
+                    
+                    $scope.cachedArticles = $scope.queryModel.data;
+                    $scope.queryModel.busy = true;
+
+                    return articleSvc.find(model)
+                        .then(function(res){
+                            if(!_.isArray(res.data.articles) || res.data.articles.length === 0) {
+                                $scope.queryModel.noResult = true;
+                                $scope.queryModel.busy = false;
+                                $scope.queryModel.hasMoreData = false;
+                                return;
+                            }
+
+                            var data = responseUtilsSvc.orderByNewest(res.data.articles, 'datePublished');
+                            $scope.queryModel.data = $scope.queryModel.data.concat(data);
+                            $scope.queryModel.busy = false;
+                            $scope.queryModel.noResult = false;
+                            $scope.queryModel.hasMoreData = true;
+                        },
+                        function(){
+                            $scope.queryModel.busy = false;
+                        });
+                },
+                reset = function(){
+                    $scope.queryModel.data = [];
+                };
+
+        }]);
+})();
+(function(){
+	angular
+		.module('stuv.core')
+		.controller('stuv.core.news.newsUpdateCtrl', ['pi.core.app.eventSvc', '$scope', '$stateParams', function(eventSvc, $scope, $stateParams){
+			var self = this,
+				id = $stateParams.id;
+
+			eventSvc.get($stateParams.id)
+                .then(function(res){
+                    $scope.event = res.data.event;
+                });
+
+
+			this.prepareRequest = function(){
+				var dto = angular.copy($scope.event);
+				dto.city = 'Viseu';
+				return dto;
+			}
+
+			$scope.submitForm = function(){
+				var model = self.prepareRequest();
+				
+				eventSvc.put(id, model)
+					.then(function(res){
+						
+					}, function(res){
+
+					});
+			}
+		}]);
+})();
+(function(){
+    angular
+        .module('stuv.core')
+        .controller('stuv.core.news.newsViewCtrl', ['pi.core.article.articleSvc', '$scope', '$stateParams', '$rootScope',
+            function(articleSvc, $scope, $stateParams, $rootScope){
+                var self = this;
+                $scope.id = $stateParams.id;
+                $scope.rating = {
+                    rate: 4,
+                    max: 5
+                };
+
+                angular.forEach($rootScope.articles, function(obj) {
+                    if(obj.id == $scope.id) {
+                        $scope.article = obj;
+                    }
+                })
+
+                
+                /*articleSvc.get($stateParams.id)
+                    .then(function(res){
+                        $scope.article = res.data.article;
+                    });*/
+
+        }]);
 })();
 (function(){
 	angular
@@ -3523,279 +3746,6 @@ appDirectives.directive('datetimepicker', function($rootScope, $state, $ionicPop
         }]);
 })();
 (function(){
-	angular
-		.module('stuv.core')
-		.directive('newsCardH', [function(){
-
-			return {
-				templateUrl: 'core/news/news-card-h.tpl.html',
-				scope: {
-					'article': '='
-				},
-				controller: ['$scope', function($scope){
-
-				}],
-				replace: false
-			}
-		}]);
-})();
-(function(){
-	angular
-		.module('stuv.core')
-		.directive('newsCard', [function(){
-
-			return {
-				templateUrl: 'core/news/news-card.tpl.html',
-				scope: {
-					'article': '='
-				},
-				controller: ['$scope', function($scope){
-
-				}],
-				replace: false
-			}
-		}]);
-})();
-(function(){
-	angular
-		.module('stuv.core')
-		.controller('stuv.core.news.newsCreateCtrl', ['pi.core.app.articleSvc', '$scope', '$cordovaFileOpener2', function(newsSvc, $scope, $cordovaFileOpener2){
-			var self = this;
-			
-			$scope.showFileDialog = function(){
-				$cordovaFileOpener2.open(
-			    '/sdcard/Download/gmail.apk',
-			    'application/vnd.android.package-archive'
-			  ).then(function() {
-			      // Success!
-			  }, function(err) {
-			      // An error occurred. Show a message to the user
-			  });	
-			}
-			
-			$scope.news = {};
-
-			this.prepareRequest = function(){
-				var dto = angular.copy($scope.news);
-				dto.city = 'Viseu';
-				return dto;
-			}
-
-			var submitErrorFn = function(response) {
-
-			}
-
-			$scope.submitForm = function(){
-				try {
-					var model = self.prepareRequest();
-					newsSvc.post(model)
-						.then(function(res){
-
-						}, submitErrorFn);	
-				}
-				catch(e){
-					submitErrorFn();
-				}
-				
-			}
-		}]);
-})();
-(function(){
-    angular
-        .module('stuv.core')
-        .controller('stuv.core.news.newsListFilterCtrl', ['stuv.common.responseUtilsSvc', 'pi.core.article.articleSvc', '$scope', '$stateParams', function(responseUtilsSvc, articleSvc, $scope, $stateParams){
-            
-            $scope.queryModel = {};
-
-            
-        }]);
-})();
-(function(){
-    angular
-        .module('stuv.core')
-        .controller('stuv.core.news.newsListCtrl', ['$ionicModal', 'pi.core.responseUtilsSvc', 'pi.core.article.articleSvc', '$scope', '$stateParams', '$rootScope', '$q', function($ionicModal, responseUtilsSvc, articleSvc, $scope, $stateParams, $rootScope, $q){
-            
-            $scope.cachedArticles = [];
-                        
-            $scope.queryModel = {
-                busy: false,
-                noResult: false,
-                hasMoreData: false,
-                data: [],
-                currentCategory: 'Todas'
-            };
-
-            $scope.modalScope = $rootScope.$new();
-
-            $ionicModal.fromTemplateUrl('core/news/news-list-filter.tpl.html', {
-                scope: $scope.modalScope,
-                animation: 'slide-in-up',
-                controller: 'stuv.core.news.newsListFilterCtrl'
-            }).then(function(modal) {
-                $scope.modalScope.modal = modal;
-                $scope.modalScope.closeModal = closeModal;
-            });
-
-            var modalDefer,
-                openModal = function() {
-                    modalDefer = $q.defer();
-                    $scope.modalScope.modal.show();
-                    return modalDefer.promise;
-                },
-                closeModal = function(model) {
-                    var res = $scope.modalScope.modal.hide();
-                    modalDefer.resolve(model);
-                };
-
-            $scope.modalScope.queryModel = {};
-
-            $scope.modalScope.filterByCategory = function(id){
-                $scope.modalScope.queryModel.text = null;
-                $scope.modalScope.queryModel.categoryId = id;
-                closeModal($scope.modalScope.queryModel);
-            }
-
-            $scope.clearText = function() {
-                $scope.modalScope.queryModel.text = null;
-                $scope.modalScope.queryModel.categoryId = null;
-            }
-
-            $scope.modalScope.filterByText = function(){
-                $scope.queryModel.categoryId = null;
-                closeModal($scope.modalScope.queryModel);
-            }
-
-            var self = this,
-                queryKeys = ['name', 'categoryId'];
-
-            $scope.$on('$destroy', function(){
-                $scope.queryModel.data = [];
-                $scope.cachedArticles = [];
-                resetModel();
-            });
-
-            $scope.filter = function(){
-                openModal()
-                    .then(function(model){
-                        reset();
-                        find(model);
-                    });
-            }
-
-            $scope.findMore = function(){
-                var model = responseUtilsSvc.getQueryModel(queryKeys);
-                find(model);
-            }
-
-            $scope.doRefresh = function() {
-                reset();
-                find({});
-            }
-
-            $scope.canFind = function() {
-                return $scope.queryModel.busy === false;
-            }
-
-            $scope.reset = function(){
-                reset();
-                find({});
-            }
-
-            var resetModel = function(){
-                $scope.queryModel = {
-                    text: null,
-                    categoryId: null
-                };    
-            }
-
-            var find = function(model) {
-                    
-                    $scope.cachedArticles = $scope.queryModel.data;
-                    $scope.queryModel.busy = true;
-
-                    return articleSvc.find(model)
-                        .then(function(res){
-                            if(!_.isArray(res.data.articles) || res.data.articles.length === 0) {
-                                $scope.queryModel.noResult = true;
-                                $scope.queryModel.busy = false;
-                                $scope.queryModel.hasMoreData = false;
-                                return;
-                            }
-
-                            var data = responseUtilsSvc.orderByNewest(res.data.articles, 'datePublished');
-                            $scope.queryModel.data = $scope.queryModel.data.concat(data);
-                            $scope.queryModel.busy = false;
-                            $scope.queryModel.noResult = false;
-                            $scope.queryModel.hasMoreData = true;
-                        },
-                        function(){
-                            $scope.queryModel.busy = false;
-                        });
-                },
-                reset = function(){
-                    $scope.queryModel.data = [];
-                };
-
-        }]);
-})();
-(function(){
-	angular
-		.module('stuv.core')
-		.controller('stuv.core.news.newsUpdateCtrl', ['pi.core.app.eventSvc', '$scope', '$stateParams', function(eventSvc, $scope, $stateParams){
-			var self = this,
-				id = $stateParams.id;
-
-			eventSvc.get($stateParams.id)
-                .then(function(res){
-                    $scope.event = res.data.event;
-                });
-
-
-			this.prepareRequest = function(){
-				var dto = angular.copy($scope.event);
-				dto.city = 'Viseu';
-				return dto;
-			}
-
-			$scope.submitForm = function(){
-				var model = self.prepareRequest();
-				
-				eventSvc.put(id, model)
-					.then(function(res){
-						
-					}, function(res){
-
-					});
-			}
-		}]);
-})();
-(function(){
-    angular
-        .module('stuv.core')
-        .controller('stuv.core.news.newsViewCtrl', ['pi.core.article.articleSvc', '$scope', '$stateParams', '$rootScope',
-            function(articleSvc, $scope, $stateParams, $rootScope){
-                var self = this;
-                $scope.id = $stateParams.id;
-                $scope.rating = {
-                    rate: 4,
-                    max: 5
-                };
-
-                angular.forEach($rootScope.articles, function(obj) {
-                    if(obj.id == $scope.id) {
-                        $scope.article = obj;
-                    }
-                })
-
-                
-                /*articleSvc.get($stateParams.id)
-                    .then(function(res){
-                        $scope.article = res.data.article;
-                    });*/
-
-        }]);
-})();
-(function(){
   // A simple relative timestamp filter
   angular
     .module('stuv')
@@ -3848,4 +3798,54 @@ appDirectives.directive('datetimepicker', function($rootScope, $state, $ionicPop
         });
       }
     });
+})();
+(function(){
+	angular
+		.module('stuv.core.tourism')
+		.controller('stuv.core.tourism.mediaViewCtrl', ['stuv.core.tourism.videosSvc', '$stateParams', '$sce',
+			function(videosSvc, $stateParams, $sce) {
+
+				this.video = videosSvc.getById($stateParams.id);
+			}]);
+})();
+(function(){
+	angular
+		.module('stuv.core.tourism')
+		.controller('stuv.core.tourism.mediaCtrl', ['stuv.core.tourism.videosSvc',
+			function(videosSvc) {
+
+				this.videos = videosSvc.getAll();
+			}]);
+})();
+
+(function(){
+	
+	angular
+		.module('stuv.core.tourism')
+		.factory('stuv.core.tourism.videosSvc', ['$rootScope',
+			function($rootScope) {
+				var videos = [
+					{id: 'uT_sscHwbgY', name: 'Viseu: spot promocional da melhor cidade para viver!'},
+					{id: 'W6_cZwST45M', name: 'Passagem de ano viseu 2016 (video mapping)'},
+					{id: 'Pv6HzJCD3b0', name: 'Reportagem Viseu a melhor cidade para se viver em Portugal'},
+					{id: 'GS3Cilkh0R0', name: 'Viseu: a primeira rede de ciclovias urbanas nasce em 2018'},
+					{id: 'uT_sscHwbgY', name: 'Viseu: spot promocional da melhor cidade para viver!'}
+					];
+				this.getAll = function() {
+					return videos;
+				};
+
+				this.getById = function(id) {
+					var video;
+					
+					angular.forEach(videos, function(obj) {
+						if(obj.id === id) {
+							video = obj;
+						}
+					});
+					return video;
+
+				}
+				return this;
+			}]);
 })();
